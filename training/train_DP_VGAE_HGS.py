@@ -39,6 +39,8 @@ import random
 from model.HGraphSAGE import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from VGAE.Utils_VGAE import train_vgae
+from utils.EarlyStopping import EarlyStopping
+from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
 
@@ -118,3 +120,79 @@ model = train_vgae(
     epochs=500,
     device=device
 )
+
+
+optimizer = torch.optim.Adam(
+    model.parameters(),
+    lr=0.0005,
+    weight_decay=0
+)
+
+scheduler = CosineAnnealingLR(optimizer, T_max=100)
+
+
+early_stopping = EarlyStopping(
+    patience=30,
+    delta=0.0,
+    verbose=True,
+    path="best_basic_model.pt"
+)
+
+loader_dict = loader_dict_fn(
+    batch_size=512, 
+    num_neighbours=256, 
+    data=data, 
+    task=task,
+    train_table=train_table, 
+    val_table=val_table, 
+    test_table=test_table
+)
+
+
+
+
+# Training loop
+epochs = 100
+
+state_dict = None
+test_table = task.get_table("test", mask_input_cols=False)
+best_val_metric = -math.inf if higher_is_better else math.inf
+best_test_metric = -math.inf if higher_is_better else math.inf
+for epoch in range(1, epochs + 1):
+    train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+
+    train_pred = test(model, loader_dict["train"], device=device, task=task)
+    train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+    train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
+
+    val_pred = test(model, loader_dict["val"], device=device, task=task)
+    val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+
+    test_pred = test(model, loader_dict["test"], device=device, task=task)
+    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+
+    scheduler.step(val_metrics[tune_metric])
+
+    if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
+            not higher_is_better and val_metrics[tune_metric] < best_val_metric
+    ):
+        best_val_metric = val_metrics[tune_metric]
+        state_dict = copy.deepcopy(model.state_dict())
+
+    #test:
+    if (higher_is_better and test_metrics[tune_metric] > best_test_metric) or (
+            not higher_is_better and test_metrics[tune_metric] < best_test_metric
+    ):
+        best_test_metric = test_metrics[tune_metric]
+        state_dict_test = copy.deepcopy(model.state_dict())
+
+    current_lr = optimizer.param_groups[0]["lr"]
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+
+    early_stopping(val_metrics[tune_metric], model)
+
+    if early_stopping.early_stop:
+        print(f"Early stopping triggered at epoch {epoch}")
+        break
+print(f"best validation results: {best_val_metric}")
+print(f"best test results: {best_test_metric}")
