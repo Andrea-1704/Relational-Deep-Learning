@@ -12,6 +12,12 @@ import requests
 from torch_frame.config.text_embedder import TextEmbedderConfig
 from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
+
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 from typing import Any, Dict, List
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict

@@ -22,6 +22,12 @@ from typing import Any, Dict, List
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
+
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import MLP
 from torch_geometric.typing import NodeType
@@ -115,6 +121,7 @@ model = train_vgae(
     loader_dict=loader_dict,
     edge_types=edge_types,
     encoder_out_dim=channels,
+    entity_table=task.entity_table,
     latent_dim=128,
     hidden_dim=256,
     epochs=500,

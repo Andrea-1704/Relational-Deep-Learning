@@ -13,6 +13,12 @@ from torch_frame.config.text_embedder import TextEmbedderConfig
 from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
 from typing import Any, Dict, List
+
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
@@ -38,16 +44,17 @@ from utils.EarlyStopping import EarlyStopping
 from typing import Tuple
 
 class VGAEWrapper(nn.Module):
-    def __init__(self, full_model, encoder_out_dim, latent_dim):
+    def __init__(self, full_model, encoder_out_dim, latent_dim, entity_table):
         super().__init__()
         self.encoder = full_model
         self.proj_mu = nn.Linear(encoder_out_dim, latent_dim)
         self.proj_logvar = nn.Linear(encoder_out_dim, latent_dim)
+        self.entity_table = entity_table
 
     def forward(self, batch: HeteroData, node_types: List[str]) -> Dict[str, Tuple[Tensor, Tensor, Tensor, Tensor]]:
         z_dict = {}
 
-        full_z = self.encoder.encode_node_types(batch, node_types)
+        full_z = self.encoder.encode_node_types(batch, node_types, self.entity_table)
 
         for ntype in node_types:
             h = full_z[ntype]  # [num_nodes, encoder_out_dim]

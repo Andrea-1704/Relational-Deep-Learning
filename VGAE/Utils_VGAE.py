@@ -9,6 +9,12 @@ from torch_geometric.seed import seed_everything
 from relbench.modeling.utils import get_stype_proposal
 from collections import defaultdict
 import requests
+
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 from torch_frame.config.text_embedder import TextEmbedderConfig
 from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
@@ -34,8 +40,8 @@ import numpy as np
 import copy
 import pandas as pd
 from utils.EarlyStopping import EarlyStopping
-from Encoder import VGAEWrapper
-from Decoder import MLPDecoder
+from VGAE.Encoder import VGAEWrapper
+from VGAE.Decoder import MLPDecoder
 from torch_geometric.data import HeteroData
 from typing import Tuple
 
@@ -117,6 +123,7 @@ def train_vgae(
     loader_dict: Dict[str, NeighborLoader],
     edge_types: List[Tuple[str, str, str]],
     encoder_out_dim: int,
+    entity_table,
     latent_dim: int = 64,
     hidden_dim: int = 128,
     epochs: int = 30,
@@ -129,6 +136,7 @@ def train_vgae(
         full_model=model,
         encoder_out_dim=encoder_out_dim,
         latent_dim=latent_dim,
+        entity_table=entity_table
     ).to(device)
 
 

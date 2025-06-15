@@ -2,6 +2,12 @@ import torch
 import numpy as np
 import math
 from tqdm import tqdm
+
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 import torch_geometric
 import torch_frame
 from torch_geometric.seed import seed_everything
