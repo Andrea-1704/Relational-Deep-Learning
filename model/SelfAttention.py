@@ -90,24 +90,31 @@ class FeatureSelfAttentionNet(torch.nn.Module):
         self.output_proj = torch.nn.Linear(channels, channels)
 
     def forward(self, tf: torch_frame.TensorFrame) -> Tensor:
-        # Output per colonna, ciascuno (N, channels)
-        embeddings = []
-        for col in tf.col_names:
-            stype = self.col_to_stype[col]
-            encoder = self.stype_encoder_dict[stype]
-            x_col = tf[col]  # shape (N,)
-            emb_col = encoder(x_col.unsqueeze(-1) if x_col.ndim == 1 else x_col)
-            embeddings.append(emb_col.unsqueeze(1))  # (N, 1, C)
+      embeddings = []
 
-        # Stack: (N, num_features, channels)
-        x = torch.cat(embeddings, dim=1)
+      for stype, cols in tf.col_names_dict.items():
+          encoder = self.stype_encoder_dict[stype]
+          for col in cols:
+              x_col = tf.feat_dict[stype][col]
+              emb_col = encoder(x_col.unsqueeze(-1) if x_col.ndim == 1 else x_col)
+              embeddings.append(emb_col.unsqueeze(1))  # (N, 1, C)
 
-        # Attention tra feature del singolo record
-        x = self.attn(x)
 
-        # Aggregazione finale
-        x = x.mean(dim=1)
-        return self.output_proj(x)
+      x = torch.cat(embeddings, dim=1)  # (N, num_features, channels)
+      x = self.attn(x)                  # (N, num_features, channels)
+      x = x.mean(dim=1)                 # (N, channels)
+      return self.output_proj(x)        # (N, channels)
+
+
+    def reset_parameters(self):
+      for encoder in self.stype_encoder_dict.values():
+          if hasattr(encoder, "reset_parameters"):
+              try:
+                  encoder.reset_parameters()
+              except Exception as e:
+                  print(f"Warning: could not reset {encoder}: {e}")
+
+
 
 
 
