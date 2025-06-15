@@ -194,7 +194,7 @@ class MyHeteroEncoder(torch.nn.Module):
 
 
 
-class Model(torch.nn.Module):
+class MyModel(torch.nn.Module):
 
     def __init__(
         self,
