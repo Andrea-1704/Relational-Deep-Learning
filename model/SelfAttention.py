@@ -68,86 +68,6 @@ class FeatureSelfAttentionAggregator(nn.Module):
         return out.mean(dim=1)            # shape: [batch_size, hidden_dim]
 
 
-
-# class MyHeteroEncoder(torch.nn.Module):
-#     r"""HeteroEncoder based on PyTorch Frame.
-
-#     Args:
-#         channels (int): The output channels for each node type.
-#         node_to_col_names_dict (Dict[NodeType, Dict[torch_frame.stype, List[str]]]):
-#             A dictionary mapping from node type to column names dictionary
-#             compatible to PyTorch Frame.
-#         torch_frame_model_cls: Model class for PyTorch Frame. The class object
-#             takes :class:`TensorFrame` object as input and outputs
-#             :obj:`channels`-dimensional embeddings. Default to
-#             :class:`torch_frame.nn.ResNet`.
-#         torch_frame_model_kwargs (Dict[str, Any]): Keyword arguments for
-#             :class:`torch_frame_model_cls` class. Default keyword argument is
-#             set specific for :class:`torch_frame.nn.ResNet`. Expect it to
-#             be changed for different :class:`torch_frame_model_cls`.
-#         default_stype_encoder_cls_kwargs (Dict[torch_frame.stype, Any]):
-#             A dictionary mapping from :obj:`torch_frame.stype` object into a
-#             tuple specifying :class:`torch_frame.nn.StypeEncoder` class and its
-#             keyword arguments :obj:`kwargs`.
-#     """
-
-#     def __init__(
-#         self,
-#         channels: int,
-#         node_to_col_names_dict: Dict[NodeType, Dict[torch_frame.stype, List[str]]],
-#         node_to_col_stats: Dict[NodeType, Dict[str, Dict[StatType, Any]]],
-#         torch_frame_model_cls=ResNet,
-#         torch_frame_model_kwargs: Dict[str, Any] = {
-#             "channels": 128,
-#             "num_layers": 4,
-#         },
-#         default_stype_encoder_cls_kwargs: Dict[torch_frame.stype, Any] = {
-#             torch_frame.categorical: (torch_frame.nn.EmbeddingEncoder, {}),
-#             torch_frame.numerical: (torch_frame.nn.LinearEncoder, {}),
-#             torch_frame.multicategorical: (
-#                 torch_frame.nn.MultiCategoricalEmbeddingEncoder,
-#                 {},
-#             ),
-#             torch_frame.embedding: (torch_frame.nn.LinearEmbeddingEncoder, {}),
-#             torch_frame.timestamp: (torch_frame.nn.TimestampEncoder, {}),
-#         },
-#     ):
-#         super().__init__()
-
-#         self.encoders = torch.nn.ModuleDict()
-
-#         for node_type in node_to_col_names_dict.keys():
-#             stype_encoder_dict = {
-#                 stype: default_stype_encoder_cls_kwargs[stype][0](
-#                     **default_stype_encoder_cls_kwargs[stype][1]
-#                 )
-#                 for stype in node_to_col_names_dict[node_type].keys()
-#             }
-#             torch_frame_model = torch_frame_model_cls(
-#                 **torch_frame_model_kwargs,
-#                 out_channels=channels,
-#                 col_stats=node_to_col_stats[node_type],
-#                 col_names_dict=node_to_col_names_dict[node_type],
-#                 stype_encoder_dict=stype_encoder_dict,
-#             )
-#             self.encoders[node_type] = torch_frame_model
-
-#     def reset_parameters(self):
-#         for encoder in self.encoders.values():
-#             encoder.reset_parameters()
-
-#     def forward(
-#         self,
-#         tf_dict: Dict[NodeType, torch_frame.TensorFrame],
-#     ) -> Dict[NodeType, Tensor]:
-#         x_dict = {
-#             node_type: self.encoders[node_type](tf) for node_type, tf in tf_dict.items()
-#         }
-#         return x_dict
-    
-
-
-
 class MyHeteroEncoder(nn.Module):
     def __init__(
         self,
@@ -171,10 +91,10 @@ class MyHeteroEncoder(nn.Module):
         self.attn_modules = ModuleDict()
 
         for node_type, col_dict in node_to_col_names_dict.items():
-            stype_encoder_dict = nn.ModuleDict()
+            stype_encoder_dict = ModuleDict()
             for stype, col_names in col_dict.items():
                 encoder_cls, encoder_kwargs = stype_encoder_cls_kwargs[stype]
-                stype_encoder_dict[stype] = encoder_cls(**encoder_kwargs)
+                stype_encoder_dict[str(stype)] = encoder_cls(**encoder_kwargs)
 
             self.encoders[node_type] = stype_encoder_dict
             self.attn_modules[node_type] = FeatureSelfAttentionAggregator(
@@ -183,11 +103,11 @@ class MyHeteroEncoder(nn.Module):
                 num_layers=attn_layers,
             )
 
-            # Store metadata for forward
-            self.node_col_info = node_to_col_names_dict
-            self.node_col_stats = node_to_col_stats
-            self.hidden_dim = hidden_dim
-            self.channels = channels
+        # Store metadata for forward
+        self.node_col_info = node_to_col_names_dict
+        self.node_col_stats = node_to_col_stats
+        self.hidden_dim = hidden_dim
+        self.channels = channels
 
         self.output_proj = nn.Linear(hidden_dim, channels)
 
@@ -205,7 +125,7 @@ class MyHeteroEncoder(nn.Module):
         for node_type, tf in tf_dict.items():
             embeddings_per_feature = []
             for stype, col_names in self.node_col_info[node_type].items():
-                encoder = self.encoders[node_type][stype]
+                encoder = self.encoders[node_type][str(stype)]
                 for col in col_names:
                     feature = tf[col]  # shape: [batch_size]
                     emb = encoder(feature)  # shape: [batch_size, hidden_dim]
@@ -219,7 +139,7 @@ class MyHeteroEncoder(nn.Module):
 
 
 
-class Model(torch.nn.Module):
+class MyModel(torch.nn.Module):
 
     def __init__(
         self,
