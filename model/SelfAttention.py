@@ -51,95 +51,150 @@ from torch import Tensor
 from torch_frame import TensorFrame
 
 
-class FeatureSelfAttentionAggregator(nn.Module):
-    def __init__(self, hidden_dim: int, num_heads: int = 4, num_layers: int = 2):
+
+class FeatureSelfAttentionNet(torch.nn.Module):
+    def __init__(
+        self,
+        channels: int,
+        col_stats: Dict[str, Dict[StatType, Any]],
+        col_names_dict: Dict[torch_frame.stype, List[str]],
+        stype_encoder_dict: Dict[torch_frame.stype, torch.nn.Module],
+        n_heads: int = 4,
+        dropout: float = 0.1,
+        **kwargs,
+    ):
         super().__init__()
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
-            nhead=num_heads,
-            batch_first=True,
+
+        self.stype_encoder_dict = stype_encoder_dict
+        self.col_names_dict = col_names_dict
+        self.col_stats = col_stats
+        self.channels = channels
+
+        # Per colonna: costruisco lista di nomi (es. 'age', 'team') -> stype
+        self.col_to_stype = {}
+        for stype, cols in col_names_dict.items():
+            for col in cols:
+                self.col_to_stype[col] = stype
+
+        # Transformer
+        self.attn = torch.nn.TransformerEncoder(
+            torch.nn.TransformerEncoderLayer(
+                d_model=channels,
+                nhead=n_heads,
+                dropout=dropout,
+                batch_first=True,
+            ),
+            num_layers=1,
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-    def forward(self, features: List[Tensor]) -> Tensor:
-        # features: List of [batch_size, hidden_dim] tensors
-        x = torch.stack(features, dim=1)  # shape: [batch_size, num_features, hidden_dim]
-        out = self.encoder(x)             # shape: [batch_size, num_features, hidden_dim]
-        return out.mean(dim=1)            # shape: [batch_size, hidden_dim]
+        self.output_proj = torch.nn.Linear(channels, channels)
+
+    def forward(self, tf: torch_frame.TensorFrame) -> Tensor:
+        # Output per colonna, ciascuno (N, channels)
+        embeddings = []
+        for col in tf.col_names:
+            stype = self.col_to_stype[col]
+            encoder = self.stype_encoder_dict[stype]
+            x_col = tf[col]  # shape (N,)
+            emb_col = encoder(x_col.unsqueeze(-1) if x_col.ndim == 1 else x_col)
+            embeddings.append(emb_col.unsqueeze(1))  # (N, 1, C)
+
+        # Stack: (N, num_features, channels)
+        x = torch.cat(embeddings, dim=1)
+
+        # Attention tra feature del singolo record
+        x = self.attn(x)
+
+        # Aggregazione finale
+        x = x.mean(dim=1)
+        return self.output_proj(x)
 
 
-class MyHeteroEncoder(nn.Module):
+
+
+
+
+
+class MyHeteroEncoder(torch.nn.Module):
+    r"""HeteroEncoder based on PyTorch Frame.
+
+    Args:
+        channels (int): The output channels for each node type.
+        node_to_col_names_dict (Dict[NodeType, Dict[torch_frame.stype, List[str]]]):
+            A dictionary mapping from node type to column names dictionary
+            compatible to PyTorch Frame.
+        torch_frame_model_cls: Model class for PyTorch Frame. The class object
+            takes :class:`TensorFrame` object as input and outputs
+            :obj:`channels`-dimensional embeddings. Default to
+            :class:`torch_frame.nn.ResNet`.
+        torch_frame_model_kwargs (Dict[str, Any]): Keyword arguments for
+            :class:`torch_frame_model_cls` class. Default keyword argument is
+            set specific for :class:`torch_frame.nn.ResNet`. Expect it to
+            be changed for different :class:`torch_frame_model_cls`.
+        default_stype_encoder_cls_kwargs (Dict[torch_frame.stype, Any]):
+            A dictionary mapping from :obj:`torch_frame.stype` object into a
+            tuple specifying :class:`torch_frame.nn.StypeEncoder` class and its
+            keyword arguments :obj:`kwargs`.
+    """
+
     def __init__(
         self,
         channels: int,
         node_to_col_names_dict: Dict[NodeType, Dict[torch_frame.stype, List[str]]],
         node_to_col_stats: Dict[NodeType, Dict[str, Dict[StatType, Any]]],
-        stype_encoder_cls_kwargs: Dict[torch_frame.stype, Any] = {
+        torch_frame_model_cls=FeatureSelfAttentionNet,
+        torch_frame_model_kwargs: Dict[str, Any] = {
+            "channels": 128,
+            "num_layers": 4,
+        },
+        default_stype_encoder_cls_kwargs: Dict[torch_frame.stype, Any] = {
             torch_frame.categorical: (torch_frame.nn.EmbeddingEncoder, {}),
             torch_frame.numerical: (torch_frame.nn.LinearEncoder, {}),
-            torch_frame.multicategorical: (torch_frame.nn.MultiCategoricalEmbeddingEncoder, {}),
+            torch_frame.multicategorical: (
+                torch_frame.nn.MultiCategoricalEmbeddingEncoder,
+                {},
+            ),
             torch_frame.embedding: (torch_frame.nn.LinearEmbeddingEncoder, {}),
             torch_frame.timestamp: (torch_frame.nn.TimestampEncoder, {}),
         },
-        hidden_dim: int = 32,
-        attn_heads: int = 4,
-        attn_layers: int = 2,
     ):
         super().__init__()
 
-        self.encoders = ModuleDict()
-        self.attn_modules = ModuleDict()
+        self.encoders = torch.nn.ModuleDict()
 
-        for node_type, col_dict in node_to_col_names_dict.items():
-            stype_encoder_dict = ModuleDict()
-            for stype, col_names in col_dict.items():
-                encoder_cls, encoder_kwargs = stype_encoder_cls_kwargs[stype]
-                stype_encoder_dict[str(stype)] = encoder_cls(**encoder_kwargs)
-
-            self.encoders[node_type] = stype_encoder_dict
-            self.attn_modules[node_type] = FeatureSelfAttentionAggregator(
-                hidden_dim=hidden_dim,
-                num_heads=attn_heads,
-                num_layers=attn_layers,
+        for node_type in node_to_col_names_dict.keys():
+            stype_encoder_dict = {
+                stype: default_stype_encoder_cls_kwargs[stype][0](
+                    **default_stype_encoder_cls_kwargs[stype][1]
+                )
+                for stype in node_to_col_names_dict[node_type].keys()
+            }
+            torch_frame_model = torch_frame_model_cls(
+                **torch_frame_model_kwargs,
+                out_channels=channels,
+                col_stats=node_to_col_stats[node_type],
+                col_names_dict=node_to_col_names_dict[node_type],
+                stype_encoder_dict=stype_encoder_dict,
             )
-
-        # Store metadata for forward
-        self.node_col_info = node_to_col_names_dict
-        self.node_col_stats = node_to_col_stats
-        self.hidden_dim = hidden_dim
-        self.channels = channels
-
-        self.output_proj = nn.Linear(hidden_dim, channels)
+            self.encoders[node_type] = torch_frame_model
 
     def reset_parameters(self):
-        for stype_dict in self.encoders.values():
-            for encoder in stype_dict.values():
-                encoder.reset_parameters()
-        for attn in self.attn_modules.values():
-            for layer in attn.encoder.layers:
-                layer._reset_parameters()
-        self.output_proj.reset_parameters()
+        for encoder in self.encoders.values():
+            encoder.reset_parameters()
 
-    def forward(self, tf_dict: Dict[NodeType, TensorFrame]) -> Dict[NodeType, Tensor]:
-        out = {}
-        for node_type, tf in tf_dict.items():
-            embeddings_per_feature = []
-            for stype, col_names in self.node_col_info[node_type].items():
-                encoder = self.encoders[node_type][str(stype)]
-                for col in col_names:
-                    feature = tf[col]  # shape: [batch_size]
-                    emb = encoder(feature)  # shape: [batch_size, hidden_dim]
-                    embeddings_per_feature.append(emb)
-
-            # Apply self-attention over the set of features
-            attended = self.attn_modules[node_type](embeddings_per_feature)  # [batch_size, hidden_dim]
-            out[node_type] = self.output_proj(attended)  # [batch_size, channels]
-
-        return out
+    def forward(
+        self,
+        tf_dict: Dict[NodeType, torch_frame.TensorFrame],
+    ) -> Dict[NodeType, Tensor]:
+        x_dict = {
+            node_type: self.encoders[node_type](tf) for node_type, tf in tf_dict.items()
+        }
+        return x_dict
+    
 
 
 
-class MyModel(torch.nn.Module):
+class Model(torch.nn.Module):
 
     def __init__(
         self,
