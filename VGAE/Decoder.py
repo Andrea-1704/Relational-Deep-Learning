@@ -33,7 +33,7 @@ import torch
 import numpy as np
 import copy
 import pandas as pd
-import EarlyStopping
+from utils.EarlyStopping import EarlyStopping
 
 from typing import Tuple
 
