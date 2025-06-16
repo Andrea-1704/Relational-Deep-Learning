@@ -49,6 +49,7 @@ from torch.nn import ModuleDict
 from typing import Any, Dict, List
 from torch import Tensor
 from torch_frame import TensorFrame
+import pandas as pd
 
 
 
@@ -56,23 +57,26 @@ class FeatureSelfAttentionNet(torch.nn.Module):
     def __init__(
         self,
         channels: int,
-        col_stats: Dict[str, Dict[StatType, Any]],
-        col_names_dict: Dict[torch_frame.stype, List[str]],
+        col_stats: Dict[NodeType, Dict[str, Dict[StatType, Any]]],
+        col_names_dict: Dict[NodeType, Dict[torch_frame.stype, List[str]]],
         stype_encoder_dict: Dict[torch_frame.stype, torch.nn.Module],
+        db,
+        node_type,
         n_heads: int = 4,
         dropout: float = 0.1,
         **kwargs,
     ):
         super().__init__()
-
+        
         self.stype_encoder_dict = stype_encoder_dict
         self.col_names_dict = col_names_dict
         self.col_stats = col_stats
         self.channels = channels
-
+        self.db=db
+        self.node_type=node_type
         # Per colonna: costruisco lista di nomi (es. 'age', 'team') -> stype
         self.col_to_stype = {}
-        for stype, cols in col_names_dict.items():
+        for stype, cols in col_names_dict[node_type].items():
             for col in cols:
                 self.col_to_stype[col] = stype
 
@@ -89,14 +93,41 @@ class FeatureSelfAttentionNet(torch.nn.Module):
 
         self.output_proj = torch.nn.Linear(channels, channels)
 
-    def forward(self, tf: torch_frame.TensorFrame) -> Tensor:
+    def forward(self, tf: torch_frame.TensorFrame, node_type) -> Tensor:
       embeddings = []
-
-      for stype, cols in tf.col_names_dict.items():
+      print(f"prima del for self.col_names_dict è {self.col_names_dict}")
+      for stype, cols in self.col_names_dict[node_type].items():
+          print(f"per node_type {node_type} abbiiamo stype{stype} e cols{cols}")
           encoder = self.stype_encoder_dict[stype]
+          
           for col in cols:
-              x_col = tf.feat_dict[stype][col]
-              emb_col = encoder(x_col.unsqueeze(-1) if x_col.ndim == 1 else x_col)
+              #x_col = tf.feat_dict[stype][col]
+              table = self.db.table_dict[node_type]
+              
+
+              x_col = table.df[col]
+              print(f"ecco x_col {x_col} per la colonna {col} della tabella {node_type}")
+
+              # Aggiunta specificazione manuale (evita infer_spec)
+              encoder.stype = stype
+              encoder.out_channels = self.channels
+              print(f"col stats è esattamente {self.col_stats}")
+              for col in cols:
+                print(f"colonna {self.col_stats[node_type][col]}")
+              encoder.stats_list = [
+                  self.col_stats[node_type][col] for col in cols
+              ]
+              print(f"endoer stats list: {encoder.stats_list}")
+              # encoder.out_channels = channels
+              # encoder.stats_list = [
+              #     node_to_col_stats[node_type][col] for col in cols
+              # ]
+              x_col = table.df[col] 
+              encoder.stats_list = [self.col_stats[node_type][col]]
+              emb_col = encoder(x_col)
+              
+
+              #emb_col = encoder(x_col.unsqueeze(-1) if x_col.ndim == 1 else x_col)
               embeddings.append(emb_col.unsqueeze(1))  # (N, 1, C)
 
 
@@ -147,6 +178,7 @@ class MyHeteroEncoder(torch.nn.Module):
     def __init__(
         self,
         channels: int,
+        db,
         node_to_col_names_dict: Dict[NodeType, Dict[torch_frame.stype, List[str]]],
         node_to_col_stats: Dict[NodeType, Dict[str, Dict[StatType, Any]]],
         torch_frame_model_cls=FeatureSelfAttentionNet,
@@ -179,9 +211,11 @@ class MyHeteroEncoder(torch.nn.Module):
             torch_frame_model = torch_frame_model_cls(
                 **torch_frame_model_kwargs,
                 out_channels=channels,
-                col_stats=node_to_col_stats[node_type],
-                col_names_dict=node_to_col_names_dict[node_type],
+                col_stats=node_to_col_stats,
+                col_names_dict=node_to_col_names_dict,
                 stype_encoder_dict=stype_encoder_dict,
+                db = db,
+                node_type=node_type,
             )
             self.encoders[node_type] = torch_frame_model
 
@@ -194,7 +228,7 @@ class MyHeteroEncoder(torch.nn.Module):
         tf_dict: Dict[NodeType, torch_frame.TensorFrame],
     ) -> Dict[NodeType, Tensor]:
         x_dict = {
-            node_type: self.encoders[node_type](tf) for node_type, tf in tf_dict.items()
+            node_type: self.encoders[node_type](tf, node_type) for node_type, tf in tf_dict.items()
         }
         return x_dict
     
@@ -205,6 +239,7 @@ class MyModel(torch.nn.Module):
 
     def __init__(
         self,
+        db,
         data: HeteroData,
         col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
         num_layers: int,
@@ -217,9 +252,10 @@ class MyModel(torch.nn.Module):
         predictor_n_layers : int = 1,
     ):
         super().__init__()
-
+        print(f"dentro encoder col_stata_dict è {col_stats_dict}")
         self.encoder = MyHeteroEncoder(
             channels=channels,
+            db = db,
             node_to_col_names_dict={
                 node_type: data[node_type].tf.col_names_dict
                 for node_type in data.node_types
