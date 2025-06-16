@@ -75,67 +75,22 @@ col_to_stype_dict = get_stype_proposal(db)
 #this is used to get the stype of the columns
 
 #let's use the merge categorical values:
-#db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
-db_nuovo, col_to_stype_dict_nuovo = db, col_to_stype_dict
-
-class LightweightGloveEmbedder:
-    def __init__(self, device=None):
-        self.device = device
-        self.embeddings = defaultdict(lambda: np.zeros(300))
-        self._load_embeddings()
-
-    def _load_embeddings(self):
-      try:
-          path = "glove.6B.300d.txt"
-          with open(path, encoding="utf-8") as f:
-              for line in f:
-                  parts = line.strip().split()
-                  word = parts[0]
-                  vector = np.array(parts[1:], dtype=np.float32)
-                  self.embeddings[word] = vector
-          #print(f"Loaded {len(self.embeddings)} GloVe embeddings.")
-      except Exception as e:
-          print(f"Failed to load GloVe: {e}")
-
-    def __call__(self, sentences):
-        results = []
-        for text in sentences:
-            words = text.lower().split()
-            vectors = [self.embeddings[w] for w in words if w in self.embeddings]
-            if vectors:
-                # print("trovato")
-                avg_vector = np.mean(vectors, axis=0)
-            else:
-                #print("non trovato")
-                #print(f"Numero parole in embedding: {len(self.embeddings)}")
-
-                avg_vector = np.zeros(300)
-            results.append(avg_vector)
-
-        tensor = torch.tensor(np.array(results), dtype=torch.float32)
-        return tensor.to(self.device) if self.device else tensor
-
-text_embedder_cfg = TextEmbedderConfig(
-    text_embedder=LightweightGloveEmbedder(device=device), batch_size=256
-)
+db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
 # Create the graph
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    text_embedder_cfg=text_embedder_cfg,
-    #text_embedder_cfg = None,
+    #text_embedder_cfg=text_embedder_cfg,
+    text_embedder_cfg = None,
     cache_dir=None  # disabled
 )
-
-print(f"il valore di col_stats_dict nel main è {col_stats_dict}")
 
 
 # pre training phase with the VGAE
 channels = 512
 
 model = MyModel(
-    db=db_nuovo,
     data=data,
     col_stats_dict=col_stats_dict,
     num_layers=2,
