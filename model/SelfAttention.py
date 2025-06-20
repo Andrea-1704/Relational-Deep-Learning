@@ -106,7 +106,7 @@ class FeatureSelfAttentionNet(torch.nn.Module):
               
 
               x_col = table.df[col]
-              print(f"ecco x_col {x_col} per la colonna {col} della tabella {node_type}")
+              #print(f"ecco x_col {x_col} per la colonna {col} della tabella {node_type}")
 
               # Aggiunta specificazione manuale (evita infer_spec)
               encoder.stype = stype

@@ -43,7 +43,7 @@ import torch.nn.functional as F
 from torch import nn
 import random
 from model.HGraphSAGE import Model
-from model.SelfAttention import MyModel
+from model.SelfAttention_attempt2 import MyModel
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
