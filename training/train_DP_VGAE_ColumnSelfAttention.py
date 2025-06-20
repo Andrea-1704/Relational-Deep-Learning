@@ -1,3 +1,13 @@
+
+#####
+# Training Heterogeneous Graph SAGE with VGAE pre training 
+# and using column self attention mechanism
+# to predict the driver position in the F1 dataset.
+# This code is designed to work with the RelBench framework and PyTorch Geometric.
+# It includes data loading, model training, and evaluation.
+####
+
+
 import os
 import torch
 import relbench
@@ -48,7 +58,7 @@ from VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
-from model.SelfAttention_attempt2 import MyModel
+from model.ColumnSelfAttention import MyModel
 
 
 

@@ -1,3 +1,12 @@
+
+#####
+# Training Heterogeneous Graph SAGE with VGAE pre training
+# to predict the driver position in the F1 dataset.
+# This code is designed to work with the RelBench framework and PyTorch Geometric.
+# It includes data loading, model training, and evaluation.
+####
+
+
 import os
 import torch
 import relbench
@@ -43,13 +52,10 @@ import torch.nn.functional as F
 from torch import nn
 import random
 from model.HGraphSAGE import Model
-from model.SelfAttention_attempt2 import MyModel
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-
-
 
 
 
@@ -75,67 +81,22 @@ col_to_stype_dict = get_stype_proposal(db)
 #this is used to get the stype of the columns
 
 #let's use the merge categorical values:
-#db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
-db_nuovo, col_to_stype_dict_nuovo = db, col_to_stype_dict
-
-class LightweightGloveEmbedder:
-    def __init__(self, device=None):
-        self.device = device
-        self.embeddings = defaultdict(lambda: np.zeros(300))
-        self._load_embeddings()
-
-    def _load_embeddings(self):
-      try:
-          path = "glove.6B.300d.txt"
-          with open(path, encoding="utf-8") as f:
-              for line in f:
-                  parts = line.strip().split()
-                  word = parts[0]
-                  vector = np.array(parts[1:], dtype=np.float32)
-                  self.embeddings[word] = vector
-          #print(f"Loaded {len(self.embeddings)} GloVe embeddings.")
-      except Exception as e:
-          print(f"Failed to load GloVe: {e}")
-
-    def __call__(self, sentences):
-        results = []
-        for text in sentences:
-            words = text.lower().split()
-            vectors = [self.embeddings[w] for w in words if w in self.embeddings]
-            if vectors:
-                # print("trovato")
-                avg_vector = np.mean(vectors, axis=0)
-            else:
-                #print("non trovato")
-                #print(f"Numero parole in embedding: {len(self.embeddings)}")
-
-                avg_vector = np.zeros(300)
-            results.append(avg_vector)
-
-        tensor = torch.tensor(np.array(results), dtype=torch.float32)
-        return tensor.to(self.device) if self.device else tensor
-
-text_embedder_cfg = TextEmbedderConfig(
-    text_embedder=LightweightGloveEmbedder(device=device), batch_size=256
-)
+db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
 # Create the graph
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    text_embedder_cfg=text_embedder_cfg,
-    #text_embedder_cfg = None,
+    #text_embedder_cfg=text_embedder_cfg,
+    text_embedder_cfg = None,
     cache_dir=None  # disabled
 )
 
-print(f"il valore di col_stats_dict nel main è {col_stats_dict}")
-
 
 # pre training phase with the VGAE
-channels = 64#512
+channels = 128
 
-model = MyModel(
-    #db=db_nuovo,
+model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
     num_layers=2,
@@ -148,8 +109,8 @@ model = MyModel(
 
 
 loader_dict = loader_dict_fn(
-    batch_size=64,#512, 
-    num_neighbours=32,#256, 
+    batch_size=128, 
+    num_neighbours=64, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -168,8 +129,8 @@ model = train_vgae(
     edge_types=edge_types,
     encoder_out_dim=channels,
     entity_table=task.entity_table,
-    latent_dim=16,#128,
-    hidden_dim=32,#256,
+    latent_dim=32,
+    hidden_dim=64,
     epochs=500,
     device=device
 )
