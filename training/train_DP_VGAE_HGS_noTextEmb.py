@@ -43,13 +43,12 @@ import torch.nn.functional as F
 from torch import nn
 import random
 from model.HGraphSAGE import Model
-from model.SelfAttention import MyModel
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
-
+from model.SelfAttention_attempt2 import MyModel
 
 
 
@@ -88,7 +87,7 @@ data, col_stats_dict = make_pkey_fkey_graph(
 
 
 # pre training phase with the VGAE
-channels = 512
+channels = 128
 
 model = MyModel(
     data=data,
@@ -103,8 +102,8 @@ model = MyModel(
 
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=128, 
+    num_neighbours=64, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -123,8 +122,8 @@ model = train_vgae(
     edge_types=edge_types,
     encoder_out_dim=channels,
     entity_table=task.entity_table,
-    latent_dim=128,
-    hidden_dim=256,
+    latent_dim=32,
+    hidden_dim=64,
     epochs=500,
     device=device
 )
