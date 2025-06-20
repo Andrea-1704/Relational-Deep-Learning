@@ -132,10 +132,10 @@ print(f"il valore di col_stats_dict nel main è {col_stats_dict}")
 
 
 # pre training phase with the VGAE
-channels = 512
+channels = 64#512
 
 model = MyModel(
-    db=db_nuovo,
+    #db=db_nuovo,
     data=data,
     col_stats_dict=col_stats_dict,
     num_layers=2,
@@ -148,8 +148,8 @@ model = MyModel(
 
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=64,#512, 
+    num_neighbours=32,#256, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -168,8 +168,8 @@ model = train_vgae(
     edge_types=edge_types,
     encoder_out_dim=channels,
     entity_table=task.entity_table,
-    latent_dim=128,
-    hidden_dim=256,
+    latent_dim=16,#128,
+    hidden_dim=32,#256,
     epochs=500,
     device=device
 )
