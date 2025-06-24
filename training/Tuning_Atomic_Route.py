@@ -138,14 +138,14 @@ def run_experiment(
 #Griglia di iperparametri
 grid = {
     "num_layer": [2, 3, 4],
-    "aggr": ["max", "mean"],
-    "norm": ["batch_norm", "layer_norm"],
-    "prediction_n_layers": [1, 2],
-    "channels": [64, 128, 256],
+    "aggr": ["max", "mean"],  
+    "norm": ["batch_norm"],
+    "prediction_n_layers": [2],
+    "channels": [128, 256],
     "dropout": [0.0, 0.2],
-    "lr": [5e-4, 1e-3], 
-    "batch_size": [256, 512, 1024],
-    "num_neighbours": [128, 256, 512]
+    "lr": [5e-4, 1e-3, 1e-1], 
+    "batch_size": [512, 1024],
+    "num_neighbours": [256, 512]
 }
 
 # Genera tutte le combinazioni
