@@ -270,7 +270,7 @@ class RelGNNEncoder(nn.Module):
 
 
 
-class Model(torch.nn.Module):
+class AtomicRouteModel(torch.nn.Module):
 
     def __init__(
         self,
@@ -303,11 +303,18 @@ class Model(torch.nn.Module):
             channels=channels,
         )
 
-        self.gnn = HeteroGraphSAGE(
+        # self.gnn = HeteroGraphSAGE(
+        #     node_types=data.node_types,
+        #     edge_types=data.edge_types,
+        #     channels=channels,
+        #     aggr=aggr,
+        #     num_layers=num_layers,
+        # )
+        atomic_routes = extract_atomic_routes(data)
+        self.gnn = RelGNNEncoder(
             node_types=data.node_types,
-            edge_types=data.edge_types,
+            atomic_routes=atomic_routes,
             channels=channels,
-            aggr=aggr,
             num_layers=num_layers,
         )
         self.head = MLP(
