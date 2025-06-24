@@ -6,6 +6,8 @@ from torch_geometric.seed import seed_everything
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
 from relbench.modeling.utils import get_stype_proposal
+from torch.nn import BCEWithLogitsLoss, L1Loss
+import copy
 from relbench.modeling.graph import make_pkey_fkey_graph
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
@@ -21,9 +23,16 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 def run_experiment(
     channels=128,
     dropout=0.0,
+    num_layer=2,
     learning_rate=0.0005,
+    aggr="max",
+    norm="batch_norm",
+    prediction_n_layers=2,
+    batch_size=512,
+    num_neighbours=256,
+    run_name="default",
     save_model=False,
-    run_name="default"
+    epochs=50#numero di epoche per ogni trial di hyperparametri.
 ):
     seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -51,19 +60,21 @@ def run_experiment(
     model = AtomicRouteModel(
         data=data,
         col_stats_dict=col_stats_dict,
-        num_layers=2,
+        num_layers=num_layer,
         channels=channels,
         out_channels=1,
-        aggr="max",
-        norm="batch_norm",
+        aggr=aggr,
+        norm=norm,
         shallow_list=[],
         id_awareness=False,
-        predictor_n_layers=2,
+        predictor_n_layers=prediction_n_layers,
         dropout=dropout,
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = CosineAnnealingLR(optimizer, T_max=100)
+
+    #aggiungiamo anche early stopping durante il trial di goni configurazione degli iperparametri.
 
     early_stopping = EarlyStopping(
         patience=30,
@@ -73,8 +84,8 @@ def run_experiment(
     )
 
     loader_dict = loader_dict_fn(
-        batch_size=512,
-        num_neighbours=256,
+        batch_size=batch_size,
+        num_neighbours=num_neighbours,
         data=data,
         task=task,
         train_table=train_table,
@@ -91,7 +102,7 @@ def run_experiment(
     best_test_metric = float("inf")
     state_dict = None
 
-    for epoch in range(1, 101):
+    for epoch in range(epochs):
         train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
         train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
 
@@ -122,27 +133,50 @@ def run_experiment(
 
 #Griglia di iperparametri
 grid = {
+    "num_layer": [2, 3, 4],
+    "aggr": ["max", "mean"],
+    "norm": ["batch_norm", "layer_norm"],
+    "prediction_n_layers": [1, 2],
     "channels": [64, 128],
     "dropout": [0.0, 0.2, 0.5],
-    "lr": [5e-4, 1e-3]
+    "lr": [5e-4, 1e-3], 
+    "batch_size": [256, 512, 1024, 2048],
+    "num_neighbours": [64, 128, 256, 512]
 }
 
 # Genera tutte le combinazioni
-grid_list = list(itertools.product(grid["channels"], grid["dropout"], grid["lr"]))
+grid_list = list(itertools.product(
+    grid["channels"],
+    grid["dropout"],
+    grid["lr"],
+    grid["num_layer"],
+    grid["aggr"],
+    grid["norm"],
+    grid["prediction_n_layers"],
+    grid["batch_size"],
+    grid["num_neighbours"]
+))
+#grid_list = list(itertools.product(grid["channels"], grid["dropout"], grid["lr"]))
 
 # Per salvare i risultati
 results = []
 best_val = float("inf")
 best_config = None
 
-for i, (channels, dropout, lr) in enumerate(grid_list):
-    print(f"\nRun {i+1}/{len(grid_list)} | channels={channels}, dropout={dropout}, lr={lr}")
-    
+for i, (channels, dropout, lr, num_layers, aggr, norm, prediction_n_layers, batch_size, num_neighbours) in enumerate(grid_list):
+    #print(f"\nRun {i+1}/{len(grid_list)} | channels={channels}, dropout={dropout}, lr={lr}")
+    print(f"\nRun {i+1}/{len(grid_list)} | channels={channels}, dropout={dropout}, lr={lr}, num_layers={num_layers}, aggr={aggr}, norm={norm}, prediction_n_layers={prediction_n_layers}, batch_size={batch_size}, num_neighbours={num_neighbours}")
     # Run esperimento
     val_mae, test_mae = run_experiment(
         channels=channels,
         dropout=dropout,
         learning_rate=lr,
+        num_layer=num_layers,
+        aggr=aggr,
+        norm=norm,
+        prediction_n_layers=prediction_n_layers,
+        batch_size=batch_size,
+        num_neighbours=num_neighbours,
         save_model=True,        # salva solo se migliora
         run_name=f"tune_run_{i}"
     )
@@ -151,18 +185,24 @@ for i, (channels, dropout, lr) in enumerate(grid_list):
         "channels": channels,
         "dropout": dropout,
         "lr": lr,
+        "num_layers": num_layers,
+        "aggr": aggr,
+        "norm": norm,
+        "prediction_n_layers": prediction_n_layers,
+        "batch_size": batch_size,
+        "num_neighbours": num_neighbours,
         "val_mae": val_mae,
         "test_mae": test_mae
     })
 
-    # ✅ Teniamo traccia del migliore
+    # Teniamo traccia del migliore
     if val_mae < best_val:
         best_val = val_mae
         best_config = results[-1]
 
-# 💾 Salva tutti i risultati
+#Salva tutti i risultati
 with open("tune_results.json", "w") as f:
     json.dump(results, f, indent=2)
 
-print("\n🏆 Best config:")
+print("\nBest config:")
 print(best_config)
