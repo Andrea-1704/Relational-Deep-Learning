@@ -149,9 +149,9 @@ class AtomicRouteConv(nn.Module):
       edge_index_2 = edge_index_dict[edge_key_2]  # mid → dst
 
       if edge_index_1.size(1) == 0 or edge_index_2.size(1) == 0:
-          print(f"errore size vuota")
+          #print(f"errore size vuota")------------------------------------------------------------------------------------------------------------------------DA INDAGARE PERCHE', SE E QUANDO SUCCEDE
           return {}
-
+      #print(f"size non vuota")
       # Step 1: src → mid: creazione dei messaggi h_fuse
       src_idx_1, mid_idx_1 = edge_index_1
       h_src = x_dict[self.src][src_idx_1]        # [E1, C]
@@ -324,8 +324,11 @@ class AtomicRouteModel(torch.nn.Module):
         shallow_list: List[NodeType] = [],
         id_awareness: bool = False,
         predictor_n_layers : int = 1,
+        dropout: float = 0.0,
     ):
         super().__init__()
+
+        self.dropout = nn.Dropout(dropout)
 
         self.encoder = HeteroEncoder(
             channels=channels,
@@ -365,13 +368,7 @@ class AtomicRouteModel(torch.nn.Module):
             norm=norm,
             num_layers=predictor_n_layers,
         )
-        # self.head = MLP(
-        #     channels=channels,
-        #     out_channels=out_channels,
-        #     hidden_channels=channels,
-        #     norm=norm,
-        #     num_layers=predictor_n_layers,
-        # )
+
         self.embedding_dict = ModuleDict(
             {
                 node: Embedding(data.num_nodes_dict[node], channels)
@@ -408,9 +405,11 @@ class AtomicRouteModel(torch.nn.Module):
 
         for node_type, rel_time in rel_time_dict.items():
             x_dict[node_type] = x_dict[node_type] + rel_time
+            x_dict[node_type] = self.dropout(x_dict[node_type])
 
         for node_type, embedding in self.embedding_dict.items():
             x_dict[node_type] = x_dict[node_type] + embedding(batch[node_type].n_id)
+            x_dict[node_type] = self.dropout(x_dict[node_type])
 
         x_dict = self.gnn(
             x_dict,
