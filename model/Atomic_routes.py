@@ -82,57 +82,191 @@ def extract_atomic_routes(data: HeteroData) -> List[Tuple[str, Optional[str], st
                     atomic_routes.append((src, mid_type, dst))
     return atomic_routes
 
+#modello di convoluzione per le atomic routes:
+import torch
+import torch.nn as nn
+from torch_geometric.nn import SAGEConv
+from typing import Dict, Optional
 
-
-class HeteroGraphSAGE(torch.nn.Module):
-    def __init__(
-        self,
-        node_types: List[NodeType],
-        edge_types: List[EdgeType],
-        channels: int,
-        aggr: str = "mean",
-        num_layers: int = 2,
-    ):
+class AtomicRouteConv(nn.Module):
+    def __init__(self, src: str, mid: Optional[str], dst: str, channels: int):
+        """
+        Modulo per un'atomic route:
+        - Se mid is None: route diretta (src → dst) → usa SAGEConv standard
+        - Se mid esiste: route composita (src → mid → dst) → usa attenzione
+        """
         super().__init__()
+        self.src = src
+        self.mid = mid
+        self.dst = dst
+        self.channels = channels
 
-        self.convs = torch.nn.ModuleList()
-        for _ in range(num_layers):
-            conv = HeteroConv(
-                {
-                    edge_type: SAGEConv((channels, channels), channels, aggr=aggr)
-                    for edge_type in edge_types
-                },
-                aggr="sum",
-            )
-            self.convs.append(conv)
-
-        self.norms = torch.nn.ModuleList()
-        for _ in range(num_layers):
-            norm_dict = torch.nn.ModuleDict()
-            for node_type in node_types:
-                norm_dict[node_type] = LayerNorm(channels, mode="node")
-            self.norms.append(norm_dict)
+        if mid is None:
+            # Route semplice: usa una GNN standard tipo GraphSAGE
+            self.conv = SAGEConv((channels, channels), channels)
+        else:
+            # Route con nodo intermedio: usa FUSE + attenzione
+            self.W1 = nn.Linear(channels, channels)
+            self.W2 = nn.Linear(channels, channels)
+            self.att_q = nn.Linear(channels, channels)
+            self.att_k = nn.Linear(channels, channels)
+            self.att_v = nn.Linear(channels, channels)
 
     def reset_parameters(self):
-        for conv in self.convs:
-            conv.reset_parameters()
-        for norm_dict in self.norms:
-            for norm in norm_dict.values():
-                norm.reset_parameters()
+        if self.mid is None:
+            self.conv.reset_parameters()
+        else:
+            self.W1.reset_parameters()
+            self.W2.reset_parameters()
+            self.att_q.reset_parameters()
+            self.att_k.reset_parameters()
+            self.att_v.reset_parameters()
+
+    def forward(self, x_dict: Dict[str, torch.Tensor], edge_index_dict: Dict[str, torch.Tensor]):
+        out = {}
+
+        if self.mid is None:
+            # Caso: src → dst (route diretta)
+            edge_key = f"{self.src}__to__{self.dst}"
+            if edge_key not in edge_index_dict:
+                return {}
+            edge_index = edge_index_dict[edge_key]
+            out[self.dst] = self.conv((x_dict[self.src], x_dict[self.dst]), edge_index)
+        else:
+            # Caso: src → mid → dst (route composita)
+            h_src = x_dict[self.src]
+            h_mid = x_dict[self.mid]
+            h_dst = x_dict[self.dst]
+
+            # FUSE: combina src e mid
+            h_fuse = self.W1(h_mid) + self.W2(h_src)
+
+            # Attention tra dst (query) e fused (key)
+            q = self.att_q(h_dst)        # [N_dst, C]
+            k = self.att_k(h_fuse)       # [N_src, C]
+            v = self.att_v(h_fuse)       # [N_src, C]
+
+            alpha = torch.softmax((q @ k.T) / (self.channels ** 0.5), dim=-1)
+            msg = alpha @ v              # [N_dst, C]
+
+            out[self.dst] = msg
+
+        return out
+
+
+
+# definiamo il modello effettivo:
+import torch
+import torch.nn as nn
+from typing import Dict, List, Tuple, Optional
+
+class RelGNNEncoder(nn.Module):
+    def __init__(
+        self,
+        node_types: List[str],
+        atomic_routes: List[Tuple[str, Optional[str], str]],
+        channels: int,
+        num_layers: int = 2,
+    ):
+        """
+        Encoder GNN che applica message passing lungo atomic routes,
+        su più layer GNN.
+        """
+        super().__init__()
+        self.node_types = node_types
+        self.atomic_routes = atomic_routes
+        self.num_layers = num_layers
+
+        # Per ogni layer, creiamo un dizionario di conv per ogni route
+        self.layers = nn.ModuleList()
+        for _ in range(num_layers):
+            layer = nn.ModuleDict()
+            for src, mid, dst in atomic_routes:
+                route_key = f"{src}__{mid or 'none'}__{dst}"
+                layer[route_key] = AtomicRouteConv(src, mid, dst, channels)
+            self.layers.append(layer)
+
+    def reset_parameters(self):
+        for layer in self.layers:
+            for conv in layer.values():
+                conv.reset_parameters()
 
     def forward(
         self,
-        x_dict: Dict[NodeType, Tensor],
-        edge_index_dict: Dict[NodeType, Tensor],
-        num_sampled_nodes_dict: Optional[Dict[NodeType, List[int]]] = None,
-        num_sampled_edges_dict: Optional[Dict[EdgeType, List[int]]] = None,
-    ) -> Dict[NodeType, Tensor]:
-        for _, (conv, norm_dict) in enumerate(zip(self.convs, self.norms)):
-            x_dict = conv(x_dict, edge_index_dict)
-            x_dict = {key: norm_dict[key](x) for key, x in x_dict.items()}
-            x_dict = {key: x.relu() for key, x in x_dict.items()}
+        x_dict: Dict[str, torch.Tensor],
+        edge_index_dict: Dict[str, torch.Tensor],
+        num_sampled_nodes_dict=None,
+        num_sampled_edges_dict=None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Applica il message passing composito su tutti i layer.
+        Per ogni nodo, somma tutti i messaggi provenienti da tutte le atomic routes.
+        """
+        for layer in self.layers:
+            agg_dict = {ntype: [] for ntype in x_dict}
+            for route_key, conv in layer.items():
+                msg_dict = conv(x_dict, edge_index_dict)
+                for dst, msg in msg_dict.items():
+                    agg_dict[dst].append(msg)
 
+            # Somma i messaggi ricevuti da ogni route
+            x_dict = {
+                ntype: sum(msgs) if msgs else x_dict[ntype]
+                for ntype, msgs in agg_dict.items()
+            }
         return x_dict
+
+
+
+# class HeteroGraphSAGE(torch.nn.Module):
+#     def __init__(
+#         self,
+#         node_types: List[NodeType],
+#         edge_types: List[EdgeType],
+#         channels: int,
+#         aggr: str = "mean",
+#         num_layers: int = 2,
+#     ):
+#         super().__init__()
+
+#         self.convs = torch.nn.ModuleList()
+#         for _ in range(num_layers):
+#             conv = HeteroConv(
+#                 {
+#                     edge_type: SAGEConv((channels, channels), channels, aggr=aggr)
+#                     for edge_type in edge_types
+#                 },
+#                 aggr="sum",
+#             )
+#             self.convs.append(conv)
+
+#         self.norms = torch.nn.ModuleList()
+#         for _ in range(num_layers):
+#             norm_dict = torch.nn.ModuleDict()
+#             for node_type in node_types:
+#                 norm_dict[node_type] = LayerNorm(channels, mode="node")
+#             self.norms.append(norm_dict)
+
+#     def reset_parameters(self):
+#         for conv in self.convs:
+#             conv.reset_parameters()
+#         for norm_dict in self.norms:
+#             for norm in norm_dict.values():
+#                 norm.reset_parameters()
+
+#     def forward(
+#         self,
+#         x_dict: Dict[NodeType, Tensor],
+#         edge_index_dict: Dict[NodeType, Tensor],
+#         num_sampled_nodes_dict: Optional[Dict[NodeType, List[int]]] = None,
+#         num_sampled_edges_dict: Optional[Dict[EdgeType, List[int]]] = None,
+#     ) -> Dict[NodeType, Tensor]:
+#         for _, (conv, norm_dict) in enumerate(zip(self.convs, self.norms)):
+#             x_dict = conv(x_dict, edge_index_dict)
+#             x_dict = {key: norm_dict[key](x) for key, x in x_dict.items()}
+#             x_dict = {key: x.relu() for key, x in x_dict.items()}
+
+#         return x_dict
 
 
 
