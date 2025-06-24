@@ -122,36 +122,76 @@ class AtomicRouteConv(nn.Module):
             self.att_k.reset_parameters()
             self.att_v.reset_parameters()
 
-    def forward(self, x_dict: Dict[str, torch.Tensor], edge_index_dict: Dict[str, torch.Tensor]):
-        out = {}
+    def forward(self, x_dict: Dict[str, torch.Tensor], edge_index_dict: Dict[Tuple[str, str, str], torch.Tensor]):
+      out = {}
 
-        if self.mid is None:
-            # Caso: src → dst (route diretta)
-            edge_key = f"{self.src}__to__{self.dst}"
-            if edge_key not in edge_index_dict:
-                return {}
-            edge_index = edge_index_dict[edge_key]
-            out[self.dst] = self.conv((x_dict[self.src], x_dict[self.dst]), edge_index)
-        else:
-            # Caso: src → mid → dst (route composita)
-            h_src = x_dict[self.src]
-            h_mid = x_dict[self.mid]
-            h_dst = x_dict[self.dst]
+      # Caso 1: atomic route semplice (src → dst)
+      if self.mid is None:
+          # Cerchiamo la chiave edge (src, edge_type, dst)
+          edge_key = self._find_edge_key(edge_index_dict, self.src, self.dst)
+          if edge_key is None:
+              print("errore con none in mid")
+              return {}
+          #print(f"trovato {edge_index_dict[edge_key]}")
+          edge_index = edge_index_dict[edge_key]
+          out[self.dst] = self.conv((x_dict[self.src], x_dict[self.dst]), edge_index)
+          return out
 
-            # FUSE: combina src e mid
-            h_fuse = self.W1(h_mid) + self.W2(h_src)
+      # Caso 2: atomic route con nodo intermedio (src → mid → dst)
+      edge_key_1 = self._find_edge_key(edge_index_dict, self.src, self.mid)
+      edge_key_2 = self._find_edge_key(edge_index_dict, self.mid, self.dst)
 
-            # Attention tra dst (query) e fused (key)
-            q = self.att_q(h_dst)        # [N_dst, C]
-            k = self.att_k(h_fuse)       # [N_src, C]
-            v = self.att_v(h_fuse)       # [N_src, C]
+      if edge_key_1 is None or edge_key_2 is None:
+          print(f"errore!")
+          return {}
 
-            alpha = torch.softmax((q @ k.T) / (self.channels ** 0.5), dim=-1)
-            msg = alpha @ v              # [N_dst, C]
+      edge_index_1 = edge_index_dict[edge_key_1]  # src → mid
+      edge_index_2 = edge_index_dict[edge_key_2]  # mid → dst
 
-            out[self.dst] = msg
+      if edge_index_1.size(1) == 0 or edge_index_2.size(1) == 0:
+          print(f"errore size vuota")
+          return {}
 
-        return out
+      # Step 1: src → mid: creazione dei messaggi h_fuse
+      src_idx_1, mid_idx_1 = edge_index_1
+      h_src = x_dict[self.src][src_idx_1]        # [E1, C]
+      h_mid = x_dict[self.mid][mid_idx_1]        # [E1, C]
+      h_fuse = self.W1(h_mid) + self.W2(h_src)   # [E1, C]
+
+      # Step 2: aggregazione dei messaggi h_fuse su ciascun nodo mid
+      num_mid_nodes = x_dict[self.mid].size(0)
+      h_mid_agg = torch.zeros((num_mid_nodes, self.channels), device=h_fuse.device)
+      h_mid_agg.index_add_(0, mid_idx_1, h_fuse)
+
+      # Step 3: mid → dst con attenzione
+      mid_idx_2, dst_idx_2 = edge_index_2
+      h_dst = x_dict[self.dst]  # [N_dst, C]
+      k = self.att_k(h_mid_agg[mid_idx_2])  # [E2, C]
+      v = self.att_v(h_mid_agg[mid_idx_2])  # [E2, C]
+      q = self.att_q(h_dst[dst_idx_2])      # [E2, C]
+
+      alpha = torch.softmax((q * k).sum(-1) / (self.channels ** 0.5), dim=0)  # [E2]
+      msg = v * alpha.unsqueeze(-1)  # [E2, C]
+
+      # Step 4: aggregazione dei messaggi sul nodo dst
+      num_dst_nodes = x_dict[self.dst].size(0)
+      msg_dst = torch.zeros((num_dst_nodes, self.channels), device=msg.device)
+      msg_dst.index_add_(0, dst_idx_2, msg)
+
+      out[self.dst] = msg_dst
+      return out
+
+
+    #@staticmethod
+    def _find_edge_key(self, edge_index_dict: Dict[Tuple[str, str, str], torch.Tensor], src: str, dst: str):
+        """
+        Cerca nel dizionario degli edge_index una chiave (src, *, dst).
+        Non si fa affidamento sul nome della relazione.
+        """
+        for key in edge_index_dict:
+            if key[0] == src and key[2] == dst:
+                return key
+        return None
 
 
 
@@ -311,6 +351,7 @@ class AtomicRouteModel(torch.nn.Module):
         #     num_layers=num_layers,
         # )
         atomic_routes = extract_atomic_routes(data)
+        print(f"le atomic routes sono le seguenti: {atomic_routes}")
         self.gnn = RelGNNEncoder(
             node_types=data.node_types,
             atomic_routes=atomic_routes,
