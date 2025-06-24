@@ -361,9 +361,17 @@ class AtomicRouteModel(torch.nn.Module):
         self.head = MLP(
             channels,
             out_channels=out_channels,
+            hidden_channels=channels,
             norm=norm,
             num_layers=predictor_n_layers,
         )
+        # self.head = MLP(
+        #     channels=channels,
+        #     out_channels=out_channels,
+        #     hidden_channels=channels,
+        #     norm=norm,
+        #     num_layers=predictor_n_layers,
+        # )
         self.embedding_dict = ModuleDict(
             {
                 node: Embedding(data.num_nodes_dict[node], channels)
