@@ -9,6 +9,9 @@ from relbench.modeling.utils import get_stype_proposal
 from torch.nn import BCEWithLogitsLoss, L1Loss
 import copy
 from relbench.modeling.graph import make_pkey_fkey_graph
+import sys
+import os
+sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
@@ -112,7 +115,7 @@ def run_experiment(
         test_pred = test(model, loader_dict["test"], device=device, task=task)
         test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-        scheduler.step(val_metrics[tune_metric])
+        #scheduler.step(val_metrics[tune_metric])
 
         if val_metrics[tune_metric] < best_val_metric:
             best_val_metric = val_metrics[tune_metric]
@@ -124,7 +127,8 @@ def run_experiment(
         early_stopping(val_metrics[tune_metric], model)
         if early_stopping.early_stop:
             break
-
+    #stampa delle migliori configurazioni:
+    print(f"Run {run_name} | Best Val Metric: {best_val_metric}, Best Test Metric: {best_test_metric}")
     return best_val_metric, best_test_metric
 
 
@@ -137,11 +141,11 @@ grid = {
     "aggr": ["max", "mean"],
     "norm": ["batch_norm", "layer_norm"],
     "prediction_n_layers": [1, 2],
-    "channels": [64, 128],
-    "dropout": [0.0, 0.2, 0.5],
+    "channels": [64, 128, 256],
+    "dropout": [0.0, 0.2],
     "lr": [5e-4, 1e-3], 
-    "batch_size": [256, 512, 1024, 2048],
-    "num_neighbours": [64, 128, 256, 512]
+    "batch_size": [256, 512, 1024],
+    "num_neighbours": [128, 256, 512]
 }
 
 # Genera tutte le combinazioni
