@@ -139,8 +139,8 @@ def run_experiment(
 
 #Griglia di iperparametri
 grid = {
-    "num_layer": [2, 3, 4, 6],
-    "aggr": ["max", "mean"],  
+    "num_layer": [2, 4, 6],
+    "aggr": ["max"],  
     "norm": ["batch_norm"],
     "prediction_n_layers": [2],
     "channels": [128, 256],
