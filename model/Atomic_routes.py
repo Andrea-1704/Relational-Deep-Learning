@@ -354,7 +354,7 @@ class AtomicRouteModel(torch.nn.Module):
         #     num_layers=num_layers,
         # )
         atomic_routes = extract_atomic_routes(data)
-        print(f"le atomic routes sono le seguenti: {atomic_routes}")
+        #print(f"le atomic routes sono le seguenti: {atomic_routes}")
         self.gnn = RelGNNEncoder(
             node_types=data.node_types,
             atomic_routes=atomic_routes,
