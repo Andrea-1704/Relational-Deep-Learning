@@ -108,13 +108,15 @@ def run_experiment(
     for epoch in range(epochs):
         train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
         train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
+        try:
+            val_pred = test(model, loader_dict["val"], device=device, task=task)
+            val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
 
-        val_pred = test(model, loader_dict["val"], device=device, task=task)
-        val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-
-        test_pred = test(model, loader_dict["test"], device=device, task=task)
-        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-
+            test_pred = test(model, loader_dict["test"], device=device, task=task)
+            test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+        except Exception as e:
+            print(f"[Skipped config] Run {run_name} ha generato un errore: {str(e)}")
+            continue
         #scheduler.step(val_metrics[tune_metric])
 
         if val_metrics[tune_metric] < best_val_metric:
@@ -137,7 +139,7 @@ def run_experiment(
 
 #Griglia di iperparametri
 grid = {
-    "num_layer": [2, 3, 4],
+    "num_layer": [2, 3, 4, 6],
     "aggr": ["max", "mean"],  
     "norm": ["batch_norm"],
     "prediction_n_layers": [2],
