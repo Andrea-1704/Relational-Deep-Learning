@@ -1,9 +1,10 @@
 
 #####
-# Training Heterogeneous Graph SAGE with relation level pre training
+# Training the atomic routes model with VGAE pre training
 # to predict the driver position in the F1 dataset.
 # This code is designed to work with the RelBench framework and PyTorch Geometric.
-# It includes data loading, model training, and evaluation.
+# It includes data loading, model training, and evaluation, and uses the 
+# Atomic Route model implementation.
 ####
 
 
@@ -34,8 +35,6 @@ from torch_frame.data.stats import StatType
 
 import sys
 import os
-
-from pre_training.Relation_level_pre_training_task_and_subgraph_level.Relation_level_pretraining_task import pretrain_relation_level_full_rel
 sys.path.append(os.path.abspath("."))
 
 
@@ -53,12 +52,12 @@ from torch.nn import ModuleDict, Linear
 import torch.nn.functional as F
 from torch import nn
 import random
-from model.HGraphSAGE import Model
+#from model.HGraphSAGE import Model
+from model.Atomic_routes import AtomicRouteModel
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-
 
 
 dataset = get_dataset("rel-f1", download=True)
@@ -94,28 +93,24 @@ data, col_stats_dict = make_pkey_fkey_graph(
     cache_dir=None  # disabled
 )
 
-
 # pre training phase with the VGAE
 channels = 128
 
-model = Model(
+model = AtomicRouteModel(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
     aggr="max",
     norm="batch_norm",
+    predictor_n_layers = 2,
+    dropout=0.2,
 ).to(device)
 
-
-d = 128 #embedding dimension
-W_R = torch.nn.Parameter(torch.randn(d, d))
-
-#choose an edge type:
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=1024, 
+    num_neighbours=512, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -123,10 +118,21 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-
 for batch in loader_dict["train"]:
-    target_edge_type=batch.edge_types[0]#prendo solo un edge type
+    edge_types=batch.edge_types
     break
+
+model = train_vgae(
+    model=model,
+    loader_dict=loader_dict,
+    edge_types=edge_types,
+    encoder_out_dim=channels,
+    entity_table=task.entity_table,
+    latent_dim=32,
+    hidden_dim=64,
+    epochs=500,
+    device=device
+)
 
 optimizer = torch.optim.Adam(
     model.parameters(),
@@ -134,22 +140,7 @@ optimizer = torch.optim.Adam(
     weight_decay=0
 )
 
-model, W_R = pretrain_relation_level_full_rel(
-    data=data,
-    model=model,
-    W_R=W_R,
-    target_edge_type=target_edge_type,
-    optimizer=optimizer,
-    device=device,
-    num_epochs=50,
-    num_neg_per_node=5,
-    k=5,
-    lambda_rel2=1.0
-)
-
-
 scheduler = CosineAnnealingLR(optimizer, T_max=100)
-
 
 early_stopping = EarlyStopping(
     patience=30,

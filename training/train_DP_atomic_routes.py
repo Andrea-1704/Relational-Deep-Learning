@@ -1,6 +1,6 @@
 
 #####
-# Training Heterogeneous Graph SAGE with VGAE pre training
+# Training the atomic route model 
 # to predict the driver position in the F1 dataset.
 # This code is designed to work with the RelBench framework and PyTorch Geometric.
 # It includes data loading, model training, and evaluation, and uses the 
