@@ -34,11 +34,10 @@ from torch_frame.data.stats import StatType
 
 import sys
 import os
-
-from pre_training.Relation_level_pre_training_task_and_subgraph_level.Relation_level_pretraining_task import pretrain_relation_level_full_rel
 sys.path.append(os.path.abspath("."))
 
 
+from pre_training.Relation_level_pre_training_task_and_subgraph_level.Relation_level_pretraining_task import pretrain_relation_level_full_rel
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import MLP
 from torch_geometric.typing import NodeType
