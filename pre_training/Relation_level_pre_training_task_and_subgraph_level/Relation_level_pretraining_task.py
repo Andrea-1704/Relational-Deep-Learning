@@ -72,42 +72,57 @@ from relbench.modeling.nn import (
 #connected to 𝑢 under a relation type 𝑅⁻ that is inconsistent with 
 #𝑅. Thus, the triple ⟨𝑢, 𝑅⁻, 𝑤⟩ represents a different semantic 
 #context from ⟨𝑢, 𝑅, 𝑣⟩.
-def sample_unrelated_node_negatives(
-    data: HeteroData,
-    edge_type: Tuple[str, str, str],
-    k: int = 5,
-    num_negatives: int = 5
-) -> List[Tuple[int, int]]:
-    src_type, rel_type, dst_type = edge_type
-    edge_index = data[edge_type].edge_index
-    src_nodes = edge_index[0]
-    dst_nodes = edge_index[1]
 
-    from collections import defaultdict
+#pratically we are going to take a positive relation, such as 
+#(p1, PA, a1) which means that paper p1 has been written by author a1.
+#this relation really exists in the graph. Then, we take a relation that
+#really exists in the graph and that has the same source node p1, but 
+#is another kind of relation: imagine something like (p1, PC, c4), which 
+#means that p1 has been presented in the conference c4. This relation 
+#still really exists in the graph, but is negative with respect to the 
+#first one.
+
+#we aim with this pre training that the model could understand to 
+#distinguish an embedding space that takes into account the different
+#semantic kind of relations.
+
+
+def get_negative_samples_from_inconsistent_relations(
+    data: HeteroData,
+    target_edge_type: Tuple[str, str, str],#src, type of relation, dst
+    max_negatives_per_node: int = 5 #maximum number of negative samples we want
+) -> List[Tuple[int, Tuple[str, str, str], int]]:
+    src_type, _, _ = target_edge_type
     negatives = []
 
-    # Precostruisci mappa delle connessioni dirette
-    connected = defaultdict(set)
-    for u, v in zip(src_nodes.tolist(), dst_nodes.tolist()):
-        connected[u].add(v)
+    #positive extraction:
+    edge_index_pos = data[target_edge_type].edge_index
+    u_nodes = edge_index_pos[0].tolist()
+    #all node index of type u connected through the relation "target_edge_type"
 
-    for u in src_nodes.unique().tolist():
-        # Trova subgrafo k-hop da u (considerando tutto il grafo)
-        sub_nodes, _, _, _ = k_hop_subgraph(
-            node_idx=u,
-            num_hops=k,
-            edge_index=data.to_homogeneous().edge_index,
-            relabel_nodes=False,
-        )
+    #negatives extraction:
+    for u in set(u_nodes):#iterate over all u (index) edges (paper edges for ex)
+        neg_for_u = []
 
-        # Filtra per tipo di nodo (solo quelli del tipo di destinazione)
-        dst_mask = data[dst_type].node_mask if hasattr(data[dst_type], "node_mask") else \
-                   torch.ones(data[dst_type].num_nodes, dtype=torch.bool)
-        candidate_v = [v for v in sub_nodes.tolist()
-                       if v in data[dst_type].node_ids.tolist() and v not in connected[u]]
+        for etype in data.edge_types:
+            if etype == target_edge_type:
+                continue#only consider different relation type as negatives
+            
+            if etype[0] != src_type:
+                continue#only consider edges where the source node u is the same
 
-        # Campiona negativi
-        v_neg = random.sample(candidate_v, min(num_negatives, len(candidate_v)))
-        negatives += [(u, v) for v in v_neg]
+            edge_index = data[etype].edge_index
+            #take all the edges of type etype
+            mask = edge_index[0] == u
+            #take only the edges where source node is the same as u (the one 
+            #of the positive edge)
+            w_candidates = edge_index[1][mask].tolist()
+
+            #limit number of negatives per node
+            sampled_ws = random.sample(w_candidates, min(len(w_candidates), max_negatives_per_node))
+            neg_for_u += [(u, etype, w) for w in sampled_ws]
+
+        negatives += neg_for_u
+        #do this for (eventually) many different relations
 
     return negatives
