@@ -34,6 +34,8 @@ from torch_frame.data.stats import StatType
 
 import sys
 import os
+
+from pre_training.Relation_level_pre_training_task_and_subgraph_level.Relation_level_pretraining_task import pretrain_relation_level_full_rel
 sys.path.append(os.path.abspath("."))
 
 
@@ -107,51 +109,10 @@ model = Model(
 ).to(device)
 
 
+d = 128 #embedding dimension
+W_R = torch.nn.Parameter(torch.randn(d, d))
 
-loader_dict = loader_dict_fn(
-    batch_size=128, 
-    num_neighbours=64, 
-    data=data, 
-    task=task,
-    train_table=train_table, 
-    val_table=val_table, 
-    test_table=test_table
-)
-
-for batch in loader_dict["train"]:
-    edge_types=batch.edge_types
-    break
-
-
-model = train_vgae(
-    model=model,
-    loader_dict=loader_dict,
-    edge_types=edge_types,
-    encoder_out_dim=channels,
-    entity_table=task.entity_table,
-    latent_dim=32,
-    hidden_dim=64,
-    epochs=500,
-    device=device
-)
-
-
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=0.0005,
-    weight_decay=0
-)
-
-scheduler = CosineAnnealingLR(optimizer, T_max=100)
-
-
-early_stopping = EarlyStopping(
-    patience=30,
-    delta=0.0,
-    verbose=True,
-    path="best_basic_model.pt"
-)
-
+#choose an edge type:
 loader_dict = loader_dict_fn(
     batch_size=512, 
     num_neighbours=256, 
@@ -163,7 +124,39 @@ loader_dict = loader_dict_fn(
 )
 
 
+for batch in loader_dict["train"]:
+    target_edge_type=batch.edge_types
+    break
 
+optimizer = torch.optim.Adam(
+    model.parameters(),
+    lr=0.0005,
+    weight_decay=0
+)
+
+model, W_R = pretrain_relation_level_full_rel(
+    data=data,
+    model=model,
+    W_R=W_R,
+    target_edge_type=target_edge_type,
+    optimizer=optimizer,
+    device=device,
+    num_epochs=50,
+    num_neg_per_node=5,
+    k=5,
+    lambda_rel2=1.0
+)
+
+
+scheduler = CosineAnnealingLR(optimizer, T_max=100)
+
+
+early_stopping = EarlyStopping(
+    patience=30,
+    delta=0.0,
+    verbose=True,
+    path="best_basic_model.pt"
+)
 
 # Training loop
 epochs = 100
