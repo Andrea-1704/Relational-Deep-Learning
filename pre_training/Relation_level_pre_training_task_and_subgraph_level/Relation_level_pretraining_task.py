@@ -63,6 +63,7 @@ from relbench.modeling.nn import (
     HeteroGraphSAGE,
     HeteroTemporalEncoder,
 )
+from torch_geometric.utils import k_hop_subgraph #useful function to remember
 
 
 
@@ -124,5 +125,80 @@ def get_negative_samples_from_inconsistent_relations(
 
         negatives += neg_for_u
         #do this for (eventually) many different relations
+
+    return negatives
+
+
+
+
+
+
+
+
+
+###Part2: get_negative_samples_from_unrelated_nodes
+#Idea:
+#We take a source edge (u, R, w) and we consider nodes 'wi' that are of the 
+#same node type as the one of 'w', but that are not connected to u.
+#to do so, we can simply consider nodes that are not in the graph, or we can 
+#randomly sample nodes that are not connected to u. 
+#Nevertheless, these approaches would be pretty easy for the model to be 
+#solved. 
+
+#The idea we tried to implement is instead to sample negative nodes that are
+#not directly connected to u, but that are k-hops away from u and that are
+#of the same type of w. In this way
+#the two nodes are still pretty correleted, but the model should be able 
+#to detect that they are negatives anyway.
+
+
+def get_negative_samples_from_unrelated_nodes(
+    data: HeteroData,
+    target_edge_type: Tuple[str, str, str],
+    k: int = 5,
+    num_negatives_per_node: int = 5
+) -> List[Tuple[int, Tuple[str, str, str], int]]:
+    src_type, rel_type, dst_type = target_edge_type
+    edge_index = data[target_edge_type].edge_index
+
+    u_nodes = edge_index[0].tolist()
+    v_nodes = edge_index[1].tolist()
+
+    positives = set(zip(u_nodes, v_nodes))
+    negatives = []
+
+    #convert to homogeneous graph in order to apply the k_hop_subgraph
+    homo_data = data.to_homogeneous()
+    edge_index_homo = homo_data.edge_index
+    type_vec = homo_data.node_type  # tensor of shape [N], holds type ids
+
+    # get node type → type index
+    node_type_map = {t: i for i, t in enumerate(data.node_types)}
+    dst_type_id = node_type_map[dst_type]
+
+    for u in set(u_nodes):
+        # Step 1: map u from type-specific index to global ID
+        u_homo_id = data[src_type].node_id_to_global[u]
+
+        # Step 2: k-hop neighborhood
+        sub_nodes, _, _, _ = k_hop_subgraph(
+            node_idx=u_homo_id,
+            num_hops=k,
+            edge_index=edge_index_homo,
+            relabel_nodes=False,
+        )
+
+        # Step 3: filter only nodes of dst_type (e.g., authors)
+        v_minus = [nid.item() for nid in sub_nodes
+                   if type_vec[nid] == dst_type_id]
+
+        # Step 4: map back to dst_type local indices
+        local_v_minus = [data[dst_type].global_to_node_id[v]
+                         for v in v_minus
+                         if (u, v) not in positives]
+
+        # Step 5: sample
+        sampled = random.sample(local_v_minus, min(len(local_v_minus), num_negatives_per_node))
+        negatives += [(u, target_edge_type, v) for v in sampled]
 
     return negatives
