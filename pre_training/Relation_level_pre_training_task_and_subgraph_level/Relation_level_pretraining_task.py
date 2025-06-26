@@ -73,8 +73,7 @@ from torch_geometric.utils import k_hop_subgraph #useful function to remember
 #connected to 𝑢 under a relation type 𝑅⁻ that is inconsistent with 
 #𝑅. Thus, the triple ⟨𝑢, 𝑅⁻, 𝑤⟩ represents a different semantic 
 #context from ⟨𝑢, 𝑅, 𝑣⟩.
-
-#pratically we are going to take a positive relation, such as 
+#Pratically we are going to take a positive relation, such as 
 #(p1, PA, a1) which means that paper p1 has been written by author a1.
 #this relation really exists in the graph. Then, we take a relation that
 #really exists in the graph and that has the same source node p1, but 
@@ -82,10 +81,10 @@ from torch_geometric.utils import k_hop_subgraph #useful function to remember
 #means that p1 has been presented in the conference c4. This relation 
 #still really exists in the graph, but is negative with respect to the 
 #first one.
-
-#we aim with this pre training that the model could understand to 
+#We aim with this pre training that the model could understand to 
 #distinguish an embedding space that takes into account the different
 #semantic kind of relations.
+###
 
 
 def get_negative_samples_from_inconsistent_relations(
@@ -144,13 +143,12 @@ def get_negative_samples_from_inconsistent_relations(
 #randomly sample nodes that are not connected to u. 
 #Nevertheless, these approaches would be pretty easy for the model to be 
 #solved. 
-
 #The idea we tried to implement is instead to sample negative nodes that are
 #not directly connected to u, but that are k-hops away from u and that are
 #of the same type of w. In this way
 #the two nodes are still pretty correleted, but the model should be able 
 #to detect that they are negatives anyway.
-
+###
 
 def get_negative_samples_from_unrelated_nodes(
     data: HeteroData,
@@ -203,3 +201,58 @@ def get_negative_samples_from_unrelated_nodes(
         negatives += [(u, target_edge_type, v) for v in sampled]
 
     return negatives
+
+
+
+###Part 3 (not strictly needed)
+#Just to see how Relation level pretraining performs alone, we
+#can decide to implement a function that only uses it 
+#(without considering subgraph pre training level task).
+###
+
+def pretrain_relation_level(
+    data: HeteroData,
+    model: torch.nn.Module,
+    target_edge_type: Tuple[str, str, str],
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    num_epochs: int = 100,
+    lambda_rel2: float = 1.0,
+    k: int = 5,
+    num_neg: int = 5
+):
+    model = model.to(device)
+    data = data.to(device)
+
+    for epoch in range(num_epochs):
+        model.train()
+        optimizer.zero_grad()
+
+        
+        h_dict = model(data.x_dict, data.edge_index_dict)
+
+        #positives
+        pos_edge_index = data[target_edge_type].edge_index
+        u_pos = pos_edge_index[0]
+        v_pos = pos_edge_index[1]
+
+        #first type of negatives
+        neg_1 = get_negative_samples_from_inconsistent_relations(data, target_edge_type, max_negatives_per_node=num_neg)
+
+        #Second type of negatives
+        neg_2 = get_negative_samples_from_unrelated_nodes(data, target_edge_type, k=k, num_negatives_per_node=num_neg)
+
+        #loss between positives and negatives1
+        loss_1 = relation_contrastive_loss(h_dict, target_edge_type, u_pos, v_pos, neg_1)
+
+        #loss between positives and negatives2
+        loss_2 = relation_contrastive_loss(h_dict, target_edge_type, u_pos, v_pos, neg_2)
+
+        #Summing the two contributiton for the final loss
+        loss = loss_1 + lambda_rel2 * loss_2
+        loss.backward()
+        optimizer.step()
+
+        print(f"[Epoch {epoch}] loss: {loss.item():.4f}")
+
+    return model
