@@ -17,7 +17,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.EarlyStopping import EarlyStopping
 from model.Atomic_routes import AtomicRouteModel
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from VGAE.Utils_VGAE import train_vgae
+from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from torch.optim.lr_scheduler import CosineAnnealingLR
