@@ -139,15 +139,15 @@ def run_experiment(
 
 #Griglia di iperparametri
 grid = {
-    "num_layer": [2, 4, 6],
+    "num_layer": [3, 4],
     "aggr": ["max"],  
     "norm": ["batch_norm"],
     "prediction_n_layers": [2],
     "channels": [128, 256],
     "dropout": [0.0, 0.2],
     "lr": [5e-4, 1e-3, 1e-1], 
-    "batch_size": [512, 1024],
-    "num_neighbours": [256, 512]
+    "batch_size": [1024],
+    "num_neighbours": [512]
 }
 
 # Genera tutte le combinazioni
