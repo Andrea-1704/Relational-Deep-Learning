@@ -210,49 +210,158 @@ def get_negative_samples_from_unrelated_nodes(
 #(without considering subgraph pre training level task).
 ###
 
-def pretrain_relation_level(
+#loss function 1:
+
+def relation_contrastive_loss_rel1(
+    h_dict: Dict[str, torch.Tensor],
+    W_R: torch.nn.Parameter,
+    target_edge_type: Tuple[str, str, str],
+    pos_edges: List[Tuple[int, int]],
+    neg_dict: Dict[int, List[int]],
+    temperature: float = 0.07
+) -> torch.Tensor:
+    """
+    Compute L_rel1 using positive triples and inconsistent negative samples.
+    
+    Args:
+        h_dict: Dict mapping node types to their embeddings
+        W_R: learnable relation matrix (d x d)
+        target_edge_type: (src_type, rel, dst_type)
+        pos_edges: List of (u, v) positive edges for relation R
+        neg_dict: Dict mapping u → list of w (negatives from inconsistent relations)
+        temperature: scaling factor (default: 0.07)
+    """
+    src_type, _, dst_type = target_edge_type
+    h_src = h_dict[src_type]
+    h_dst = h_dict[dst_type]
+
+    total_loss = 0.0
+    N = len(pos_edges)
+
+    for u, v in pos_edges:
+        h_u = h_src[u]  # (d,)
+        h_v = h_dst[v]  # (d,)
+        
+        # Apply relational projection
+        h_v_proj = torch.matmul(W_R, h_v)
+        sim_pos = torch.exp(torch.dot(h_u, h_v_proj) / temperature)
+
+        
+        neg_ws = neg_dict.get(u, [])
+        sim_negs = []
+        for w in neg_ws:
+            h_w = h_dst[w]
+            h_w_proj = torch.matmul(W_R, h_w)
+            sim_neg = torch.exp(torch.dot(h_u, h_w_proj) / temperature)
+            sim_negs.append(sim_neg)
+
+        # Loss log-softmax
+        if sim_negs:
+            denom = sim_pos + torch.stack(sim_negs).sum()
+            loss = -torch.log(sim_pos / denom)
+            total_loss += loss
+
+    return total_loss / max(N, 1)
+
+
+#Loss function 2:
+def relation_contrastive_loss_rel2(
+    h_dict: Dict[str, torch.Tensor],
+    target_edge_type: Tuple[str, str, str],
+    pos_edges: List[Tuple[int, int]],
+    neg_dict: Dict[int, List[int]],
+    temperature: float = 0.07
+) -> torch.Tensor:
+    src_type, _, dst_type = target_edge_type
+    h_src = h_dict[src_type]
+    h_dst = h_dict[dst_type]
+
+    total_loss = 0.0
+    N = len(pos_edges)
+
+    for u, v in pos_edges:
+        h_u = h_src[u]  # (d,)
+        h_v = h_dst[v]  # (d,)
+
+        sim_pos = torch.exp(torch.dot(h_u, h_v) / temperature)
+
+        #negatives from not connected nodes (but <= k hops away)
+        neg_vs = neg_dict.get(u, [])
+        sim_negs = []
+        for v_minus in neg_vs:
+            h_vm = h_dst[v_minus]
+            sim_neg = torch.exp(torch.dot(h_u, h_vm) / temperature)
+            sim_negs.append(sim_neg)
+
+        if sim_negs:
+            denom = sim_pos + torch.stack(sim_negs).sum()
+            loss = -torch.log(sim_pos / denom)
+            total_loss += loss
+
+    return total_loss / max(N, 1)
+
+
+
+def pretrain_relation_level_full_rel(
     data: HeteroData,
     model: torch.nn.Module,
+    W_R: torch.nn.Parameter,
     target_edge_type: Tuple[str, str, str],
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     num_epochs: int = 100,
-    lambda_rel2: float = 1.0,
+    num_neg_per_node: int = 5,
     k: int = 5,
-    num_neg: int = 5
+    lambda_rel2: float = 1.0
 ):
     model = model.to(device)
+    W_R = W_R.to(device)
     data = data.to(device)
 
     for epoch in range(num_epochs):
         model.train()
         optimizer.zero_grad()
 
-        
+        #forward pass
         h_dict = model(data.x_dict, data.edge_index_dict)
 
         #positives
-        pos_edge_index = data[target_edge_type].edge_index
-        u_pos = pos_edge_index[0]
-        v_pos = pos_edge_index[1]
+        edge_index = data[target_edge_type].edge_index
+        u_pos = edge_index[0].tolist()
+        v_pos = edge_index[1].tolist()
+        pos_edges = list(zip(u_pos, v_pos))
 
-        #first type of negatives
-        neg_1 = get_negative_samples_from_inconsistent_relations(data, target_edge_type, max_negatives_per_node=num_neg)
+        #first kind of negatives
+        neg_dict_1 = get_negative_samples_from_inconsistent_relations(
+            data, target_edge_type, max_negatives_per_node=num_neg_per_node
+        )
 
-        #Second type of negatives
-        neg_2 = get_negative_samples_from_unrelated_nodes(data, target_edge_type, k=k, num_negatives_per_node=num_neg)
+        #second kind of negatives
+        neg_dict_2 = get_negative_samples_from_unrelated_nodes(
+            data, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
+        )
 
-        #loss between positives and negatives1
-        loss_1 = relation_contrastive_loss(h_dict, target_edge_type, u_pos, v_pos, neg_1)
+        #compute the two loss components
+        loss_rel1 = relation_contrastive_loss_rel1(
+            h_dict=h_dict,
+            W_R=W_R,
+            target_edge_type=target_edge_type,
+            pos_edges=pos_edges,
+            neg_dict=neg_dict_1
+        )
 
-        #loss between positives and negatives2
-        loss_2 = relation_contrastive_loss(h_dict, target_edge_type, u_pos, v_pos, neg_2)
+        loss_rel2 = relation_contrastive_loss_rel2(
+            h_dict=h_dict,
+            target_edge_type=target_edge_type,
+            pos_edges=pos_edges,
+            neg_dict=neg_dict_2
+        )
 
-        #Summing the two contributiton for the final loss
-        loss = loss_1 + lambda_rel2 * loss_2
+        #add the two loss contribution to obtain the final one
+        loss = loss_rel1 + lambda_rel2 * loss_rel2
         loss.backward()
         optimizer.step()
 
-        print(f"[Epoch {epoch}] loss: {loss.item():.4f}")
+        print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | L_rel2: {loss_rel2.item():.4f} | Total: {loss.item():.4f}")
 
-    return model
+    return model, W_R
