@@ -40,8 +40,8 @@ import numpy as np
 import copy
 import pandas as pd
 from utils.EarlyStopping import EarlyStopping
-from VGAE.Encoder import VGAEWrapper
-from VGAE.Decoder import MLPDecoder
+from pre_training.VGAE.Encoder import VGAEWrapper
+from pre_training.VGAE.Decoder import MLPDecoder
 from torch_geometric.data import HeteroData
 from typing import Tuple
 
