@@ -168,13 +168,14 @@ def get_negative_samples_from_unrelated_nodes(
     negatives = []
 
     #convert to homogeneous graph in order to apply the k_hop_subgraph
-    homo_data = data.to_homogeneous()
-    edge_index_homo = homo_data.edge_index
-    type_vec = homo_data.node_type  # tensor of shape [N], holds type ids
+    homo_data = data.to_homogeneous()#this function does not change "data"
+    edge_index_homo = homo_data.edge_index#all edges in homoGraph
+    type_vec = homo_data.node_type#[N], all types of nodes.
 
-    # get node type → type index
+
     node_type_map = {t: i for i, t in enumerate(data.node_types)}
-    dst_type_id = node_type_map[dst_type]
+    #numericID:type of node (for ex driver:0, races:1 etc)
+    dst_type_id = node_type_map[dst_type]#id of the dst node (0 for ex, if dst_type==driver)
 
     for u in set(u_nodes):
         # Step 1: map u from type-specific index to global ID
