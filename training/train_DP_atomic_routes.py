@@ -101,11 +101,13 @@ channels = 128
 model = AtomicRouteModel(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
     aggr="max",
     norm="batch_norm",
+    predictor_n_layers = 2,
+    dropout=0.2,
 ).to(device)
 
 
@@ -128,8 +130,8 @@ early_stopping = EarlyStopping(
 )
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=1024, 
+    num_neighbours=512, 
     data=data, 
     task=task,
     train_table=train_table, 
