@@ -253,6 +253,48 @@ def relation_contrastive_loss_rel1(
 
     return total_loss / max(N, 1)
 
+import torch
+import torch.nn.functional as F
+from typing import List, Tuple, Dict
+
+def safe_relation_contrastive_loss_rel1(
+    h_src: torch.Tensor,  # (N_src, d)
+    h_dst: torch.Tensor,  # (N_dst, d)
+    W_R: torch.nn.Parameter,
+    pos_edges: List[Tuple[int, int]],
+    neg_dict: Dict[int, List[int]],
+    temperature: float = 0.07
+) -> torch.Tensor:
+    """
+    Safer version of relation-level contrastive loss (rel1) that ensures autograd path.
+    """
+    device = h_src.device
+    total_loss = torch.tensor(0.0, device=device)
+
+    for u, v in pos_edges:
+        h_u = h_src[u].unsqueeze(0)           # (1, d)
+        h_v = h_dst[v].unsqueeze(0)           # (1, d)
+        h_v_proj = F.linear(h_v, W_R)         # (1, d)
+
+        sim_pos = torch.matmul(h_u, h_v_proj.T) / temperature  # (1, 1)
+
+        neg_ws = neg_dict.get(u, [])
+        if not neg_ws:
+            continue
+
+        h_w = h_dst[neg_ws]                   # (n_neg, d)
+        h_w_proj = F.linear(h_w, W_R)         # (n_neg, d)
+        sim_negs = torch.matmul(h_u, h_w_proj.T) / temperature  # (1, n_neg)
+
+        logits = torch.cat([sim_pos, sim_negs], dim=1)          # (1, 1+n_neg)
+        labels = torch.zeros(1, dtype=torch.long, device=device)
+
+        loss = F.cross_entropy(logits, labels)
+        total_loss += loss
+
+    return total_loss / max(1, len(pos_edges))
+
+
 
 
 #Loss function 2:
@@ -311,6 +353,7 @@ def pretrain_relation_level_full_rel(
 ):
     model = model.to(device)
     W_R = W_R.to(device)
+    src_type, _, dst_type = target_edge_type
     #data = data.to(device)
 
     for epoch in range(num_epochs):
@@ -350,10 +393,17 @@ def pretrain_relation_level_full_rel(
             )
 
             #compute the two loss components
-            loss_rel1 = relation_contrastive_loss_rel1(
-                h_dict=h_dict,
+            # loss_rel1 = relation_contrastive_loss_rel1(
+            #     h_dict=h_dict,
+            #     W_R=W_R,
+            #     target_edge_type=target_edge_type,
+            #     pos_edges=pos_edges,
+            #     neg_dict=neg_dict_1
+            # )
+            loss_rel1 = safe_relation_contrastive_loss_rel1(
+                h_src=h_dict[src_type],
+                h_dst=h_dict[dst_type],
                 W_R=W_R,
-                target_edge_type=target_edge_type,
                 pos_edges=pos_edges,
                 neg_dict=neg_dict_1
             )
