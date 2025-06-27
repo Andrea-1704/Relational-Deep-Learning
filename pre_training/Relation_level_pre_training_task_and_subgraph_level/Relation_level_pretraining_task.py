@@ -220,50 +220,39 @@ def relation_contrastive_loss_rel1(
     neg_dict: Dict[int, List[int]],
     temperature: float = 0.07
 ) -> torch.Tensor:
-    """
-    Compute L_rel1 using positive triples and inconsistent negative samples.
-    
-    Args:
-        h_dict: Dict mapping node types to their embeddings
-        W_R: learnable relation matrix (d x d)
-        target_edge_type: (src_type, rel, dst_type)
-        pos_edges: List of (u, v) positive edges for relation R
-        neg_dict: Dict mapping u → list of w (negatives from inconsistent relations)
-        temperature: scaling factor (default: 0.07)
-    """
     src_type, _, dst_type = target_edge_type
     h_src = h_dict[src_type]
     h_dst = h_dict[dst_type]
 
-    #total_loss = 0.0
-    total_loss = torch.tensor(0.0, device=h_src.device)
-
+    device = h_src.device
+    total_loss = torch.tensor(0.0, device=device)
     N = len(pos_edges)
 
     for u, v in pos_edges:
-        h_u = h_src[u]  # (d,)
-        h_v = h_dst[v]  # (d,)
-        
-        # Apply relational projection
-        h_v_proj = torch.matmul(W_R, h_v)
-        sim_pos = torch.exp(torch.dot(h_u, h_v_proj) / temperature)
+        h_u = h_src[u].unsqueeze(0)                      # (1, d)
+        h_v = torch.matmul(W_R, h_dst[v])                # (d,)
+        h_v = h_v.unsqueeze(0)                           # (1, d)
 
-        
+        # Positivo score
+        sim_pos = (h_u @ h_v.T) / temperature            # (1, 1)
+
+        # Negativi
         neg_ws = neg_dict.get(u, [])
-        sim_negs = []
-        for w in neg_ws:
-            h_w = h_dst[w]
-            h_w_proj = torch.matmul(W_R, h_w)
-            sim_neg = torch.exp(torch.dot(h_u, h_w_proj) / temperature)
-            sim_negs.append(sim_neg)
+        if not neg_ws:
+            continue  # Skip if no negatives
 
-        # Loss log-softmax
-        if sim_negs:
-            denom = sim_pos + torch.stack(sim_negs).sum()
-            loss = -torch.log(sim_pos / denom)
-            total_loss += loss
+        h_w = torch.stack([h_dst[w] for w in neg_ws])    # (n_neg, d)
+        h_w = torch.matmul(h_w, W_R.T)                   # (n_neg, d)
+        sim_neg = (h_u @ h_w.T) / temperature            # (1, n_neg)
+
+        logits = torch.cat([sim_pos, sim_neg], dim=1)    # (1, 1 + n_neg)
+        labels = torch.zeros(1, dtype=torch.long, device=device)
+
+        loss = F.cross_entropy(logits, labels)
+        total_loss += loss
 
     return total_loss / max(N, 1)
+
 
 
 #Loss function 2:
