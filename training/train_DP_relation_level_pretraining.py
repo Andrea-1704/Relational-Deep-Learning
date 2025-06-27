@@ -139,6 +139,7 @@ model, W_R = pretrain_relation_level_full_rel(
     W_R=W_R,
     target_edge_type=target_edge_type,
     optimizer=optimizer,
+    task=task,
     device=device,
     num_epochs=50,
     num_neg_per_node=5,

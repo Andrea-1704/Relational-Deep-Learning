@@ -5,7 +5,7 @@
 #1. get_negative_samples_from_inconsistent_relations
 #2. get_negative_samples_from_unrelated_nodes
 ####
-# Standard libraries
+
 
 
 import math
@@ -309,6 +309,7 @@ def pretrain_relation_level_full_rel(
     target_edge_type: Tuple[str, str, str],
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    task,
     num_epochs: int = 100,
     num_neg_per_node: int = 5,
     k: int = 5,
@@ -323,7 +324,11 @@ def pretrain_relation_level_full_rel(
         optimizer.zero_grad()
 
         #forward pass
-        h_dict = model(data.x_dict, data.edge_index_dict)
+        #h_dict = model(data.x_dict, data.edge_index_dict)
+        h_dict = model(
+            data,
+            task.entity_table,
+        )
 
         #positives
         edge_index = data[target_edge_type].edge_index
