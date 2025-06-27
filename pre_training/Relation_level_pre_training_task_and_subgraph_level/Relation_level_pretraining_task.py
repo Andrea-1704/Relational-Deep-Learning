@@ -253,46 +253,6 @@ def relation_contrastive_loss_rel1(
 
     return total_loss / max(N, 1)
 
-import torch
-import torch.nn.functional as F
-from typing import List, Tuple, Dict
-
-def safe_relation_contrastive_loss_rel1(
-    h_src: torch.Tensor,  # (N_src, d)
-    h_dst: torch.Tensor,  # (N_dst, d)
-    W_R: torch.nn.Parameter,
-    pos_edges: List[Tuple[int, int]],
-    neg_dict: Dict[int, List[int]],
-    temperature: float = 0.07
-) -> torch.Tensor:
-    """
-    Safer version of relation-level contrastive loss (rel1) that ensures autograd path.
-    """
-    device = h_src.device
-    total_loss = torch.tensor(0.0, device=device)
-
-    for u, v in pos_edges:
-        h_u = h_src[u].unsqueeze(0)           # (1, d)
-        h_v = h_dst[v].unsqueeze(0)           # (1, d)
-        h_v_proj = F.linear(h_v, W_R)         # (1, d)
-
-        sim_pos = torch.matmul(h_u, h_v_proj.T) / temperature  # (1, 1)
-
-        neg_ws = neg_dict.get(u, [])
-        if not neg_ws:
-            continue
-
-        h_w = h_dst[neg_ws]                   # (n_neg, d)
-        h_w_proj = F.linear(h_w, W_R)         # (n_neg, d)
-        sim_negs = torch.matmul(h_u, h_w_proj.T) / temperature  # (1, n_neg)
-
-        logits = torch.cat([sim_pos, sim_negs], dim=1)          # (1, 1+n_neg)
-        labels = torch.zeros(1, dtype=torch.long, device=device)
-
-        loss = F.cross_entropy(logits, labels)
-        total_loss += loss
-        assert loss.requires_grad
-    return total_loss / max(1, len(pos_edges))
 
 
 
@@ -370,20 +330,18 @@ def pretrain_relation_level_full_rel(
                 task.entity_table,
             )
 
-            #print(f"questo è h_dict: {h_dict}")
-
             #positives
             edge_index = batch[target_edge_type].edge_index
             u_pos = edge_index[0].tolist()
             v_pos = edge_index[1].tolist()
             pos_edges = list(zip(u_pos, v_pos))
-            print(f"pos edges shape: {len(pos_edges)}")
+            print(f"pos edges shape: {len(pos_edges)}")#-> 0 to be fixed
 
             #first kind of negatives
             neg_dict_1 = get_negative_samples_from_inconsistent_relations(
                 batch, target_edge_type, max_negatives_per_node=num_neg_per_node
             )
-            print(f"neg edges shape: {len(neg_dict_1)}")
+            print(f"neg edges shape: {len(neg_dict_1)}")#0-> to be fixed
 
             #second kind of negatives
             neg_dict_2 = get_negative_samples_from_unrelated_nodes(
@@ -391,30 +349,23 @@ def pretrain_relation_level_full_rel(
             )
 
             #compute the two loss components
-            # loss_rel1 = relation_contrastive_loss_rel1(
-            #     h_dict=h_dict,
-            #     W_R=W_R,
-            #     target_edge_type=target_edge_type,
-            #     pos_edges=pos_edges,
-            #     neg_dict=neg_dict_1
-            # )
-            loss_rel1 = safe_relation_contrastive_loss_rel1(
-                h_src=h_dict[src_type],
-                h_dst=h_dict[dst_type],
+            loss_rel1 = relation_contrastive_loss_rel1(
+                h_dict=h_dict,
                 W_R=W_R,
+                target_edge_type=target_edge_type,
                 pos_edges=pos_edges,
                 neg_dict=neg_dict_1
             )
 
-            # loss_rel2 = relation_contrastive_loss_rel2(
-            #     h_dict=h_dict,
-            #     target_edge_type=target_edge_type,
-            #     pos_edges=pos_edges,
-            #     neg_dict=neg_dict_2
-            # )
+            loss_rel2 = relation_contrastive_loss_rel2(
+                h_dict=h_dict,
+                target_edge_type=target_edge_type,
+                pos_edges=pos_edges,
+                neg_dict=neg_dict_2
+            )
 
             #add the two loss contribution to obtain the final one
-            loss = loss_rel1 #+ lambda_rel2 * loss_rel2
+            loss = loss_rel1 + lambda_rel2 * loss_rel2
             loss.backward()
             optimizer.step()
 
