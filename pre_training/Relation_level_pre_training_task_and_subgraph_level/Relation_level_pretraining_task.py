@@ -334,19 +334,19 @@ def pretrain_relation_level_full_rel(
             )
 
             #positives
-            edge_index = data[target_edge_type].edge_index
+            edge_index = batch[target_edge_type].edge_index
             u_pos = edge_index[0].tolist()
             v_pos = edge_index[1].tolist()
             pos_edges = list(zip(u_pos, v_pos))
 
             #first kind of negatives
             neg_dict_1 = get_negative_samples_from_inconsistent_relations(
-                data, target_edge_type, max_negatives_per_node=num_neg_per_node
+                batch, target_edge_type, max_negatives_per_node=num_neg_per_node
             )
 
             #second kind of negatives
             neg_dict_2 = get_negative_samples_from_unrelated_nodes(
-                data, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
+                batch, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
             )
 
             #compute the two loss components
