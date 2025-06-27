@@ -97,7 +97,8 @@ def get_negative_samples_from_inconsistent_relations(
 
     #positive extraction:
     edge_index_pos = data[target_edge_type].edge_index
-    u_nodes = edge_index_pos[0].tolist()
+    u_nodes = edge_index_pos[0].tolist()#this one is working!
+    
     #all node index of type u connected through the relation "target_edge_type"
 
     #negatives extraction:
@@ -105,12 +106,16 @@ def get_negative_samples_from_inconsistent_relations(
         neg_for_u = []
 
         for etype in data.edge_types:
+            #exclude empty edge types:
+            if len(data[etype].edge_index[0])==0:
+              continue
+
             if etype == target_edge_type:
                 continue#only consider different relation type as negatives
-            
+                
             if etype[0] != src_type:
                 continue#only consider edges where the source node u is the same
-
+ 
             edge_index = data[etype].edge_index
             #take all the edges of type etype
             mask = edge_index[0] == u
@@ -255,8 +260,6 @@ def relation_contrastive_loss_rel1(
 
 
 
-
-
 #Loss function 2:
 def relation_contrastive_loss_rel2(
     h_dict: Dict[str, torch.Tensor],
@@ -298,7 +301,6 @@ def relation_contrastive_loss_rel2(
 
 
 def pretrain_relation_level_full_rel(
-    #data: HeteroData,
     loader_dict,
     model: torch.nn.Module,
     W_R: torch.nn.Parameter,
@@ -314,7 +316,6 @@ def pretrain_relation_level_full_rel(
     model = model.to(device)
     W_R = W_R.to(device)
     src_type, _, dst_type = target_edge_type
-    #data = data.to(device)
 
     for epoch in range(num_epochs):
         for batch in tqdm(loader_dict["train"]):
@@ -323,7 +324,6 @@ def pretrain_relation_level_full_rel(
             optimizer.zero_grad()
 
             #forward pass
-            #h_dict = model(data.x_dict, data.edge_index_dict)
             h_dict = model.encode_node_types(
                 batch,
                 batch.node_types,
@@ -332,21 +332,26 @@ def pretrain_relation_level_full_rel(
 
             #positives
             edge_index = batch[target_edge_type].edge_index
+            print(f"la dimensione di edge_index è {edge_index.shape}")
             u_pos = edge_index[0].tolist()
             v_pos = edge_index[1].tolist()
             pos_edges = list(zip(u_pos, v_pos))
-            print(f"pos edges shape: {len(pos_edges)}")#-> 0 to be fixed
+            print(f"pos edges shape: {len(pos_edges)}")
 
             #first kind of negatives
-            neg_dict_1 = get_negative_samples_from_inconsistent_relations(
+            neg_dic_1 = get_negative_samples_from_inconsistent_relations(
                 batch, target_edge_type, max_negatives_per_node=num_neg_per_node
             )
-            print(f"neg edges shape: {len(neg_dict_1)}")#0-> to be fixed
+
+            neg_dict_1 = {}
+            for u, _, w in neg_dic_1:
+                neg_dict_1.setdefault(u, []).append(w)
+            print(f"neg edges shape: {len(neg_dict_1)}")
 
             #second kind of negatives
-            neg_dict_2 = get_negative_samples_from_unrelated_nodes(
-                batch, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
-            )
+            # neg_dict_2 = get_negative_samples_from_unrelated_nodes(
+            #     batch, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
+            # )
 
             #compute the two loss components
             loss_rel1 = relation_contrastive_loss_rel1(
@@ -357,15 +362,15 @@ def pretrain_relation_level_full_rel(
                 neg_dict=neg_dict_1
             )
 
-            loss_rel2 = relation_contrastive_loss_rel2(
-                h_dict=h_dict,
-                target_edge_type=target_edge_type,
-                pos_edges=pos_edges,
-                neg_dict=neg_dict_2
-            )
+            # loss_rel2 = relation_contrastive_loss_rel2(
+            #     h_dict=h_dict,
+            #     target_edge_type=target_edge_type,
+            #     pos_edges=pos_edges,
+            #     neg_dict=neg_dict_2
+            # )
 
             #add the two loss contribution to obtain the final one
-            loss = loss_rel1 + lambda_rel2 * loss_rel2
+            loss = loss_rel1 #+ lambda_rel2 * loss_rel2
             loss.backward()
             optimizer.step()
 

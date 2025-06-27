@@ -122,10 +122,16 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-
+batch_x = None
 for batch in loader_dict["train"]:
-    target_edge_type=batch.edge_types[0]#prendo solo un edge type
+    batch_x = batch
+    target_edge_types=batch.edge_types#prendo solo un edge type
     break
+
+# for edge_type in target_edge_types:
+#   print(f"l'edge type {edge_type} ha dimensione {len(batch_x[edge_type].edge_index[0])}")
+
+target_edge_type = ('races', 'rev_f2p_raceId', 'qualifying')
 
 optimizer = torch.optim.Adam(
     model.parameters(),
@@ -134,7 +140,7 @@ optimizer = torch.optim.Adam(
 )
 
 model, W_R = pretrain_relation_level_full_rel(
-    #data=data,
+    # data=data,
     loader_dict=loader_dict,
     model=model,
     W_R=W_R,
