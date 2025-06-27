@@ -358,15 +358,15 @@ def pretrain_relation_level_full_rel(
                 neg_dict=neg_dict_1
             )
 
-            loss_rel2 = relation_contrastive_loss_rel2(
-                h_dict=h_dict,
-                target_edge_type=target_edge_type,
-                pos_edges=pos_edges,
-                neg_dict=neg_dict_2
-            )
+            # loss_rel2 = relation_contrastive_loss_rel2(
+            #     h_dict=h_dict,
+            #     target_edge_type=target_edge_type,
+            #     pos_edges=pos_edges,
+            #     neg_dict=neg_dict_2
+            # )
 
             #add the two loss contribution to obtain the final one
-            loss = loss_rel1 + lambda_rel2 * loss_rel2
+            loss = loss_rel1 #+ lambda_rel2 * loss_rel2
             loss.backward()
             optimizer.step()
 
