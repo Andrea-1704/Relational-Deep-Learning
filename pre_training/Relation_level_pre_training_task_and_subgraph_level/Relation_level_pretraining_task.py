@@ -370,10 +370,6 @@ def pretrain_relation_level_full_rel(
                 task.entity_table,
             )
 
-            #log to be removed:
-            for ntype, h in h_dict.items():
-                print(f"{ntype} requires_grad: {h.requires_grad}")
-
             #print(f"questo è h_dict: {h_dict}")
 
             #positives
@@ -381,11 +377,13 @@ def pretrain_relation_level_full_rel(
             u_pos = edge_index[0].tolist()
             v_pos = edge_index[1].tolist()
             pos_edges = list(zip(u_pos, v_pos))
+            print(f"pos edges shape: {pos_edges.shape}")
 
             #first kind of negatives
             neg_dict_1 = get_negative_samples_from_inconsistent_relations(
                 batch, target_edge_type, max_negatives_per_node=num_neg_per_node
             )
+            print(f"neg edges shape: {neg_dict_1.shape}")
 
             #second kind of negatives
             neg_dict_2 = get_negative_samples_from_unrelated_nodes(
