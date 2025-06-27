@@ -162,16 +162,18 @@ def get_negative_samples_from_unrelated_nodes(
     num_negatives_per_node: int = 5
 ) -> List[Tuple[int, Tuple[str, str, str], int]]:
     src_type, rel_type, dst_type = target_edge_type
-    edge_index = data[target_edge_type].edge_index  #global
+    edge_index = data[target_edge_type].edge_index #local: per il singolo batch
 
     u_nodes = edge_index[0].tolist()
     v_nodes = edge_index[1].tolist()
 
     n_ids_u = data[edge_index[0]].n_id
     global_to_local_u = {int(n):i for i, n in enumerate(n_ids_u.to_list())}
+    local_to_global_u = {i:int(n) for i, n in enumerate(n_ids_u.to_list())}
 
     n_ids_v = data[edge_index[1]].n_id
     global_to_local_v = {int(n):i for i, n in enumerate(n_ids_v.to_list())}
+    local_to_global_v = {i:int(n) for i, n in enumerate(n_ids_v.to_list())}
 
     positives = set(zip(u_nodes, v_nodes))
     negatives = []
@@ -188,7 +190,8 @@ def get_negative_samples_from_unrelated_nodes(
 
     for u in set(u_nodes):
         # Step 1: map u from type-specific index to global ID
-        u_homo_id = data[src_type].node_id_to_global[u]
+        u_homo_id = local_to_global_u[u]
+        #u_homo_id = data[src_type].node_id_to_global[u]
 
         # Step 2: k-hop neighborhood
         sub_nodes, _, _, _ = k_hop_subgraph(
@@ -203,7 +206,10 @@ def get_negative_samples_from_unrelated_nodes(
                    if type_vec[nid] == dst_type_id]
 
         # Step 4: map back to dst_type local indices
-        local_v_minus = [data[dst_type].global_to_node_id[v]
+        # local_v_minus = [data[dst_type].global_to_node_id[v]
+        #                  for v in v_minus
+        #                  if (u, v) not in positives]
+        local_v_minus = [global_to_local_v[v]
                          for v in v_minus
                          if (u, v) not in positives]
 
