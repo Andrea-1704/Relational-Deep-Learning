@@ -332,6 +332,7 @@ def pretrain_relation_level_full_rel(
                 batch,
                 task.entity_table,
             )
+            print(f"questo è h_dict: {h_dict}")
 
             #positives
             edge_index = batch[target_edge_type].edge_index
