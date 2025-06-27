@@ -235,7 +235,9 @@ def relation_contrastive_loss_rel1(
     h_src = h_dict[src_type]
     h_dst = h_dict[dst_type]
 
-    total_loss = 0.0
+    #total_loss = 0.0
+    total_loss = torch.tensor(0.0, device=h_src.device)
+
     N = len(pos_edges)
 
     for u, v in pos_edges:
@@ -276,7 +278,9 @@ def relation_contrastive_loss_rel2(
     h_src = h_dict[src_type]
     h_dst = h_dict[dst_type]
 
-    total_loss = 0.0
+    #total_loss = 0.0
+    total_loss = torch.tensor(0.0, device=h_src.device)
+
     N = len(pos_edges)
 
     for u, v in pos_edges:
