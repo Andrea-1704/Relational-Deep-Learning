@@ -328,11 +328,11 @@ def pretrain_relation_level_full_rel(
 
             #forward pass
             #h_dict = model(data.x_dict, data.edge_index_dict)
-            h_dict = model(
+            h_dict = model.encode_node_types(
                 batch,
-                task.entity_table,
+                batch.node_types,
             )
-            print(f"questo è h_dict: {h_dict}")
+            #print(f"questo è h_dict: {h_dict}")
 
             #positives
             edge_index = batch[target_edge_type].edge_index
