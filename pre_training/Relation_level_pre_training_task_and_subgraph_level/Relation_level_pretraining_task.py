@@ -331,6 +331,7 @@ def pretrain_relation_level_full_rel(
             h_dict = model.encode_node_types(
                 batch,
                 batch.node_types,
+                task.entity_table,
             )
             #print(f"questo è h_dict: {h_dict}")
 
