@@ -522,6 +522,10 @@ class MyModel(torch.nn.Module):
             self.id_awareness_emb = torch.nn.Embedding(1, channels)
         self.reset_parameters()
 
+    def encoder_parameters(self):
+        params = list(self.encoder.parameters()) + list(self.temporal_encoder.parameters()) + list(self.gnn.parameters())
+        return params
+
     def reset_parameters(self):
         self.encoder.reset_parameters()
         self.temporal_encoder.reset_parameters()

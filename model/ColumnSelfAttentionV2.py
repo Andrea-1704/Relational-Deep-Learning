@@ -602,7 +602,11 @@ class MyModel(torch.nn.Module):
         )
 
         return self.head(x_dict[entity_table][: seed_time.size(0)])
-
+    
+    def encoder_parameters(self):
+        params = list(self.encoder.parameters()) + list(self.temporal_encoder.parameters()) + list(self.gnn.parameters())
+        return params
+    
     def encode_node_types(self, batch: HeteroData, node_types: List[str], entity_table) -> Dict[str, Tensor]:
         seed_time = batch[entity_table].seed_time
         x_dict = self.encoder(batch.tf_dict)

@@ -142,12 +142,21 @@ def train_vgae(
 
     decoder = MLPDecoder(latent_dim=latent_dim, hidden_dim=hidden_dim, input_dim=encoder_out_dim).to(device)
 
-
+    #the parameter to be optimed should not include the head etc, 
+    #but only the ones we need to modify during the pre training:
     optimizer = torch.optim.Adam(
-        list(wrapper.parameters()) + list(decoder.parameters()),
+        list(model.encoder_parameters()) + 
+        list(wrapper.proj_mu.parameters()) + 
+        list(wrapper.proj_logvar.parameters()) + 
+        list(decoder.parameters()),
         lr=1e-3
     )
-    #for edge_type in edge_types:
+
+    # optimizer = torch.optim.Adam(
+    #     list(wrapper.parameters()) + list(decoder.parameters()),
+    #     lr=1e-3
+    # )
+    # #for edge_type in edge_types:
 
 
     for epoch in range(1, epochs + 1):
