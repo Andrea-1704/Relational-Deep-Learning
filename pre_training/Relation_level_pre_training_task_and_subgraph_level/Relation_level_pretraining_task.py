@@ -308,7 +308,7 @@ def pretrain_relation_level_full_rel(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     task,
-    num_epochs: int = 100,
+    num_epochs: int = 10,
     num_neg_per_node: int = 5,
     k: int = 5,
     lambda_rel2: float = 1.0
@@ -332,7 +332,9 @@ def pretrain_relation_level_full_rel(
 
             global_to_local_dst = {
               global_id.item(): local_id
-              for local_id, global_id in enumerate(batch[dst_type].n_id)
+              for local_id, global_id in enumerate(batch[dst_type].n_id) # this is a key, is very important
+              # n_id is, I think, the only way to be consistent between local (h_dict) indexes and the 
+              # global ones.
             }
 
             #positives
