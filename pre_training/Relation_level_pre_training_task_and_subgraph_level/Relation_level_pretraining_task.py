@@ -329,7 +329,7 @@ def pretrain_relation_level_full_rel(
             #forward pass
             #h_dict = model(data.x_dict, data.edge_index_dict)
             h_dict = model(
-                data,
+                batch,
                 task.entity_table,
             )
 
