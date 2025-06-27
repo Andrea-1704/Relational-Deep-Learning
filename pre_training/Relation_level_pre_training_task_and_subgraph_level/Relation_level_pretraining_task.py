@@ -337,6 +337,11 @@ def pretrain_relation_level_full_rel(
                 batch.node_types,
                 task.entity_table,
             )
+
+            #log to be removed:
+            for ntype, h in h_dict.items():
+                print(f"{ntype} requires_grad: {h.requires_grad}")
+
             #print(f"questo è h_dict: {h_dict}")
 
             #positives
