@@ -291,7 +291,7 @@ def safe_relation_contrastive_loss_rel1(
 
         loss = F.cross_entropy(logits, labels)
         total_loss += loss
-
+        assert loss.requires_grad
     return total_loss / max(1, len(pos_edges))
 
 
@@ -332,7 +332,7 @@ def relation_contrastive_loss_rel2(
             denom = sim_pos + torch.stack(sim_negs).sum()
             loss = -torch.log(sim_pos / denom)
             total_loss += loss
-
+    
     return total_loss / max(N, 1)
 
 
