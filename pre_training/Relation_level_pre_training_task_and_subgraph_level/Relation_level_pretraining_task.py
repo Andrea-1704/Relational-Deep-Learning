@@ -162,10 +162,16 @@ def get_negative_samples_from_unrelated_nodes(
     num_negatives_per_node: int = 5
 ) -> List[Tuple[int, Tuple[str, str, str], int]]:
     src_type, rel_type, dst_type = target_edge_type
-    edge_index = data[target_edge_type].edge_index
+    edge_index = data[target_edge_type].edge_index  #global
 
     u_nodes = edge_index[0].tolist()
     v_nodes = edge_index[1].tolist()
+
+    n_ids_u = data[edge_index[0]].n_id
+    global_to_local_u = {int(n):i for i, n in enumerate(n_ids_u.to_list())}
+
+    n_ids_v = data[edge_index[1]].n_id
+    global_to_local_v = {int(n):i for i, n in enumerate(n_ids_v.to_list())}
 
     positives = set(zip(u_nodes, v_nodes))
     negatives = []
@@ -358,9 +364,15 @@ def pretrain_relation_level_full_rel(
             #print(f"neg edges shape: {len(neg_dict_1)}")
 
             #second kind of negatives
-            # neg_dict_2 = get_negative_samples_from_unrelated_nodes(
-            #     batch, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
-            # )
+            neg_dic_2 = get_negative_samples_from_unrelated_nodes(
+                batch, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
+            )
+
+            neg_dict_2 = {}
+            for u, _, w in neg_dic_2:
+              if w in global_to_local_dst:
+                local_w = global_to_local_dst[w]
+                neg_dict_2.setdefault(u, []).append(local_w)
 
             #compute the two loss components
             loss_rel1 = relation_contrastive_loss_rel1(
@@ -371,21 +383,23 @@ def pretrain_relation_level_full_rel(
                 neg_dict=neg_dict_1
             )
 
-            # loss_rel2 = relation_contrastive_loss_rel2(
-            #     h_dict=h_dict,
-            #     target_edge_type=target_edge_type,
-            #     pos_edges=pos_edges,
-            #     neg_dict=neg_dict_2
-            # )
+            loss_rel2 = relation_contrastive_loss_rel2(
+                h_dict=h_dict,
+                target_edge_type=target_edge_type,
+                pos_edges=pos_edges,
+                neg_dict=neg_dict_2
+            )
+
+            
 
             #add the two loss contribution to obtain the final one
-            loss = loss_rel1 #+ lambda_rel2 * loss_rel2
+            loss = loss_rel1 + lambda_rel2 * loss_rel2
             loss.backward()
             optimizer.step()
 
             #remeber to change pronit:
-            #print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | L_rel2: {loss_rel2.item():.4f} | Total: {loss.item():.4f}")
-            print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | Total: {loss.item():.4f}")
+            print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | L_rel2: {loss_rel2.item():.4f} | Total: {loss.item():.4f}")
+            #print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | Total: {loss.item():.4f}")
 
 
     return model, W_R
