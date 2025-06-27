@@ -377,7 +377,7 @@ def pretrain_relation_level_full_rel(
             u_pos = edge_index[0].tolist()
             v_pos = edge_index[1].tolist()
             pos_edges = list(zip(u_pos, v_pos))
-            print(f"pos edges shape: {pos_edges.shape}")
+            print(f"pos edges shape: {len(pos_edges)}")
 
             #first kind of negatives
             neg_dict_1 = get_negative_samples_from_inconsistent_relations(
