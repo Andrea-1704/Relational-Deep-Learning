@@ -170,7 +170,10 @@ def train_vgae(
               archi_presenti = False
               archi_presenti_effettivi = False
 
-              while archi_presenti==False or archi_presenti_effettivi==False:
+              max_trials = 50
+              trial = 0
+
+              while (not archi_presenti or not archi_presenti_effettivi) and trial < max_trials:
                 edge_type = random.choice(edge_types)
                 edge_index_trial = batch.edge_index_dict[edge_type]
                 if len(edge_index_trial[0])!=0:
@@ -188,6 +191,11 @@ def train_vgae(
                 if res is not None:
                   pos_edges, neg_edges = res
                   archi_presenti_effettivi = True
+                trial += 1
+
+              if trial == max_trials:
+                  print(f"⚠️ Skip batch: nessun edge_type valido trovato dopo {max_trials} tentativi.")
+                  continue
 
               #print(f"per arco {edge_type} abbiamo {len(pos_edges[0])} archi positivi, e {len(neg_edges[0])} archi negativi, ma ne potremmo avere: {len(batch.edge_index_dict[edge_type][0])}")
 
