@@ -303,7 +303,8 @@ def relation_contrastive_loss_rel2(
 
 
 def pretrain_relation_level_full_rel(
-    data: HeteroData,
+    #data: HeteroData,
+    loader_dict,
     model: torch.nn.Module,
     W_R: torch.nn.Parameter,
     target_edge_type: Tuple[str, str, str],
@@ -320,53 +321,55 @@ def pretrain_relation_level_full_rel(
     data = data.to(device)
 
     for epoch in range(num_epochs):
-        model.train()
-        optimizer.zero_grad()
+        for batch in tqdm(loader_dict["train"]):
+            batch = batch.to(device)
+            model.train()
+            optimizer.zero_grad()
 
-        #forward pass
-        #h_dict = model(data.x_dict, data.edge_index_dict)
-        h_dict = model(
-            data,
-            task.entity_table,
-        )
+            #forward pass
+            #h_dict = model(data.x_dict, data.edge_index_dict)
+            h_dict = model(
+                data,
+                task.entity_table,
+            )
 
-        #positives
-        edge_index = data[target_edge_type].edge_index
-        u_pos = edge_index[0].tolist()
-        v_pos = edge_index[1].tolist()
-        pos_edges = list(zip(u_pos, v_pos))
+            #positives
+            edge_index = data[target_edge_type].edge_index
+            u_pos = edge_index[0].tolist()
+            v_pos = edge_index[1].tolist()
+            pos_edges = list(zip(u_pos, v_pos))
 
-        #first kind of negatives
-        neg_dict_1 = get_negative_samples_from_inconsistent_relations(
-            data, target_edge_type, max_negatives_per_node=num_neg_per_node
-        )
+            #first kind of negatives
+            neg_dict_1 = get_negative_samples_from_inconsistent_relations(
+                data, target_edge_type, max_negatives_per_node=num_neg_per_node
+            )
 
-        #second kind of negatives
-        neg_dict_2 = get_negative_samples_from_unrelated_nodes(
-            data, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
-        )
+            #second kind of negatives
+            neg_dict_2 = get_negative_samples_from_unrelated_nodes(
+                data, target_edge_type, k=k, num_negatives_per_node=num_neg_per_node
+            )
 
-        #compute the two loss components
-        loss_rel1 = relation_contrastive_loss_rel1(
-            h_dict=h_dict,
-            W_R=W_R,
-            target_edge_type=target_edge_type,
-            pos_edges=pos_edges,
-            neg_dict=neg_dict_1
-        )
+            #compute the two loss components
+            loss_rel1 = relation_contrastive_loss_rel1(
+                h_dict=h_dict,
+                W_R=W_R,
+                target_edge_type=target_edge_type,
+                pos_edges=pos_edges,
+                neg_dict=neg_dict_1
+            )
 
-        loss_rel2 = relation_contrastive_loss_rel2(
-            h_dict=h_dict,
-            target_edge_type=target_edge_type,
-            pos_edges=pos_edges,
-            neg_dict=neg_dict_2
-        )
+            loss_rel2 = relation_contrastive_loss_rel2(
+                h_dict=h_dict,
+                target_edge_type=target_edge_type,
+                pos_edges=pos_edges,
+                neg_dict=neg_dict_2
+            )
 
-        #add the two loss contribution to obtain the final one
-        loss = loss_rel1 + lambda_rel2 * loss_rel2
-        loss.backward()
-        optimizer.step()
+            #add the two loss contribution to obtain the final one
+            loss = loss_rel1 + lambda_rel2 * loss_rel2
+            loss.backward()
+            optimizer.step()
 
-        print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | L_rel2: {loss_rel2.item():.4f} | Total: {loss.item():.4f}")
+            print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | L_rel2: {loss_rel2.item():.4f} | Total: {loss.item():.4f}")
 
     return model, W_R

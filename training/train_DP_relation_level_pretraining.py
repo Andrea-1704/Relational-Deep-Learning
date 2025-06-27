@@ -134,7 +134,8 @@ optimizer = torch.optim.Adam(
 )
 
 model, W_R = pretrain_relation_level_full_rel(
-    data=data,
+    #data=data,
+    loader_dict=loader_dict,
     model=model,
     W_R=W_R,
     target_edge_type=target_edge_type,
