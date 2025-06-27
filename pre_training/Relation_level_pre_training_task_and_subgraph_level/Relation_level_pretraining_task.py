@@ -383,7 +383,7 @@ def pretrain_relation_level_full_rel(
             neg_dict_1 = get_negative_samples_from_inconsistent_relations(
                 batch, target_edge_type, max_negatives_per_node=num_neg_per_node
             )
-            print(f"neg edges shape: {neg_dict_1.shape}")
+            print(f"neg edges shape: {len(neg_dict_1)}")
 
             #second kind of negatives
             neg_dict_2 = get_negative_samples_from_unrelated_nodes(
