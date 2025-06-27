@@ -330,13 +330,18 @@ def pretrain_relation_level_full_rel(
                 task.entity_table,
             )
 
+            global_to_local_dst = {
+              global_id.item(): local_id
+              for local_id, global_id in enumerate(batch[dst_type].n_id)
+            }
+
             #positives
             edge_index = batch[target_edge_type].edge_index
-            print(f"la dimensione di edge_index è {edge_index.shape}")
+            #print(f"la dimensione di edge_index è {edge_index.shape}")
             u_pos = edge_index[0].tolist()
             v_pos = edge_index[1].tolist()
             pos_edges = list(zip(u_pos, v_pos))
-            print(f"pos edges shape: {len(pos_edges)}")
+            #print(f"pos edges shape: {len(pos_edges)}")
 
             #first kind of negatives
             neg_dic_1 = get_negative_samples_from_inconsistent_relations(
@@ -345,8 +350,10 @@ def pretrain_relation_level_full_rel(
 
             neg_dict_1 = {}
             for u, _, w in neg_dic_1:
-                neg_dict_1.setdefault(u, []).append(w)
-            print(f"neg edges shape: {len(neg_dict_1)}")
+                if w in global_to_local_dst:
+                  local_w = global_to_local_dst[w]
+                  neg_dict_1.setdefault(u, []).append(local_w)
+            #print(f"neg edges shape: {len(neg_dict_1)}")
 
             #second kind of negatives
             # neg_dict_2 = get_negative_samples_from_unrelated_nodes(
