@@ -167,13 +167,13 @@ def get_negative_samples_from_unrelated_nodes(
     u_nodes = edge_index[0].tolist()
     v_nodes = edge_index[1].tolist()
 
-    n_ids_u = data[edge_index[0]].n_id
-    global_to_local_u = {int(n):i for i, n in enumerate(n_ids_u.to_list())}
-    local_to_global_u = {i:int(n) for i, n in enumerate(n_ids_u.to_list())}
+    n_ids_u = data[src_type].n_id
+    global_to_local_u = {int(n):i for i, n in enumerate(n_ids_u.tolist())}
+    local_to_global_u = {i:int(n) for i, n in enumerate(n_ids_u.tolist())}
 
-    n_ids_v = data[edge_index[1]].n_id
-    global_to_local_v = {int(n):i for i, n in enumerate(n_ids_v.to_list())}
-    local_to_global_v = {i:int(n) for i, n in enumerate(n_ids_v.to_list())}
+    n_ids_v = data[dst_type].n_id
+    global_to_local_v = {int(n):i for i, n in enumerate(n_ids_v.tolist())}
+    local_to_global_v = {i:int(n) for i, n in enumerate(n_ids_v.tolist())}
 
     positives = set(zip(u_nodes, v_nodes))
     negatives = []
