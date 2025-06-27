@@ -370,6 +370,9 @@ def pretrain_relation_level_full_rel(
             loss.backward()
             optimizer.step()
 
-            print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | L_rel2: {loss_rel2.item():.4f} | Total: {loss.item():.4f}")
+            #remeber to change pronit:
+            #print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | L_rel2: {loss_rel2.item():.4f} | Total: {loss.item():.4f}")
+            print(f"[Epoch {epoch+1}] L_rel1: {loss_rel1.item():.4f} | Total: {loss.item():.4f}")
+
 
     return model, W_R
