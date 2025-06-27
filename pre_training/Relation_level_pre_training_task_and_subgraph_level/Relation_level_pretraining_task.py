@@ -318,7 +318,7 @@ def pretrain_relation_level_full_rel(
 ):
     model = model.to(device)
     W_R = W_R.to(device)
-    data = data.to(device)
+    #data = data.to(device)
 
     for epoch in range(num_epochs):
         for batch in tqdm(loader_dict["train"]):
