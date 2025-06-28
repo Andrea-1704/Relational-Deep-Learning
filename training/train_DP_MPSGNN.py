@@ -119,6 +119,8 @@ def train():
         L_max=3
     )
 
+    print(f"questo è metapaths: {metapaths}")
+
     
 
     #now we can use the loader dict and batch work SGD
