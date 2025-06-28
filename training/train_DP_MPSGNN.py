@@ -74,6 +74,37 @@ def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     #We should first create teh meta graph on the all dataset graph, not batch:
+    # data_full, _ = make_pkey_fkey_graph(
+    #     db_nuovo,
+    #     col_to_stype_dict=col_to_stype_dict_nuovo,
+    #     text_embedder_cfg=None,
+    #     cache_dir=None
+    # )
+    # data_full = data_full.to(device)
+
+    # # Recupera etichette e maschere dal task
+    # train_df = train_table.df
+
+
+    # # driver_labels = train_table['target']  # posizione finale
+    # # driver_ids = train_table['driverId'].to_numpy()
+    # print(f"train table + {train_df}")
+    # driver_labels = train_df['position'].to_numpy()
+    # driver_ids = train_df['driverId'].to_numpy()
+
+    # # Mappa ID → indice nei nodi
+    # driver_node_ids = data_full['driver'].n_id.cpu().numpy()
+    # id_to_idx = {nid: idx for idx, nid in enumerate(driver_node_ids)}
+    # target_vector = torch.full((driver_node_ids.shape[0],), float('nan'))
+
+    # for i, driver_id in enumerate(driver_ids):
+    #     if driver_id in id_to_idx:
+    #         target_vector[id_to_idx[driver_id]] = driver_labels[i]
+
+    # # Crea y e mask
+    # data_full['driver'].y = target_vector
+    # data_full['driver'].train_mask = ~torch.isnan(target_vector)
+
     # Costruzione del grafo completo
     data_full, _ = make_pkey_fkey_graph(
         db_nuovo,
@@ -84,7 +115,8 @@ def train():
     data_full = data_full.to(device)
 
     # Recupera l'array degli ID driver dal grafo (ordine di creazione nodi)
-    graph_driver_ids = db_nuovo["driver"].df["driverId"].to_numpy()
+    # Recupera l'array degli ID driver dal grafo (ordine di creazione nodi)
+    graph_driver_ids = db_nuovo.table_dict["driver"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
     # Recupera i dati dalla tabella di training
@@ -103,6 +135,7 @@ def train():
     # Assegniamo i target e la mask al grafo
     data_full['driver'].y = target_vector
     data_full['driver'].train_mask = ~torch.isnan(target_vector)
+
 
 
 
