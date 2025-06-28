@@ -147,8 +147,13 @@ def train():
 
         model.train()
         optimizer.zero_grad()
-        #x_dict = {ntype: data[ntype].tf.to_tensor() for ntype in data.node_types if 'tf' in data[ntype]}
-        x_dict = {ntype: data[ntype].tf.materialize().values for ntype in data.node_types if 'tf' in data[ntype]}
+        x_dict = {}
+        for ntype in data.node_types:
+            if "tf" in data[ntype]:
+                tensor_dict = data[ntype].tf.materialize_to_tensor_dict()
+                x = torch.cat(list(tensor_dict.values()), dim=-1) if tensor_dict else torch.empty((len(data[ntype].batch), 0))
+                x_dict[ntype] = x
+
 
         out = model(data.x_dict, data.edge_index_dict)
         loss = F.l1_loss(out[train_mask], y[train_mask])
