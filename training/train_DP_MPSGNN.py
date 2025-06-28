@@ -1,5 +1,10 @@
 import torch
 import torch.nn.functional as F
+
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
 from model.MPSGNN_Model import MPSGNN
 from data_management.data import load_relbench_f1
 from mpsgnn_metapath_utils import binarize_targets, greedy_metapath_search
