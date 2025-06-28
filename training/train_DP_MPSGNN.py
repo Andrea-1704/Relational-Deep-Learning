@@ -147,6 +147,8 @@ def train():
 
         model.train()
         optimizer.zero_grad()
+        x_dict = {ntype: data[ntype].tf.to_tensor() for ntype in data.node_types if 'tf' in data[ntype]}
+
         out = model(data.x_dict, data.edge_index_dict)
         loss = F.l1_loss(out[train_mask], y[train_mask])
         loss.backward()
