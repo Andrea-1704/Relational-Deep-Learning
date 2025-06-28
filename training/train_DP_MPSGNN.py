@@ -128,7 +128,6 @@ def train():
         val_table=val_table, 
         test_table=test_table
     )
-    #print("questo è esattamente il codice che stiamo eseguendo")
 
     model = MPSGNN(
         metadata=data_full.metadata(), #
@@ -139,11 +138,6 @@ def train():
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
-
-    # for batch in tqdm(loader_dict["train"]):
-    #   print(f"{batch.shape}")
-
-    # print("ciao")
 
     for epoch in range(1, 51):
       for batch in tqdm(loader_dict["train"]):
