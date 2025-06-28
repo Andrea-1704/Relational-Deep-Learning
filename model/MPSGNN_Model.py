@@ -3,6 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import SAGEConv
 from typing import List, Tuple, Dict
+from relbench.modeling.nn import HeteroEncoder
+from torch_frame.data.stats import StatType
+from typing import Any, Dict, List
+from torch_geometric.data import HeteroData
+
 
 
 class MetaPathGNN(nn.Module):
@@ -35,6 +40,8 @@ class MetaPathGNN(nn.Module):
 
 class MPSGNN(nn.Module):
     def __init__(self,
+                 data: HeteroData,
+                 col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
                  metadata: Tuple[List[str], List[Tuple[str, str, str]]],
                  metapaths: List[List[Tuple[str, str, str]]],
                  hidden_channels: int = 64,
@@ -47,7 +54,17 @@ class MPSGNN(nn.Module):
         ])
         self.regressor = nn.Linear(out_channels * len(metapaths), final_out_channels)
 
-    def forward(self, x_dict: Dict[str, torch.Tensor], edge_index_dict: Dict[Tuple[str, str, str], torch.Tensor]):
-        embeddings = [model(x_dict, edge_index_dict) for model in self.metapath_models]
+        self.encoder = HeteroEncoder(
+            channels=hidden_channels,
+            node_to_col_names_dict={
+                node_type: data[node_type].tf.col_names_dict  
+                for node_type in data.node_types
+            },
+            node_to_col_stats=col_stats_dict  
+        )
+
+    def forward(self, batch: HeteroData):
+        x_dict = self.encoder(batch.tf_dict)
+        embeddings = [model(x_dict, batch.edge_index_dict) for model in self.metapath_models]
         concat = torch.cat(embeddings, dim=-1)
         return self.regressor(concat).squeeze(-1)
