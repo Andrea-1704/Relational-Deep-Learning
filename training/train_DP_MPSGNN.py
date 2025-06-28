@@ -116,8 +116,8 @@ def train():
 
     # Recupera l'array degli ID driver dal grafo (ordine di creazione nodi)
     # Recupera l'array degli ID driver dal grafo (ordine di creazione nodi)
-    print(f"tabvle dict è {db_nuovo.table_dict}")
-    graph_driver_ids = db_nuovo.table_dict["driver"].df["driverId"].to_numpy()
+    #print(f"tabvle dict è {db_nuovo.table_dict}")
+    graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
     # Recupera i dati dalla tabella di training
