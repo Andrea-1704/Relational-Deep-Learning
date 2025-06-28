@@ -27,7 +27,7 @@ def greedy_metapath_search(data: HeteroData,
                            train_mask: torch.Tensor,
                            node_type: str,
                            L_max: int = 2,
-                           eta: float = 0.3) -> List[List[Tuple[str, str, str]]]:
+                           eta: float = 0.4) -> List[List[Tuple[str, str, str]]]:
     metadata = data.metadata()
     current_metapath = []
     all_metapaths = []
@@ -35,13 +35,18 @@ def greedy_metapath_search(data: HeteroData,
 
     for _ in range(L_max):
         candidate_rels = get_candidate_relations(metadata, current_node_type)
+        #this one is working and provides all the paths in which 
+        #"node type" appers
         best_rel = None
         best_loss = float('inf')
 
         for rel in candidate_rels:
             new_path = current_metapath + [rel]
             loss = surrogate_classification_loss(data, new_path, y_bin, train_mask, node_type)
-            if loss < best_loss:
+            #print(f"utils la loss è {loss}")
+            if loss < best_loss:   
+            #i believe there is a mistake in the loss function because it always returns 
+            #the same results (is either in the function, or in the parameters, or both)
                 best_loss = loss
                 best_rel = rel
 

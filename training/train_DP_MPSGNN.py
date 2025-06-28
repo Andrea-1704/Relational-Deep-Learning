@@ -68,11 +68,6 @@ data_official, col_stats_dict_official = make_pkey_fkey_graph(
     cache_dir=None  # disabled
 )
 
-
-
-
-
-
 def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -103,9 +98,6 @@ def train():
     data_full['drivers'].y = target_vector
     data_full['drivers'].train_mask = ~torch.isnan(target_vector)
 
-
-
-
     #take y and mask complete for the dataset:
     y_full = data_full['drivers'].y.float()
     train_mask_full = data_full['drivers'].train_mask
@@ -117,11 +109,11 @@ def train():
         train_mask=train_mask_full,
         node_type='drivers',
         L_max=3
-    )
+    )  #to be checked, but seems to work providing a list of tuples which 
+    #represents the edges.
 
-    print(f"questo è metapaths: {metapaths}")
-
-    
+    #metadata is correctly working by providing 
+    #relevant informations about the dataset.
 
     #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
