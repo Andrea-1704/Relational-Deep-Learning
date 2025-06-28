@@ -68,6 +68,23 @@ data_official, col_stats_dict_official = make_pkey_fkey_graph(
     cache_dir=None  # disabled
 )
 
+graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+train_df = train_table.df
+driver_labels = train_df["position"].to_numpy()
+driver_ids = train_df["driverId"].to_numpy()
+
+target_vector = torch.full((len(graph_driver_ids),), float("nan"))
+for i, driver_id in enumerate(driver_ids):
+    if driver_id in id_to_idx:
+        target_vector[id_to_idx[driver_id]] = driver_labels[i]
+
+#
+data_official['drivers'].y = target_vector
+data_official['drivers'].train_mask = ~torch.isnan(target_vector)
+
+
 def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
