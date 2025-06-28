@@ -135,7 +135,7 @@ def train():
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        metadata=data.metadata(),
+        metadata=data_full.metadata(),
         metapaths=metapaths,
         hidden_channels=64,
         out_channels=64,
