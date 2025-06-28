@@ -83,8 +83,12 @@ def train():
     data_full = data_full.to(device)
 
     # Recupera etichette e maschere dal task
-    driver_labels = train_table['target']  # posizione finale
-    driver_ids = train_table['driverId'].to_numpy()
+    train_df = train_table.to_pandas()
+
+    # driver_labels = train_table['target']  # posizione finale
+    # driver_ids = train_table['driverId'].to_numpy()
+    driver_labels = train_df['target'].to_numpy()
+    driver_ids = train_df['driverId'].to_numpy()
 
     # Mappa ID → indice nei nodi
     driver_node_ids = data_full['driver'].node_id.cpu().numpy()  # o il campo giusto
