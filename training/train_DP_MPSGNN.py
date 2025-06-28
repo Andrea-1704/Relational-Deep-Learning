@@ -151,7 +151,7 @@ def train():
         #print(f"\n questo è data: {data}\n")
         y = data['drivers'].y.float()
         #print(f"\n questo è y: {y}\n")
-        train_mask = data['drivers'].train_mask
+        train_mask = data_full['drivers'].train_mask
         #print(f"\n questo è train_mask: {train_mask}\n")
 
         model.train()
