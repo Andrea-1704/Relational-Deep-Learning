@@ -22,7 +22,7 @@ from relbench.modeling.graph import make_pkey_fkey_graph
 from torch.nn import BCEWithLogitsLoss
 import copy
 from typing import Any, Dict, List
-from torch import Tensor
+from torch import Tensor, batch_norm_gather_stats
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
 
@@ -140,6 +140,17 @@ def train():
         final_out_channels=1
     ).to(device)
 
+    model = MPSGNN(
+        metadata=data.metadata(),
+        metapaths=metapaths,
+        hidden_channels=64,
+        out_channels=64,
+        final_out_channels=1,
+        data=data,
+        col_stats_dict=col_stats_dict_official  
+    ).to(device)
+
+
     optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
 
     for epoch in range(1, 51):
@@ -153,7 +164,7 @@ def train():
         #print(f"data.x_dict è {x_dict}")
         model.train()#the model is in the training mode
         optimizer.zero_grad()
-        out = model(x_dict, data.edge_index_dict)
+        out = model(batch)
         loss = F.l1_loss(out[train_mask], y[train_mask])
         loss.backward()
         optimizer.step()
