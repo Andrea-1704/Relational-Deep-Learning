@@ -183,7 +183,7 @@ def train():
         val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
         test_pred = test(model, loader_dict["test"], device=device, task=task)
         test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-        print(f"Epoch {epoch:03d}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, Loss: {loss.item():.4f}")
+      print(f"Epoch {epoch:03d}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, training Loss: {loss.item():.4f}")
 
 
 
