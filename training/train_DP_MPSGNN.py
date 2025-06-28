@@ -69,6 +69,17 @@ data_official, col_stats_dict_official = make_pkey_fkey_graph(
 )
 
 
+def prepare_x_dict_from_tensorframe(data) -> Dict[str, torch.Tensor]:
+    x_dict = {}
+    for ntype in data.node_types:
+        if 'tf' in data[ntype]:
+            frame = data[ntype].tf.frame  # pandas.DataFrame con tensori nelle celle
+            tensors = [frame[col] for col in frame.columns]
+            x = torch.cat(tensors, dim=-1) if tensors else torch.empty((len(frame), 0))
+            x_dict[ntype] = x
+    return x_dict
+
+
 
 def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -144,18 +155,13 @@ def train():
         data = batch.to(device)
         y = data['drivers'].y.float()
         train_mask = data_full['drivers'].train_mask
+        x_dict = prepare_x_dict_from_tensorframe(data)
 
-        model.train()
+
+        print(f"data.x_dict è {x_dict}")
+        model.train()#the model is in the training mode
         optimizer.zero_grad()
-        x_dict = {}
-        for ntype in data.node_types:
-            if "tf" in data[ntype]:
-                tensor_dict = data[ntype].tf.materialize_to_tensor_dict()
-                x = torch.cat(list(tensor_dict.values()), dim=-1) if tensor_dict else torch.empty((len(data[ntype].batch), 0))
-                x_dict[ntype] = x
-
-
-        out = model(data.x_dict, data.edge_index_dict)
+        out = model(x_dict, data.edge_index_dict)
         loss = F.l1_loss(out[train_mask], y[train_mask])
         loss.backward()
         optimizer.step()
