@@ -88,6 +88,7 @@ def train():
 
     # driver_labels = train_table['target']  # posizione finale
     # driver_ids = train_table['driverId'].to_numpy()
+    print(f"train table + {train_df}")
     driver_labels = train_df['target'].to_numpy()
     driver_ids = train_df['driverId'].to_numpy()
 
