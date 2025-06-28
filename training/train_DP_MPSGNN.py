@@ -97,22 +97,22 @@ def train():
             target_vector[id_to_idx[driver_id]] = driver_labels[i]
 
     
-    data_full['driver'].y = target_vector
-    data_full['driver'].train_mask = ~torch.isnan(target_vector)
+    data_full['drivers'].y = target_vector
+    data_full['drivers'].train_mask = ~torch.isnan(target_vector)
 
 
 
 
     #take y and mask complete for the dataset:
-    y_full = data_full['driver'].y.float()
-    train_mask_full = data_full['driver'].train_mask
+    y_full = data_full['drivers'].y.float()
+    train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
 
     metapaths = greedy_metapath_search(
         data_full,
         y_bin=y_bin_full,
         train_mask=train_mask_full,
-        node_type='driver',
+        node_type='drivers',
         L_max=3
     )
 
@@ -148,10 +148,10 @@ def train():
     for epoch in range(1, 51):
       for batch in tqdm(loader_dict["train"]):
         data = batch.to(device)
-        print(f"\n questo è data: {data}\n")
-        y = data['driver'].y.float()
+        #print(f"\n questo è data: {data}\n")
+        y = data['drivers'].y.float()
         #print(f"\n questo è y: {y}\n")
-        train_mask = data['driver'].train_mask
+        train_mask = data['drivers'].train_mask
         #print(f"\n questo è train_mask: {train_mask}\n")
 
         model.train()
