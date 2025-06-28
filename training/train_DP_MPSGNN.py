@@ -122,7 +122,7 @@ def train():
 
     # Recupera i dati dalla tabella di training
     train_df = train_table.df
-    driver_labels = train_df["target"].to_numpy()
+    driver_labels = train_df["position"].to_numpy()
     driver_ids = train_df["driverId"].to_numpy()
 
     # Allochiamo un vettore target inizializzato con NaN
