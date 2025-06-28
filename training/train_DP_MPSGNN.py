@@ -143,7 +143,7 @@ def train():
       for batch in tqdm(loader_dict["train"]):
         data = batch.to(device)
         y = data['drivers'].y.float()
-        train_mask = data_full['drivers'].train_mask
+        train_mask = data['drivers'].train_mask
         #x_dict = prepare_x_dict_from_tensorframe(data)
 
 
