@@ -34,7 +34,7 @@ def train():
         loss = F.mse_loss(out[train_mask], y[train_mask])
         loss.backward()
         optimizer.step()
-        print(f\"Epoch {epoch:03d}, Loss: {loss.item():.4f}\")
+        print(f"Epoch {epoch:03d}, Loss: {loss.item():.4f}")
 
 
 if __name__ == '__main__':
