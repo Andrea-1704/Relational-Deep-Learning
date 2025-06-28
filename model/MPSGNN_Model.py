@@ -63,7 +63,7 @@ class MPSGNN(nn.Module):
             node_to_col_stats=col_stats_dict  
         )
 
-    def forward(self, batch: HeteroData):
+    def forward(self, batch: HeteroData, entity_table=None):
         x_dict = self.encoder(batch.tf_dict)
         embeddings = [model(x_dict, batch.edge_index_dict) for model in self.metapath_models]
         concat = torch.cat(embeddings, dim=-1)

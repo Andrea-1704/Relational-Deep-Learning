@@ -71,7 +71,9 @@ def test(model, loader: NeighborLoader, device, task) -> np.ndarray:
             batch,
             task.entity_table,
         )
-        pred = pred.view(-1) if pred.size(1) == 1 else pred
+        pred = pred.view(-1) if pred.dim() == 2 and pred.size(1) == 1 else pred
+
+        #pred = pred.view(-1) if pred.size(1) == 1 else pred
         pred_list.append(pred.detach().cpu())
     return torch.cat(pred_list, dim=0).numpy()
 

@@ -34,58 +34,65 @@ from model.MPSGNN_Model import MPSGNN
 from data_management.data import loader_dict_fn
 from utils.mpsgnn_metapath_utils import binarize_targets, greedy_metapath_search
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
+from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
-dataset = get_dataset("rel-f1", download=True)
-task = get_task("rel-f1", "driver-position", download=True)
 
-train_table = task.get_table("train") #date  driverId  qualifying
-val_table = task.get_table("val") #date  driverId  qualifying
-test_table = task.get_table("test") # date  driverId
-
-out_channels = 1
-loss_fn = L1Loss()
-# this is the mae loss and is used when have regressions tasks.
-tune_metric = "mae"
-higher_is_better = False
-
-seed_everything(42)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-root_dir = "./data"
-
-db = dataset.get_db() #get all tables
-col_to_stype_dict = get_stype_proposal(db)
-#this is used to get the stype of the columns
-
-#let's use the merge categorical values:
-db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
-
-# Create the graph
-data_official, col_stats_dict_official = make_pkey_fkey_graph(
-    db_nuovo,
-    col_to_stype_dict=col_to_stype_dict_nuovo,
-    text_embedder_cfg = None,
-    cache_dir=None  # disabled
-)
-
-graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
-id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
-
-train_df = train_table.df
-driver_labels = train_df["position"].to_numpy()
-driver_ids = train_df["driverId"].to_numpy()
-
-target_vector = torch.full((len(graph_driver_ids),), float("nan"))
-for i, driver_id in enumerate(driver_ids):
-    if driver_id in id_to_idx:
-        target_vector[id_to_idx[driver_id]] = driver_labels[i]
-
-#
-data_official['drivers'].y = target_vector
-data_official['drivers'].train_mask = ~torch.isnan(target_vector)
 
 
 def train():
+    dataset = get_dataset("rel-f1", download=True)
+    task = get_task("rel-f1", "driver-position", download=True)
+
+    train_table = task.get_table("train") #date  driverId  qualifying
+    val_table = task.get_table("val") #date  driverId  qualifying
+    test_table = task.get_table("test") # date  driverId
+
+    out_channels = 1
+    loss_fn = L1Loss()
+    # this is the mae loss and is used when have regressions tasks.
+    tune_metric = "mae"
+    higher_is_better = False
+
+    seed_everything(42)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    root_dir = "./data"
+
+    db = dataset.get_db() #get all tables
+    col_to_stype_dict = get_stype_proposal(db)
+    #this is used to get the stype of the columns
+
+    #let's use the merge categorical values:
+    db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
+
+    # Create the graph
+    data_official, col_stats_dict_official = make_pkey_fkey_graph(
+        db_nuovo,
+        col_to_stype_dict=col_to_stype_dict_nuovo,
+        text_embedder_cfg = None,
+        cache_dir=None  # disabled
+    )
+
+    graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
+    id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+    train_df = train_table.df
+    driver_labels = train_df["position"].to_numpy()
+    driver_ids = train_df["driverId"].to_numpy()
+
+    target_vector = torch.full((len(graph_driver_ids),), float("nan"))
+    for i, driver_id in enumerate(driver_ids):
+        if driver_id in id_to_idx:
+            target_vector[id_to_idx[driver_id]] = driver_labels[i]
+
+    #
+    data_official['drivers'].y = target_vector
+    data_official['drivers'].train_mask = ~torch.isnan(target_vector)
+
+
+
+
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     data_full, _ = make_pkey_fkey_graph(
@@ -155,8 +162,8 @@ def train():
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
-
-    for epoch in range(1, 51):
+    test_table = task.get_table("test", mask_input_cols=False)
+    for epoch in range(1, 11):
       for batch in tqdm(loader_dict["train"]):
         data = batch.to(device)
         y = data['drivers'].y.float()
@@ -169,9 +176,14 @@ def train():
         optimizer.zero_grad()
         out = model(batch)
         loss = F.l1_loss(out[train_mask], y[train_mask])
+
         loss.backward()
         optimizer.step()
-        print(f"Epoch {epoch:03d}, Loss: {loss.item():.4f}")
+        val_pred = test(model, loader_dict["val"], device=device, task=task)
+        val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+        test_pred = test(model, loader_dict["test"], device=device, task=task)
+        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+        print(f"Epoch {epoch:03d}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, Loss: {loss.item():.4f}")
 
 
 
