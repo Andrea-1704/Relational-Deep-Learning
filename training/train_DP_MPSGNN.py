@@ -61,7 +61,7 @@ col_to_stype_dict = get_stype_proposal(db)
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
 # Create the graph
-data, col_stats_dict = make_pkey_fkey_graph(
+data_official, col_stats_dict_official = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
     text_embedder_cfg = None,
@@ -116,19 +116,13 @@ def train():
         L_max=3
     )
 
-    data, _ = make_pkey_fkey_graph(
-        db_nuovo,
-        col_to_stype_dict=col_to_stype_dict_nuovo,
-        text_embedder_cfg=None,
-        cache_dir=None
-    )
-    data = data.to(device)
+    
 
     #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
         batch_size=512, 
         num_neighbours=256, 
-        data=data, 
+        data=data_official, 
         task=task,
         train_table=train_table, 
         val_table=val_table, 
@@ -146,11 +140,19 @@ def train():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
 
+    # for batch in tqdm(loader_dict["train"]):
+    #   print(f"{batch.shape}")
+
+    # print("ciao")
+
     for epoch in range(1, 51):
       for batch in tqdm(loader_dict["train"]):
         data = batch.to(device)
+        print(f"\n questo è data: {data}\n")
         y = data['driver'].y.float()
+        #print(f"\n questo è y: {y}\n")
         train_mask = data['driver'].train_mask
+        #print(f"\n questo è train_mask: {train_mask}\n")
 
         model.train()
         optimizer.zero_grad()
