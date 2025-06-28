@@ -35,7 +35,7 @@ def greedy_metapath_search(data: HeteroData,
 
     for _ in range(L_max):
         candidate_rels = get_candidate_relations(metadata, current_node_type)
-        #this one is working and provides all the paths in which 
+        #this one is  working and provides all the paths in which 
         #"node type" appers
         best_rel = None
         best_loss = float('inf')
