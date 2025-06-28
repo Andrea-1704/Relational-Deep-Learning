@@ -134,7 +134,7 @@ def train():
         val_table=val_table, 
         test_table=test_table
     )
-    print("questo è esattamente il codice che stiamo eseguendo")
+    #print("questo è esattamente il codice che stiamo eseguendo")
 
     model = MPSGNN(
         metadata=data_full.metadata(), #
