@@ -11,6 +11,7 @@ class MetaPathGNN(nn.Module):
                  hidden_channels: int,
                  out_channels: int):
         super().__init__()
+        
         self.metapath = metapath
         self.convs = nn.ModuleList()
 
