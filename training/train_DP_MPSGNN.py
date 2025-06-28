@@ -93,7 +93,7 @@ def train():
     driver_ids = train_df['driverId'].to_numpy()
 
     # Mappa ID → indice nei nodi
-    driver_node_ids = data_full['driver'].node_id.cpu().numpy()  # o il campo giusto
+    driver_node_ids = data_full['driver'].n_id.cpu().numpy()
     id_to_idx = {nid: idx for idx, nid in enumerate(driver_node_ids)}
     target_vector = torch.full((driver_node_ids.shape[0],), float('nan'))
 
