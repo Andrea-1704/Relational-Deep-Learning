@@ -73,6 +73,29 @@ data, col_stats_dict = make_pkey_fkey_graph(
 def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    #We should first create teh meta graph on the all dataset graph, not batch:
+    data_full, _ = make_pkey_fkey_graph(
+        db_nuovo,
+        col_to_stype_dict=col_to_stype_dict_nuovo,
+        text_embedder_cfg=None,
+        cache_dir=None
+    )
+    data_full = data_full.to(device)
+
+    #take y and mask complete for the dataset:
+    y_full = data_full['driver'].y.float()
+    train_mask_full = data_full['driver'].train_mask
+    y_bin_full = binarize_targets(y_full, threshold=10)
+
+    metapaths = greedy_metapath_search(
+        data_full,
+        y_bin=y_bin_full,
+        train_mask=train_mask_full,
+        node_type='driver',
+        L_max=3
+    )
+
+    #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
         batch_size=512, 
         num_neighbours=256, 
@@ -82,17 +105,7 @@ def train():
         val_table=val_table, 
         test_table=test_table
     )
-
-    #data = load_relbench_f1(split='train')
     
-    # data = data.to(device)
-
-    # y = data['driver'].y.float()
-    # train_mask = data['driver'].train_mask
-
-    # y_bin = binarize_targets(y, threshold=10)
-    #batch sfould be created once for the entire dataset
-    metapaths = greedy_metapath_search(data, y_bin, train_mask, node_type='driver', L_max=2)
 
     model = MPSGNN(
         metadata=data.metadata(),
@@ -109,14 +122,15 @@ def train():
         data = batch.to(device)
         y = data['driver'].y.float()
         train_mask = data['driver'].train_mask
-        y_bin = binarize_targets(y, threshold=10)
+
         model.train()
         optimizer.zero_grad()
         out = model(data.x_dict, data.edge_index_dict)
-        loss = F.mse_loss(out[train_mask], y[train_mask])
+        loss = F.l1_loss(out[train_mask], y[train_mask])  # MAE per coerenza col tuo setup
         loss.backward()
         optimizer.step()
         print(f"Epoch {epoch:03d}, Loss: {loss.item():.4f}")
+
 
 
 if __name__ == '__main__':
