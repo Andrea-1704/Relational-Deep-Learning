@@ -83,7 +83,8 @@ def train():
     data_full = data_full.to(device)
 
     # Recupera etichette e maschere dal task
-    train_df = train_table.to_pandas()
+    train_df = train_table.df
+
 
     # driver_labels = train_table['target']  # posizione finale
     # driver_ids = train_table['driverId'].to_numpy()
