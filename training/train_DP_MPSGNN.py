@@ -82,6 +82,24 @@ def train():
     )
     data_full = data_full.to(device)
 
+    # Recupera etichette e maschere dal task
+    driver_labels = train_table['target']  # posizione finale
+    driver_ids = train_table['driverId'].to_numpy()
+
+    # Mappa ID → indice nei nodi
+    driver_node_ids = data_full['driver'].node_id.cpu().numpy()  # o il campo giusto
+    id_to_idx = {nid: idx for idx, nid in enumerate(driver_node_ids)}
+    target_vector = torch.full((driver_node_ids.shape[0],), float('nan'))
+
+    for i, driver_id in enumerate(driver_ids):
+        if driver_id in id_to_idx:
+            target_vector[id_to_idx[driver_id]] = driver_labels[i]
+
+    # Crea y e mask
+    data_full['driver'].y = target_vector
+    data_full['driver'].train_mask = ~torch.isnan(target_vector)
+
+
     #take y and mask complete for the dataset:
     y_full = data_full['driver'].y.float()
     train_mask_full = data_full['driver'].train_mask
