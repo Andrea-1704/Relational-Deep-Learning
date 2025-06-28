@@ -148,16 +148,13 @@ def train():
     for epoch in range(1, 51):
       for batch in tqdm(loader_dict["train"]):
         data = batch.to(device)
-        #print(f"\n questo è data: {data}\n")
         y = data['drivers'].y.float()
-        #print(f"\n questo è y: {y}\n")
         train_mask = data_full['drivers'].train_mask
-        #print(f"\n questo è train_mask: {train_mask}\n")
 
         model.train()
         optimizer.zero_grad()
         out = model(data.x_dict, data.edge_index_dict)
-        loss = F.l1_loss(out[train_mask], y[train_mask])  # MAE per coerenza col tuo setup
+        loss = F.l1_loss(out[train_mask], y[train_mask])
         loss.backward()
         optimizer.step()
         print(f"Epoch {epoch:03d}, Loss: {loss.item():.4f}")
