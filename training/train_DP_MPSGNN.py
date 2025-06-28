@@ -182,26 +182,6 @@ def train2():
     best_val_metric = -math.inf if higher_is_better else math.inf
     best_test_metric = -math.inf if higher_is_better else math.inf
     for epoch in range(1, 11):
-      # for batch in tqdm(loader_dict["train"]):
-      #   data = batch.to(device)
-      #   y = data['drivers'].y.float()
-      #   train_mask = data['drivers'].train_mask
-      #   #x_dict = prepare_x_dict_from_tensorframe(data)
-
-
-      #   #print(f"data.x_dict è {x_dict}")
-      #   model.train()#the model is in the training mode
-      #   optimizer.zero_grad()
-      #   out = model(batch)
-      #   loss = F.l1_loss(out[train_mask], y[train_mask])
-
-      #   loss.backward()
-      #   optimizer.step()
-      #   val_pred = test(model, loader_dict["val"], device=device, task=task)
-      #   val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-      #   test_pred = test(model, loader_dict["test"], device=device, task=task)
-      #   test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-      # print(f"Epoch {epoch:03d}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, training Loss: {loss.item():.4f}")
       train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
       train_pred = test(model, loader_dict["train"], device=device, task=task)
       train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
