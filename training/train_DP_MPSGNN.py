@@ -24,6 +24,7 @@ import copy
 from typing import Any, Dict, List
 from torch import Tensor, batch_norm_gather_stats
 from torch.nn import Embedding, ModuleDict
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch_frame.data.stats import StatType
 
 import sys
@@ -35,12 +36,12 @@ from data_management.data import loader_dict_fn
 from utils.mpsgnn_metapath_utils import binarize_targets, greedy_metapath_search
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from utils.EarlyStopping import EarlyStopping
 
 
 
 
-
-def train():
+def train2():
     dataset = get_dataset("rel-f1", download=True)
     task = get_task("rel-f1", "driver-position", download=True)
 
@@ -161,31 +162,83 @@ def train():
     ).to(device)
 
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
+    optimizer = torch.optim.Adam(
+      model.parameters(),
+      lr=0.0005,
+      weight_decay=0
+    )
+
+    scheduler = CosineAnnealingLR(optimizer, T_max=100)
+
+
+    early_stopping = EarlyStopping(
+        patience=30,
+        delta=0.0,
+        verbose=True,
+        path="best_basic_model.pt"
+    )
+
     test_table = task.get_table("test", mask_input_cols=False)
+    best_val_metric = -math.inf if higher_is_better else math.inf
+    best_test_metric = -math.inf if higher_is_better else math.inf
     for epoch in range(1, 11):
-      for batch in tqdm(loader_dict["train"]):
-        data = batch.to(device)
-        y = data['drivers'].y.float()
-        train_mask = data['drivers'].train_mask
-        #x_dict = prepare_x_dict_from_tensorframe(data)
+      # for batch in tqdm(loader_dict["train"]):
+      #   data = batch.to(device)
+      #   y = data['drivers'].y.float()
+      #   train_mask = data['drivers'].train_mask
+      #   #x_dict = prepare_x_dict_from_tensorframe(data)
 
 
-        #print(f"data.x_dict è {x_dict}")
-        model.train()#the model is in the training mode
-        optimizer.zero_grad()
-        out = model(batch)
-        loss = F.l1_loss(out[train_mask], y[train_mask])
+      #   #print(f"data.x_dict è {x_dict}")
+      #   model.train()#the model is in the training mode
+      #   optimizer.zero_grad()
+      #   out = model(batch)
+      #   loss = F.l1_loss(out[train_mask], y[train_mask])
 
-        loss.backward()
-        optimizer.step()
-        val_pred = test(model, loader_dict["val"], device=device, task=task)
-        val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-        test_pred = test(model, loader_dict["test"], device=device, task=task)
-        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-      print(f"Epoch {epoch:03d}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, training Loss: {loss.item():.4f}")
+      #   loss.backward()
+      #   optimizer.step()
+      #   val_pred = test(model, loader_dict["val"], device=device, task=task)
+      #   val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+      #   test_pred = test(model, loader_dict["test"], device=device, task=task)
+      #   test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+      # print(f"Epoch {epoch:03d}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, training Loss: {loss.item():.4f}")
+      train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+      train_pred = test(model, loader_dict["train"], device=device, task=task)
+      train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
+      val_pred = test(model, loader_dict["val"], device=device, task=task)
+      val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+      test_pred = test(model, loader_dict["test"], device=device, task=task)
+      test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+      scheduler.step(val_metrics[tune_metric])
+      if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
+            not higher_is_better and val_metrics[tune_metric] < best_val_metric
+      ):
+        best_val_metric = val_metrics[tune_metric]
+        state_dict = copy.deepcopy(model.state_dict())
+
+      #test:
+      if (higher_is_better and test_metrics[tune_metric] > best_test_metric) or (
+              not higher_is_better and test_metrics[tune_metric] < best_test_metric
+      ):
+          best_test_metric = test_metrics[tune_metric]
+          state_dict_test = copy.deepcopy(model.state_dict())
+
+      current_lr = optimizer.param_groups[0]["lr"]
+      print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+
+      early_stopping(val_metrics[tune_metric], model)
+
+      if early_stopping.early_stop:
+          print(f"Early stopping triggered at epoch {epoch}")
+          break
+    print(f"best validation results: {best_val_metric}")
+    print(f"best test results: {best_test_metric}")
+
+      
+
+
 
 
 
 if __name__ == '__main__':
-    train()
+    train2()

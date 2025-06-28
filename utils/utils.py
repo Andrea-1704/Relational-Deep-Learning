@@ -48,8 +48,8 @@ def train(model, optimizer, loader_dict, device, task, loss_fn) -> float:
             batch,
             task.entity_table,
         )
-        pred = pred.view(-1) if pred.size(1) == 1 else pred
-
+        #pred = pred.view(-1) if pred.size(1) == 1 else pred
+        pred = pred.view(-1) if pred.dim() == 2 and pred.size(1) == 1 else pred
         loss = loss_fn(pred.float(), batch[task.entity_table].y.float())
         loss.backward()
         optimizer.step()
@@ -223,7 +223,8 @@ def evaluate_on_full_train(model, loader, device, task) -> float:
     for batch in loader:
         batch = batch.to(device)
         pred = model(batch, task.entity_table)
-        pred = pred.view(-1) if pred.size(1) == 1 else pred
+        #pred = pred.view(-1) if pred.size(1) == 1 else pred
+        pred = pred.view(-1) if pred.dim() == 2 and pred.size(1) == 1 else pred
         pred_list.append(pred.cpu())
         target_list.append(batch[task.entity_table].y.cpu())
 
