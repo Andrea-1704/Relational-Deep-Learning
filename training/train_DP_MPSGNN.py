@@ -141,13 +141,13 @@ def train():
     ).to(device)
 
     model = MPSGNN(
+        data=data_official,
+        col_stats_dict=col_stats_dict_official,
         metadata=data.metadata(),
         metapaths=metapaths,
         hidden_channels=64,
         out_channels=64,
-        final_out_channels=1,
-        data=data,
-        col_stats_dict=col_stats_dict_official  
+        final_out_channels=1, 
     ).to(device)
 
 
