@@ -116,17 +116,25 @@ def train():
         L_max=3
     )
 
+    data, _ = make_pkey_fkey_graph(
+        db_nuovo,
+        col_to_stype_dict=col_to_stype_dict_nuovo,
+        text_embedder_cfg=None,
+        cache_dir=None
+    )
+    data = data.to(device)
+
     #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
         batch_size=512, 
         num_neighbours=256, 
-        data=data_full, 
+        data=data, 
         task=task,
         train_table=train_table, 
         val_table=val_table, 
         test_table=test_table
     )
-    
+    print("questo è esattamente il codice che stiamo eseguendo")
 
     model = MPSGNN(
         metadata=data_full.metadata(), #
