@@ -139,31 +139,41 @@ class ScoringFunctionReg(nn.Module):
 
 
 def evaluate_relation_learned(
-    bags: List[List[int]],
-    labels: List[float],
-    node_embeddings: torch.Tensor,
-    epochs: int = 10,
-    lr: float = 1e-2,
+    bags: List[List[int]],  #one for each node
+    labels: List[float],    #len(labels)==len(bags)
+    node_embeddings: torch.Tensor, #embeddings for each node in the graph
+    epochs: int = 50,
+    lr: float = 1e-2,#should be tuned
 ) -> float:
     """
-    Allena ScoringFunctionReg sulle embedding dei nodi nel bag.
-    Ritorna la MAE finale.
+    This function follows the algorithm indicated into section 4.4 in 
+    https://arxiv.org/abs/2412.00521, by trainign the model on the 
+    current bag in order to choose the most "discriminative" relation 
+    ri to add to the meta path. 
+    This function returns a mae value which indicates how predictive 
+    is the current bag nodes to make the classification.
     """
     device = node_embeddings.device
     in_dim = node_embeddings.size(-1)
 
-    model = ScoringFunctionReg(in_dim).to(device)
+    model = ScoringFunctionReg(in_dim).to(device)#use the class model 
+    #defined before
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     bag_embeddings = [
         node_embeddings[torch.tensor(bag, device=device)] for bag in bags
-    ]
+    ] #for each bag take the embeddings of that node, because remember 
+    #that a bag is a set of nodes of the same types, but we need to 
+    #obtain the embeddings of the nodes. 
+    #The result is a list of tensors of shape [B_i, D], where B_i is the 
+    #number of nodes in the bag, and D the dimensionality of embeddings.
+
     target_tensor = torch.tensor(labels, device=device)
 
     for _ in range(epochs):
         model.train()
         optimizer.zero_grad()
-        preds = model(bag_embeddings)
+        preds = model(bag_embeddings)#forward
         loss = model.loss(preds, target_tensor)
         loss.backward()
         optimizer.step()
