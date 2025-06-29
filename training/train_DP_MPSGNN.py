@@ -91,10 +91,6 @@ def train2():
     data_official['drivers'].y = target_vector
     data_official['drivers'].train_mask = ~torch.isnan(target_vector)
 
-
-
-
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     data_full, col_stats_dict_full = make_pkey_fkey_graph(
@@ -144,8 +140,8 @@ def train2():
 
     #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
-        batch_size=512, 
-        num_neighbours=256, 
+        batch_size=1024, 
+        num_neighbours=512, 
         data=data_official, 
         task=task,
         train_table=train_table, 
@@ -158,15 +154,15 @@ def train2():
         col_stats_dict=col_stats_dict_official,
         metadata=data_full.metadata(),
         metapaths=metapaths,
-        hidden_channels=64,
-        out_channels=64,
+        hidden_channels=512,
+        out_channels=128,
         final_out_channels=1, 
     ).to(device)
 
 
     optimizer = torch.optim.Adam(
       model.parameters(),
-      lr=0.0005,
+      lr=0.00005,
       weight_decay=0
     )
 
@@ -183,7 +179,8 @@ def train2():
     test_table = task.get_table("test", mask_input_cols=False)
     best_val_metric = -math.inf if higher_is_better else math.inf
     best_test_metric = -math.inf if higher_is_better else math.inf
-    for epoch in range(1, 11):
+    epochs = 50
+    for epoch in range(0, epochs):
       train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
       train_pred = test(model, loader_dict["train"], device=device, task=task)
       train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
