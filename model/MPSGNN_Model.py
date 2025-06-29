@@ -15,9 +15,9 @@ class MetaPathGNNLayer(MessagePassing):
     """
     This model follows the section 4.3 formulation. 
     The W0, W1, Wneigh appearing in equation 7 are threated as Linear 
-    layers.
-
-
+    layers. 
+    This allows to distinguish between the different contribution that 
+    each component of eq 7 share.
     """
     def __init__(self, in_channels, out_channels, relation_index):
         super().__init__(aggr='add', flow="target_to_source")
