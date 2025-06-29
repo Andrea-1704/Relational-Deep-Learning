@@ -68,27 +68,42 @@ def construct_bags(
 
 
 
-def evaluate_relation_surrogate(
-    bags: List[List[int]],
-    labels: List[float],
-) -> float:
-    """
-    Simply computes the MAE for the 
-    """
-    pred = torch.tensor([len(b) for b in bags], dtype=torch.float)
-    true = torch.tensor(labels, dtype=torch.float)
-    return F.l1_loss(pred, true).item()
-
-
 
 class ScoringFunctionReg(nn.Module):
-    def __init__(self, in_dim: int):
+    """
+    This function is one of possibly infinite different implementation for 
+    computing how "significative" is a bag.
+    In particular, this approach, which follows https://arxiv.org/abs/2412.00521,
+    uses a mini neural network taht takes an embedding and produces a score value.
+    Each bag is a list of embeddings of the reached nodes at a specific time step
+    (each of these nodes share the same node type) and we desire to return a score 
+    values to the bag.
+
+    We first apply the theta NN to each of the embeddings of the nodes of the bag, 
+    getting its score. 
+    Then, we normalize the scores through softmax function in order to obtain the 
+    attention weights, these score values corresponds to the "α(v, B)" computed
+    by https://arxiv.org/abs/2412.00521 in section 4.1, and formally indicates 
+    how much attention we should "dedicate" to a node of the bag.
+
+    Then, followign the formulation indicated in section 4.1 of the aforementioned
+    paper, we simply compute a weighted mean of the embeddings of the nodes in the
+    bag.
+
+    Finally, 
+    """
+    def __init__(self, in_dim: int): #in_dim is the dimension of the embedding of nodes
         super().__init__()
         self.theta = nn.Sequential(
             nn.Linear(in_dim, in_dim),
             nn.ReLU(),
-            nn.Linear(in_dim, 1)  # da embedding a scalare
+            nn.Linear(in_dim, 1)  # from embedding to scalar
         )
+        self.out = nn.Sequential(
+          nn.Linear(in_dim, in_dim),
+          nn.ReLU()
+          nn.Linear(in_dim, 1)
+        ) # final nn on embedding of bag
 
     def forward(self, bags: List[torch.Tensor]) -> torch.Tensor:
         """
@@ -98,16 +113,21 @@ class ScoringFunctionReg(nn.Module):
         preds = []
         for bag in bags:
             if bag.size(0) == 0:
+                print(f"this bag is empty")
                 preds.append(torch.tensor(0.0, device=bag.device))
                 continue
-            scores = self.theta(bag).squeeze(-1)  # [B_i]
-            weights = torch.softmax(scores, dim=0)  # [B_i]
-            weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D]
-            pred = weighted_avg.mean()  # scalare finale
+            scores = self.theta(bag).squeeze(-1)  # [B_i] #alfa scores
+            weights = torch.softmax(scores, dim=0)  # [B_i] #normalize alfa
+            weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D] #mean
+            # pred = weighted_avg.mean()  #final scalar -> terrible solution!
+            pred = self.out(weighted_avg).squeeze(-1)
             preds.append(pred)
         return torch.stack(preds)
 
     def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the m1 score between the two vectors.
+        """
         return F.l1_loss(preds, targets)
 
 
