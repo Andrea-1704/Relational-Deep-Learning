@@ -131,7 +131,7 @@ def train2():
         y=y_full,
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=3
+        L_max=3 #----> tune
     )  #to be checked, but seems to work providing a list of tuples which 
     #represents the edges.
 
@@ -140,8 +140,8 @@ def train2():
 
     #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
-        batch_size=1024, 
-        num_neighbours=512, 
+        batch_size=1024, #----> tune
+        num_neighbours=512,  #----> tune
         data=data_official, 
         task=task,
         train_table=train_table, 
@@ -154,19 +154,19 @@ def train2():
         col_stats_dict=col_stats_dict_official,
         metadata=data_full.metadata(),
         metapaths=metapaths,
-        hidden_channels=512,
-        out_channels=128,
+        hidden_channels=512, #----> tune
+        out_channels=128,    #----> tune
         final_out_channels=1, 
     ).to(device)
 
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.Adam(   #----> tune
       model.parameters(),
       lr=0.00005,
       weight_decay=0
     )
 
-    scheduler = CosineAnnealingLR(optimizer, T_max=100)
+    scheduler = CosineAnnealingLR(optimizer, T_max=25)  #---> tune
 
 
     early_stopping = EarlyStopping(
@@ -179,7 +179,7 @@ def train2():
     test_table = task.get_table("test", mask_input_cols=False)
     best_val_metric = -math.inf if higher_is_better else math.inf
     best_test_metric = -math.inf if higher_is_better else math.inf
-    epochs = 50
+    epochs = 64
     for epoch in range(0, epochs):
       train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
       train_pred = test(model, loader_dict["train"], device=device, task=task)
