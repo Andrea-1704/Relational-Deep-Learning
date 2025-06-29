@@ -97,7 +97,7 @@ def train2():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    data_full, _ = make_pkey_fkey_graph(
+    data_full, col_stats_dict_full = make_pkey_fkey_graph(
         db_nuovo,
         col_to_stype_dict=col_to_stype_dict_nuovo,
         text_embedder_cfg=None,
@@ -130,6 +130,7 @@ def train2():
     y_bin_full = binarize_targets(y_full, threshold=10)
 
     metapaths = greedy_metapath_search_with_bags_learned(
+        col_stats_dict = col_stats_dict_full,
         data=data_full,
         y=y_full,
         train_mask=train_mask_full,
