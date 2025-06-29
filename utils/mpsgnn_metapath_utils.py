@@ -9,13 +9,8 @@ from relbench.modeling.nn import HeteroEncoder
 def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
     return (y < threshold).long()
 
-
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
     return [rel for rel in metadata[1] if rel[0] == current_node_type]
-
-
-
-  #new version:
 
 def construct_bags(
     data,
