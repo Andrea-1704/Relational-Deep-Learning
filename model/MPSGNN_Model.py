@@ -1,22 +1,39 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import SAGEConv
-from typing import List, Tuple, Dict
+from torch_geometric.nn import MessagePassing
+from torch_geometric.nn import MLP
 from relbench.modeling.nn import HeteroEncoder
-from torch_frame.data.stats import StatType
-from typing import Any, Dict, List
 from torch_geometric.data import HeteroData
+from torch_frame.data.stats import StatType
+from typing import Any, Dict, List, Tuple
+from torch_geometric.nn import SAGEConv
 
+
+
+class MetaPathGNNLayer(MessagePassing):
+    def __init__(self, in_channels, out_channels, relation_index):
+        super().__init__(aggr='add', flow="target_to_source")
+        self.relation_index = relation_index
+        self.w_0 = nn.Linear(in_channels, out_channels)
+        self.w_l = nn.Linear(in_channels, out_channels)
+        self.w_1 = nn.Linear(in_channels, out_channels)
+
+    def forward(self, x, edge_index, edge_type, h):
+        edge_mask = edge_type == self.relation_index
+        out = self.propagate(edge_index[:, edge_mask], x=h)
+        return self.w_l(out) + self.w_0(h) + self.w_1(x)
+
+    def message(self, x_j):
+        return x_j
 
 
 class MetaPathGNN(nn.Module):
-    def __init__(self, metadata: Tuple[List[str], List[Tuple[str, str, str]]],
+    def __init__(self,
                  metapath: List[Tuple[str, str, str]],
                  hidden_channels: int,
                  out_channels: int):
         super().__init__()
-        
         self.metapath = metapath
         self.convs = nn.ModuleList()
 
@@ -28,14 +45,14 @@ class MetaPathGNN(nn.Module):
 
     def forward(self, x_dict, edge_index_dict):
         h_dict = x_dict.copy()
-
         for i, (src, rel, dst) in enumerate(self.metapath):
             edge_index = edge_index_dict[(src, rel, dst)]
             h_dst = self.convs[i]((h_dict[src], h_dict[dst]), edge_index)
             h_dict[dst] = F.relu(h_dst)
-
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
+
+
 
 
 class MPSGNN(nn.Module):
@@ -43,28 +60,46 @@ class MPSGNN(nn.Module):
                  data: HeteroData,
                  col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
                  metadata: Tuple[List[str], List[Tuple[str, str, str]]],
-                 metapaths: List[List[Tuple[str, str, str]]],
+                 metapaths: List[List[int]],  # rel_indices
                  hidden_channels: int = 64,
                  out_channels: int = 64,
                  final_out_channels: int = 1):
         super().__init__()
+
+        # self.metapath_models = nn.ModuleList([
+        #     MetaPathGNN(input_dim=hidden_channels,
+        #                 hidden_dim=hidden_channels,
+        #                 output_dim=out_channels,
+        #                 metapath=mp)
+        #     for mp in metapaths
+        # ])
         self.metapath_models = nn.ModuleList([
-            MetaPathGNN(metadata, mp, hidden_channels, out_channels)
+            MetaPathGNN(mp, hidden_channels, out_channels)
             for mp in metapaths
         ])
-        self.regressor = nn.Linear(out_channels * len(metapaths), final_out_channels)
+
+
+        self.regressor = nn.Sequential(
+            nn.Linear(out_channels * len(metapaths), out_channels),
+            nn.ReLU(),
+            nn.Linear(out_channels, final_out_channels)
+        )
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
             node_to_col_names_dict={
-                node_type: data[node_type].tf.col_names_dict  
+                node_type: data[node_type].tf.col_names_dict
                 for node_type in data.node_types
             },
-            node_to_col_stats=col_stats_dict  
+            node_to_col_stats=col_stats_dict
         )
 
     def forward(self, batch: HeteroData, entity_table=None):
-        x_dict = self.encoder(batch.tf_dict)
-        embeddings = [model(x_dict, batch.edge_index_dict) for model in self.metapath_models]
-        concat = torch.cat(embeddings, dim=-1)
-        return self.regressor(concat).squeeze(-1)
+      x_dict = self.encoder(batch.tf_dict)
+      embeddings = [
+          model(x_dict, batch.edge_index_dict)
+          for model in self.metapath_models
+      ]
+      concat = torch.cat(embeddings, dim=-1)
+      return self.regressor(concat).squeeze(-1)
+
