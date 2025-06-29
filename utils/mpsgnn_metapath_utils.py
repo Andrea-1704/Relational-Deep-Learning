@@ -152,6 +152,16 @@ def evaluate_relation_learned(
     ri to add to the meta path. 
     This function returns a mae value which indicates how predictive 
     is the current bag nodes to make the classification.
+
+    This approach is inspired by the aforementioned paper, but is 
+    different in the nature because we need to employ a different
+    surrogate function (in the paper the binary ranking loss was used,
+    we, instead, use a MAE loss since we need to deal with a regression
+    task).
+    Also, in the paper, the scoring function "F(B)" was parametrized by
+    relations, not for metadapath; we are, instead, building a 
+    ScoringFunctionReg from scratch for each relation, reducing the 
+    risk of overfitting, but also increasing the complexity.
     """
     device = node_embeddings.device
     in_dim = node_embeddings.size(-1)
@@ -197,7 +207,10 @@ def greedy_metapath_search_with_bags_learned(
     max_rels: int = 10,
 ) -> List[List[Tuple[str, str, str]]]:
     """
-    Costruisce meta-path greedy usando surrogate scoring appreso (MAE).
+    This is the main component of this set of function and classes, is the 
+    complete algorithm used to implement the meta paths.
+
+    
     """
     device = y.device
     metapaths = []
