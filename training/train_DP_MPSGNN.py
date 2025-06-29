@@ -37,6 +37,7 @@ from utils.mpsgnn_metapath_utils import binarize_targets, greedy_metapath_search
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
+from utils.mpsgnn_metapath_bags import greedy_metapath_search_with_bags
 
 
 
@@ -128,9 +129,9 @@ def train2():
     train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
 
-    metapaths = greedy_metapath_search(
-        data_full,
-        y_bin=y_bin_full,
+    metapaths = greedy_metapath_search_with_bags(
+        data=data_full,
+        y=y_full,
         train_mask=train_mask_full,
         node_type='drivers',
         L_max=3
