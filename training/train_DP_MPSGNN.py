@@ -125,13 +125,17 @@ def train2():
     train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
 
+    hidden_channels = 1024
+    out_channels = 512
+
     metapaths = greedy_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,
         data=data_full,
         y=y_full,
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=3 #----> tune
+        L_max=3, #----> tune
+        channels = hidden_channels
     )  #to be checked, but seems to work providing a list of tuples which 
     #represents the edges.
 
@@ -154,8 +158,8 @@ def train2():
         col_stats_dict=col_stats_dict_official,
         metadata=data_full.metadata(),
         metapaths=metapaths,
-        hidden_channels=1024, #----> tune
-        out_channels=512,    #----> tune
+        hidden_channels=hidden_channels, #----> tune
+        out_channels=out_channels,    #----> tune
         final_out_channels=1, 
     ).to(device)
 

@@ -205,6 +205,7 @@ def greedy_metapath_search_with_bags_learned(
     col_stats_dict: Dict[str, Dict[str, Dict]],  # per HeteroEncoder
     L_max: int = 3,
     max_rels: int = 10,
+    channels : int = 64,
 ) -> List[List[Tuple[str, str, str]]]:
     """
     This is the main component of this set of function and classes, is the 
@@ -235,7 +236,7 @@ def greedy_metapath_search_with_bags_learned(
             #Encoder to get the embeddings
             with torch.no_grad():
               encoder = HeteroEncoder(
-                  channels=64,
+                  channels=channels,
                   node_to_col_names_dict={
                       ntype: data[ntype].tf.col_names_dict
                       for ntype in data.node_types
