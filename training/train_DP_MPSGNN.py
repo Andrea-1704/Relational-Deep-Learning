@@ -37,7 +37,7 @@ from utils.mpsgnn_metapath_utils import binarize_targets, greedy_metapath_search
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_learned import greedy_metapath_search_with_bags_learned
+from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned
 
 
 
