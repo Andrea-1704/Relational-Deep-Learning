@@ -215,6 +215,11 @@ def greedy_metapath_search_with_bags_learned(
     depth.
     At each step selects the best relation to add to the current path 
     based on a surrogate task score (MAE).
+
+    In the current version of this algorithm we are deliberately avoiding 
+    to consider the second stopping criteria indicated in section 4.4 of the 
+    reference, in order to avoid to consider a strict threshold for the 
+    allowed minimal improvement.
     """
     device = y.device
     metapaths = [] #the thing we will return
