@@ -191,4 +191,37 @@ class ScoringFunctionReg(nn.Module):
     def loss(self, preds: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         return F.l1_loss(preds, labels)
 
+def evaluate_relation_learned(
+    bags: List[List[int]],
+    labels: List[float],
+    node_embeddings: torch.Tensor,
+    epochs: int = 10,
+    lr: float = 1e-2,
+) -> float:
+    """
+    Addestra una ScoringFunctionReg su bags + labels e ritorna il MAE.
+    """
+    device = node_embeddings.device
+    model = ScoringFunctionReg(node_embeddings.size(-1)).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    # Prepara i dati: converti ogni bag in embedding
+    bag_embeddings = [node_embeddings[torch.tensor(bag, device=device)] for bag in bags]
+    label_tensor = torch.tensor(labels, device=device)
+
+    for _ in range(epochs):
+        model.train()
+        optimizer.zero_grad()
+        preds = model(bag_embeddings)
+        loss = model.loss(preds, label_tensor)
+        loss.backward()
+        optimizer.step()
+
+    # Valutazione finale
+    model.eval()
+    with torch.no_grad():
+        preds = model(bag_embeddings)
+        final_mae = model.loss(preds, label_tensor).item()
+
+    return final_mae
 
