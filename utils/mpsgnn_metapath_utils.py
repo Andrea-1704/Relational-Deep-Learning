@@ -6,6 +6,17 @@ import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 
 
+def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
+    return (y < threshold).long()
+
+
+def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
+    return [rel for rel in metadata[1] if rel[0] == current_node_type]
+
+
+
+  #new version:
+
 def construct_bags(
     data,
     train_mask: torch.Tensor,
@@ -46,6 +57,39 @@ def evaluate_relation_surrogate(
     pred = torch.tensor([len(b) for b in bags], dtype=torch.float)
     true = torch.tensor(labels, dtype=torch.float)
     return F.l1_loss(pred, true).item()
+
+
+
+# class ScoringFunctionReg(nn.Module):
+#     def __init__(self, in_dim: int):
+#         super().__init__()
+#         self.theta = nn.Sequential(
+#             nn.Linear(in_dim, in_dim),
+#             nn.ReLU(),
+#             nn.Linear(in_dim, 1)  # da embedding a score scalare
+#         )
+
+#     def forward(self, bags: List[torch.Tensor]) -> torch.Tensor:
+#         """
+#         bags: lista di tensori (uno per ogni bag) con shape [B_i, D] (embedding dei nodi nel bag)
+#         Output: predizione scalare per ciascun bag (media pesata)
+#         """
+#         preds = []
+#         for bag in bags:
+#             if bag.size(0) == 0:
+#                 preds.append(torch.tensor(0.0, device=bag.device))
+#                 continue
+#             scores = self.theta(bag).squeeze(-1)  # [B_i]
+#             weights = torch.softmax(scores, dim=0)  # normalizza i pesi nel bag
+#             weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D]
+#             pred = weighted_avg.mean()  # riduci a scalare
+#             preds.append(pred)
+#         return torch.stack(preds)
+
+#     def loss(self, preds: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+#         return F.l1_loss(preds, labels)
+
+
 
 
 class ScoringFunctionReg(nn.Module):
