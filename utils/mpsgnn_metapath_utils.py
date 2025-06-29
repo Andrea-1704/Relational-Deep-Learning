@@ -273,8 +273,10 @@ def greedy_metapath_search_with_bags_learned(
                 #build the bag considering "rel"
                 if len(bags) < 5:
                     continue
+                #this avoid to consider few bags to avoid overfitting
 
                 score = evaluate_relation_learned(bags, labels, node_embeddings)
+                #assign the score value to current split, similar to DECISION TREES
                 if score < best_score:
                     best_score = score
                     best_rel = rel
