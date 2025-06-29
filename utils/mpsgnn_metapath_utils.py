@@ -6,11 +6,32 @@ import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 
 
+
 def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
-    return (y < threshold).long()
+  """
+  This function trasforms a regression task (like the one of driver position)
+  into a binary classification problem. 
+  To incorporate the original https://arxiv.org/abs/2412.00521 paper, which 
+  was only for binary classification we decided to trnasform our task into a 
+  binary classfication task, where the driver position gets converted into a 
+  binary label:
+  1 if position < threshold;
+  o otherwise.
+  """
+  return (y < threshold).long()
+
+
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
-    return [rel for rel in metadata[1] if rel[0] == current_node_type]
+  """
+  This function takes the "metadata" of the grafo (which are basicly all the 
+  relevant informations about the graph, such as edge types, node types, etc.)
+  and returns all the edges (in tuple format "(src_type, name of relation, 
+  dst_type)") that starts from "current_node_type" as "src_type".
+  """
+  return [rel for rel in metadata[1] if rel[0] == current_node_type]
+
+
 
 def construct_bags(
     data,
@@ -20,20 +41,25 @@ def construct_bags(
     node_type: str,
 ) -> Tuple[List[List[int]], List[float]]:
     """
-    Costruisce bags: per ogni nodo target nel training set, crea un bag
-    con i nodi raggiunti tramite la relazione 'rel'.
+    This function returns the bags for relation "rel" and the correspondings labels. 
     """
     src, rel_name, dst = rel
-    if (src, rel_name, dst) not in data.edge_index_dict:
+    if (src, rel_name, dst) not in data.edge_index_dict: #this should be counted as error
+        print(f"edge type {rel} not found")
         return [], []
 
-    edge_index = data.edge_index_dict[(src, rel_name, dst)]
-    bags = []
-    labels = []
+    edge_index = data.edge_index_dict[(src, rel_name, dst)]#taks the edges of that type
+    bags = [] #inizialize the bag 
+    labels = [] #inizialize the label for each bag (patient -> prescription, we construct
+    #bag B for patient p1 which is healthy-> so B is linked to label healthy)
 
     for i in torch.where(train_mask)[0]:
+      #train mask is constructed at the beginning of the train and is simply a boolean vector 
+      #of the same size of drivers (target in general) nodes and contains true if that node 
+      #is in the train split and we know its label and has some neighbours.
         node_id = i.item()
         neighbors = edge_index[1][edge_index[0] == node_id]
+        #we construct the bag considering the rel kind of relation staring from src
         if len(neighbors) > 0:
             bags.append(neighbors.tolist())
             labels.append(y[node_id].item())
@@ -41,49 +67,17 @@ def construct_bags(
     return bags, labels
 
 
+
 def evaluate_relation_surrogate(
     bags: List[List[int]],
     labels: List[float],
 ) -> float:
     """
-    Surrogate scoring: usa la dimensione del bag come feature predittiva
-    e valuta quanto bene correla con le label vere (MAE).
+    Simply computes the MAE for the 
     """
     pred = torch.tensor([len(b) for b in bags], dtype=torch.float)
     true = torch.tensor(labels, dtype=torch.float)
     return F.l1_loss(pred, true).item()
-
-
-
-# class ScoringFunctionReg(nn.Module):
-#     def __init__(self, in_dim: int):
-#         super().__init__()
-#         self.theta = nn.Sequential(
-#             nn.Linear(in_dim, in_dim),
-#             nn.ReLU(),
-#             nn.Linear(in_dim, 1)  # da embedding a score scalare
-#         )
-
-#     def forward(self, bags: List[torch.Tensor]) -> torch.Tensor:
-#         """
-#         bags: lista di tensori (uno per ogni bag) con shape [B_i, D] (embedding dei nodi nel bag)
-#         Output: predizione scalare per ciascun bag (media pesata)
-#         """
-#         preds = []
-#         for bag in bags:
-#             if bag.size(0) == 0:
-#                 preds.append(torch.tensor(0.0, device=bag.device))
-#                 continue
-#             scores = self.theta(bag).squeeze(-1)  # [B_i]
-#             weights = torch.softmax(scores, dim=0)  # normalizza i pesi nel bag
-#             weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D]
-#             pred = weighted_avg.mean()  # riduci a scalare
-#             preds.append(pred)
-#         return torch.stack(preds)
-
-#     def loss(self, preds: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-#         return F.l1_loss(preds, labels)
-
 
 
 
@@ -115,7 +109,6 @@ class ScoringFunctionReg(nn.Module):
 
     def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         return F.l1_loss(preds, targets)
-
 
 
 
@@ -155,7 +148,6 @@ def evaluate_relation_learned(
         final_mae = model.loss(preds, target_tensor).item()
 
     return final_mae
-
 
 
 
@@ -203,8 +195,6 @@ def greedy_metapath_search_with_bags_learned(
               }
 
               node_embeddings_dict = encoder(tf_dict)
-
-
 
             candidate_rels = [
                 (src, rel, dst)
