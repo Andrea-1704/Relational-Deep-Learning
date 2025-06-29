@@ -1,8 +1,9 @@
 import torch
 from torch_geometric.data import HeteroData
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import torch.nn as nn
 import torch.nn.functional as F
+from relbench.modeling.nn import HeteroEncoder
 
 
 def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
@@ -109,59 +110,6 @@ def evaluate_relation_surrogate(
 
 
 
-def greedy_metapath_search_with_bags(
-    data,
-    y: torch.Tensor,
-    train_mask: torch.Tensor,
-    node_type: str,
-    L_max: int = 3,
-    max_rels: int = 10,
-) -> List[List[Tuple[str, str, str]]]:
-    """
-    Costruisce meta-path greedy selezionando le relazioni che minimizzano MAE
-    tra la dimensione dei bags e le label.
-    """
-    device = y.device
-    metapaths = []
-
-    current_paths = [[]]
-    for level in range(L_max):
-        new_paths = []
-
-        for path in current_paths:
-            # Nodo da cui partire (iniziale o ultimo step del path)
-            last_ntype = node_type if not path else path[-1][2]
-
-            # Relazioni candidate uscenti da last_ntype
-            candidate_rels = [
-                (src, rel, dst)
-                for (src, rel, dst) in data.edge_index_dict.keys()
-                if src == last_ntype
-            ][:max_rels]
-
-            best_rel = None
-            best_score = float('inf')
-
-            for rel in candidate_rels:
-                bags, labels = construct_bags(data, train_mask, y, rel, node_type)
-                if len(bags) < 5:
-                    continue
-                score = evaluate_relation_surrogate(bags, labels)
-                if score < best_score:
-                    best_score = score
-                    best_rel = rel
-
-            if best_rel:
-                new_paths.append(path + [best_rel])
-
-        current_paths = new_paths
-        metapaths.extend(current_paths)
-
-    return metapaths
-
-
-
-
 class ScoringFunctionReg(nn.Module):
     def __init__(self, in_dim: int):
         super().__init__()
@@ -225,3 +173,74 @@ def evaluate_relation_learned(
 
     return final_mae
 
+
+
+
+
+def greedy_metapath_search_with_bags_learned(
+    data,
+    y: torch.Tensor,
+    train_mask: torch.Tensor,
+    node_type: str,
+    col_stats_dict: Dict[str, Dict[str, Dict]],  # per HeteroEncoder
+    L_max: int = 3,
+    max_rels: int = 10,
+) -> List[List[Tuple[str, str, str]]]:
+    """
+    Costruisce meta-path greedy usando surrogate scoring appreso (MAE).
+    """
+    device = y.device
+    metapaths = []
+    current_paths = [[]]
+
+    for level in range(L_max):
+        new_paths = []
+
+        for path in current_paths:
+            last_ntype = node_type if not path else path[-1][2]
+
+            # Encoder per ottenere tutte le embedding (una volta per step)
+            with torch.no_grad():
+                encoder = HeteroEncoder(
+                    channels=64,  #valore che usiamo dentro il modello
+                    node_to_col_names_dict={
+                        ntype: data[ntype].tf.col_names_dict
+                        for ntype in data.node_types
+                    },
+                    node_to_col_stats=col_stats_dict,
+                ).to(device)
+
+                tf_dict = {ntype: data[ntype].tf for ntype in data.node_types if 'tf' in data[ntype]}
+                node_embeddings_dict = encoder(tf_dict)
+
+            candidate_rels = [
+                (src, rel, dst)
+                for (src, rel, dst) in data.edge_index_dict.keys()
+                if src == last_ntype
+            ][:max_rels]
+
+            best_rel = None
+            best_score = float("inf")
+
+            for rel in candidate_rels:
+                src, _, dst = rel
+                node_embeddings = node_embeddings_dict.get(dst)
+                if node_embeddings is None:
+                    continue
+
+                bags, labels = construct_bags(data, train_mask, y, rel, node_type)
+                if len(bags) < 5:
+                    continue
+
+                score = evaluate_relation_learned(bags, labels, node_embeddings)
+                if score < best_score:
+                    best_score = score
+                    best_rel = rel
+
+            if best_rel:
+                new_paths.append(path + [best_rel])
+
+        current_paths = new_paths
+        metapaths.extend(current_paths)
+
+    return metapaths
