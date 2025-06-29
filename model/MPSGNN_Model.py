@@ -16,7 +16,7 @@ class MetaPathGNNLayer(MessagePassing):
         super().__init__(aggr='add', flow="target_to_source")
         #we use the add function as aggregation function
         self.relation_index = relation_index
-        self.w_0 = nn.Linear(in_channels, out_channels)
+        self.w_0 = nn.Linear(in_channels, out_channels) # θ₀ · h
         self.w_l = nn.Linear(in_channels, out_channels)
         self.w_1 = nn.Linear(in_channels, out_channels)
 
