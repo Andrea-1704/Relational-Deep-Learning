@@ -25,7 +25,7 @@ class MetaPathGNNLayer(MessagePassing):
         self.relation_index = relation_index
         self.w_0 = nn.Linear(in_channels, out_channels) # W_0 appears here: W_0 · h (in eq 7)
         self.w_l = nn.Linear(in_channels, out_channels) # W_l appears here: W_l * ∑ u∈N h_u 
-        self.w_1 = nn.Linear(in_channels, out_channels) # W_1 appears here: W_1 * h(0) 
+        self.w_1 = nn.Linear(in_channels, out_channels) # W_1 appears here: W_1 * h(0) SKIP CONNECTION
 
     def forward(self, x, edge_index, edge_type, h):
         edge_mask = edge_type == self.relation_index
@@ -81,6 +81,23 @@ class MetaPathGNN(nn.Module):
 
 
 class MPSGNN(nn.Module):
+    """
+    This is the complete Multi META Path model.
+    It aggregates multiple metaPathGNN, each of which is dedicated
+    to a single MetaPath (and, so produces an embeddings based
+    on that metapath). 
+    We then compute all the embeddings produced by each metapath, 
+    through MetaPathGNN Model to make a final prediction, which in 
+    our is a regression task (driver position only for now).
+
+    We use HeteroEncoder in order to get intial enbeddings for nodes.
+
+    Finally, we employ a nn (a Regressor) to combine the results 
+    of the aggregation of the different metapaths.
+
+    This follows the formula indicated in section 4.3 at pag 8 (final lines).
+
+    """
     def __init__(self,
                  data: HeteroData,
                  col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
@@ -94,14 +111,14 @@ class MPSGNN(nn.Module):
         self.metapath_models = nn.ModuleList([
             MetaPathGNN(mp, hidden_channels, out_channels)
             for mp in metapaths
-        ])
+        ]) # we construct a MetaPathGNN for each metapath
 
 
         self.regressor = nn.Sequential(
             nn.Linear(out_channels * len(metapaths), out_channels),
             nn.ReLU(),
             nn.Linear(out_channels, final_out_channels)
-        )
+        ) #regressor after the concstenation of the embeddings.
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
@@ -116,8 +133,8 @@ class MPSGNN(nn.Module):
       x_dict = self.encoder(batch.tf_dict)
       embeddings = [
           model(x_dict, batch.edge_index_dict)
-          for model in self.metapath_models
-      ]
-      concat = torch.cat(embeddings, dim=-1)
-      return self.regressor(concat).squeeze(-1)
+          for model in self.metapath_models 
+      ] #create a list of the embeddings, one for each metapath
+      concat = torch.cat(embeddings, dim=-1) #concatenate the embeddings 
+      return self.regressor(concat).squeeze(-1) #finally apply regression
 
