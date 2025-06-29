@@ -12,13 +12,20 @@ from torch_geometric.nn import SAGEConv
 
 
 class MetaPathGNNLayer(MessagePassing):
+    """
+    This model follows the section 4.3 formulation. 
+    The W0, W1, Wneigh appearing in equation 7 are threated as Linear 
+    layers.
+
+
+    """
     def __init__(self, in_channels, out_channels, relation_index):
         super().__init__(aggr='add', flow="target_to_source")
         #we use the add function as aggregation function
         self.relation_index = relation_index
-        self.w_0 = nn.Linear(in_channels, out_channels) # θ₀ · h
-        self.w_l = nn.Linear(in_channels, out_channels)
-        self.w_1 = nn.Linear(in_channels, out_channels)
+        self.w_0 = nn.Linear(in_channels, out_channels) # W_0 appears here: W_0 · h (in eq 7)
+        self.w_l = nn.Linear(in_channels, out_channels) # W_l appears here: W_l * ∑ u∈N h_u 
+        self.w_1 = nn.Linear(in_channels, out_channels) # W_1 appears here: W_1 * h(0) 
 
     def forward(self, x, edge_index, edge_type, h):
         edge_mask = edge_type == self.relation_index
