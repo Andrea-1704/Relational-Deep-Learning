@@ -14,6 +14,7 @@ from torch_geometric.nn import SAGEConv
 class MetaPathGNNLayer(MessagePassing):
     def __init__(self, in_channels, out_channels, relation_index):
         super().__init__(aggr='add', flow="target_to_source")
+        #we use the add function as aggregation function
         self.relation_index = relation_index
         self.w_0 = nn.Linear(in_channels, out_channels)
         self.w_l = nn.Linear(in_channels, out_channels)
@@ -22,6 +23,7 @@ class MetaPathGNNLayer(MessagePassing):
     def forward(self, x, edge_index, edge_type, h):
         edge_mask = edge_type == self.relation_index
         out = self.propagate(edge_index[:, edge_mask], x=h)
+        #the propagate function call the message, aggregate and update function
         return self.w_l(out) + self.w_0(h) + self.w_1(x)
 
     def message(self, x_j):
@@ -65,14 +67,7 @@ class MPSGNN(nn.Module):
                  out_channels: int = 64,
                  final_out_channels: int = 1):
         super().__init__()
-
-        # self.metapath_models = nn.ModuleList([
-        #     MetaPathGNN(input_dim=hidden_channels,
-        #                 hidden_dim=hidden_channels,
-        #                 output_dim=out_channels,
-        #                 metapath=mp)
-        #     for mp in metapaths
-        # ])
+        
         self.metapath_models = nn.ModuleList([
             MetaPathGNN(mp, hidden_channels, out_channels)
             for mp in metapaths
