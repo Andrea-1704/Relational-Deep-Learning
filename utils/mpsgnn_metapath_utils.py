@@ -90,7 +90,8 @@ class ScoringFunctionReg(nn.Module):
     paper, we simply compute a weighted mean of the embeddings of the nodes in the
     bag.
 
-    Finally, 
+    Finally, we pass the embeddings of the bag to another NN which computes a
+    single prediction score for the bag.
     """
     def __init__(self, in_dim: int): #in_dim is the dimension of the embedding of nodes
         super().__init__()
@@ -107,8 +108,9 @@ class ScoringFunctionReg(nn.Module):
 
     def forward(self, bags: List[torch.Tensor]) -> torch.Tensor:
         """
-        Ogni bag è un tensore di shape [B_i, D].
-        Ritorna un valore scalare predetto per ciascun bag.
+        Each bag is a tensor of shape [B_i, D]
+        This function return a scalar value, which represent the 
+        prediction of each bag.
         """
         preds = []
         for bag in bags:
