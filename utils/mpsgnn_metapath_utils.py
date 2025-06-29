@@ -201,7 +201,7 @@ def greedy_metapath_search_with_bags_learned(
     data,
     y: torch.Tensor,
     train_mask: torch.Tensor,
-    node_type: str,
+    node_type: str, #target node, "driver" for example
     col_stats_dict: Dict[str, Dict[str, Dict]],  # per HeteroEncoder
     L_max: int = 3,
     max_rels: int = 10,
@@ -225,8 +225,9 @@ def greedy_metapath_search_with_bags_learned(
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
+            #if the current next node is empty, start from the target node ("driver")
 
-            # Encoder per ottenere tutte le embedding (una volta per step)
+            #Encoder to get the embeddings
             with torch.no_grad():
               encoder = HeteroEncoder(
                   channels=64,
@@ -237,12 +238,13 @@ def greedy_metapath_search_with_bags_learned(
                   node_to_col_stats=col_stats_dict,
               ).to(device)
 
-              # forza anche i buffer
+              #just to be sure (not very relevant)
               for module in encoder.modules():
                   for name, buf in module._buffers.items():
                       if buf is not None:
                           module._buffers[name] = buf.to(device)
 
+              #get the features of nodes
               tf_dict = {
                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
               }
@@ -253,18 +255,22 @@ def greedy_metapath_search_with_bags_learned(
                 (src, rel, dst)
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
-            ][:max_rels]
+            ][:max_rels] #get "max_rels" relations that start from current
+            #node ("last_ntype").
 
             best_rel = None
             best_score = float("inf")
 
-            for rel in candidate_rels:
+            for rel in candidate_rels: #consider all the possible relations
                 src, _, dst = rel
-                node_embeddings = node_embeddings_dict.get(dst)
+                node_embeddings = node_embeddings_dict.get(dst) #get embeddings
+                #of the dst node.
                 if node_embeddings is None:
+                    print(f"error: embedding of node {dst} not found")
                     continue
 
                 bags, labels = construct_bags(data, train_mask, y, rel, node_type)
+                #build the bag considering "rel"
                 if len(bags) < 5:
                     continue
 
