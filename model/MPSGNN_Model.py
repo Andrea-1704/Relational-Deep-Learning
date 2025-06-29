@@ -38,6 +38,14 @@ class MetaPathGNNLayer(MessagePassing):
 
 
 class MetaPathGNN(nn.Module):
+    """
+    This is the network that express the GNN operations over a meta path.
+    We create a GNN layer for each relation in the metapath. Then, we 
+    propagate over the metapath using convolutions.
+    Finally we apply a final prejection to the initial node embeddings.
+
+    So, we generate embeddings considering the metapath "metapath".
+    """
     def __init__(self,
                  metapath: List[Tuple[str, str, str]],
                  hidden_channels: int,
