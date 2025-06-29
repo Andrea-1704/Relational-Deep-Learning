@@ -154,8 +154,8 @@ def train2():
         col_stats_dict=col_stats_dict_official,
         metadata=data_full.metadata(),
         metapaths=metapaths,
-        hidden_channels=512, #----> tune
-        out_channels=128,    #----> tune
+        hidden_channels=1024, #----> tune
+        out_channels=512,    #----> tune
         final_out_channels=1, 
     ).to(device)
 

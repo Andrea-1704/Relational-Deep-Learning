@@ -63,7 +63,7 @@ class MetaPathGNN(nn.Module):
         for _ in metapath:
             #for each relation in the metapath we consider 
             #a SAGEConv layer
-            conv = SAGEConv((-1, -1), hidden_channels)
+            conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
             self.convs.append(conv)
 
         self.out_proj = nn.Linear(hidden_channels, out_channels)
@@ -114,7 +114,7 @@ class MPSGNN(nn.Module):
         ]) # we construct a MetaPathGNN for each metapath
 
 
-        self.regressor = nn.Sequential(
+        self.regressor = nn.Sequential(#----> tune
             nn.Linear(out_channels * len(metapaths), out_channels),
             nn.ReLU(),
             nn.Linear(out_channels, final_out_channels)
