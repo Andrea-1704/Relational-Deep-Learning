@@ -1,6 +1,8 @@
 import torch
 from torch_geometric.data import HeteroData
 from typing import List, Tuple
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
@@ -156,4 +158,37 @@ def greedy_metapath_search_with_bags(
         metapaths.extend(current_paths)
 
     return metapaths
+
+
+
+
+class ScoringFunctionReg(nn.Module):
+    def __init__(self, in_dim: int):
+        super().__init__()
+        self.theta = nn.Sequential(
+            nn.Linear(in_dim, in_dim),
+            nn.ReLU(),
+            nn.Linear(in_dim, 1)  # da embedding a score scalare
+        )
+
+    def forward(self, bags: List[torch.Tensor]) -> torch.Tensor:
+        """
+        bags: lista di tensori (uno per ogni bag) con shape [B_i, D] (embedding dei nodi nel bag)
+        Output: predizione scalare per ciascun bag (media pesata)
+        """
+        preds = []
+        for bag in bags:
+            if bag.size(0) == 0:
+                preds.append(torch.tensor(0.0, device=bag.device))
+                continue
+            scores = self.theta(bag).squeeze(-1)  # [B_i]
+            weights = torch.softmax(scores, dim=0)  # normalizza i pesi nel bag
+            weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D]
+            pred = weighted_avg.mean()  # riduci a scalare
+            preds.append(pred)
+        return torch.stack(preds)
+
+    def loss(self, preds: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return F.l1_loss(preds, labels)
+
 
