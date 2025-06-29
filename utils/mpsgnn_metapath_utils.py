@@ -101,7 +101,7 @@ class ScoringFunctionReg(nn.Module):
         )
         self.out = nn.Sequential(
           nn.Linear(in_dim, in_dim),
-          nn.ReLU()
+          nn.ReLU(),
           nn.Linear(in_dim, 1)
         ) # final nn on embedding of bag
 
