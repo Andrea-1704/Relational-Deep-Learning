@@ -210,13 +210,17 @@ def greedy_metapath_search_with_bags_learned(
     This is the main component of this set of function and classes, is the 
     complete algorithm used to implement the meta paths.
 
-    
+    This function searches in a greedy fashion the best meta-paths 
+    starting from a node(the TARGET one, for example driver) till "L_max" 
+    depth.
+    At each step selects the best relation to add to the current path 
+    based on a surrogate task score (MAE).
     """
     device = y.device
-    metapaths = []
-    current_paths = [[]]
+    metapaths = [] #the thing we will return
+    current_paths = [[]] #current partial paths that we are going to expand 
 
-    for level in range(L_max):
+    for level in range(L_max): #cycle in the level of metapath
         new_paths = []
 
         for path in current_paths:
