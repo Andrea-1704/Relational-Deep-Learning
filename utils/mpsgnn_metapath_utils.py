@@ -96,6 +96,8 @@ class ScoringFunctionReg(nn.Module):
     We are using these two networks to "predict" whether the current bag is 
     able to capture important signals about the predictive label.... DOES THIS MAKE
     SENSE????
+
+    Here we work on a single bag.
     """
     def __init__(self, in_dim: int): #in_dim is the dimension of the embedding of nodes
         super().__init__()

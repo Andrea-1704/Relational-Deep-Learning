@@ -78,6 +78,22 @@ class MetaPathGNN(nn.Module):
         return self.out_proj(h_dict[start_type])
 
 
+class MetaPathSelfAttention(nn.Module):
+    def __init__(self, dim, num_heads=4):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+        self.output_proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.ReLU(),
+            nn.Linear(dim, 1)  #final prediction
+        )
+
+    def forward(self, metapath_embeddings):  # [N, M, D]
+        #self attention requires an input of shape [batch, seq_len, embed_dim]
+        attn_output, _ = self.attn(metapath_embeddings, metapath_embeddings, metapath_embeddings)  # [N, M, D]
+        pooled = attn_output.mean(dim=1)  #matapaths mean -> [N, D]
+        return self.output_proj(pooled).squeeze(-1)  # output: [N]
+
 
 
 class MPSGNN(nn.Module):
@@ -97,6 +113,12 @@ class MPSGNN(nn.Module):
 
     This follows the formula indicated in section 4.3 at pag 8 (final lines).
 
+    We decided to change a little bit this structure adding a self attention 
+    mechanism for the metapaths. We do not only hope to slightly improve the 
+    performances of the model, but we also desires to improve the 
+    explainability of the model, having a score value for each of the metapaths
+    we can easily indicate how much attention is given to every metapath, 
+    allowing us to gain more explainability.
     """
     def __init__(self,
                  data: HeteroData,
@@ -114,11 +136,13 @@ class MPSGNN(nn.Module):
         ]) # we construct a MetaPathGNN for each metapath
 
 
-        self.regressor = nn.Sequential(#----> tune
-            nn.Linear(out_channels * len(metapaths), out_channels),
-            nn.ReLU(),
-            nn.Linear(out_channels, final_out_channels)
-        ) #regressor after the concstenation of the embeddings.
+        # self.regressor = nn.Sequential(#----> tune
+        #     nn.Linear(out_channels * len(metapaths), out_channels),
+        #     nn.ReLU(),
+        #     nn.Linear(out_channels, final_out_channels)
+        # ) #regressor after the concstenation of the embeddings.
+        #we change this in order to add a self attention mechanism between metapaths:
+        self.regressor = MetaPathSelfAttention(out_channels, num_head=4)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
@@ -135,6 +159,6 @@ class MPSGNN(nn.Module):
           model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
-      concat = torch.cat(embeddings, dim=-1) #concatenate the embeddings 
-      return self.regressor(concat).squeeze(-1) #finally apply regression
+      concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
+      return self.regressor(concat) #finally apply regression
 
