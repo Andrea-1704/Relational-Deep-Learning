@@ -99,13 +99,21 @@ def construct_bags_with_alpha(
         print(f"this should not have happened, but the relation was not found.")
         return [], [], {}
 
-    edge_src, edge_dst = edge_index
-    bags = []
-    labels = []
-    alpha_next = {}
+    edge_src, edge_dst = edge_index #tensor [2, #edges], the first one has the node indexes of the src_type, the second of the dst_type
+    bags = [] #the new bags, one for each "v" node.
+    labels = [] #for each bag we consider its label, given by the one of the src in relation r.
+    alpha_next = {} #the result of the computation of the alfa scores given by equation 6.
 
-    for v in current_nodes:
-        neighbors_u = edge_dst[edge_src == v]
+    for v in current_nodes: #for each node "v" of the previous bag
+        neighbors_u = edge_dst[edge_src == v] #we consider all the edge indexes of destination type that are linked to the 
+        #src type through relation "rel", for which the source was exactly the node "v". Pratically, here we are going through a 
+        #relation rel, for example the "patient->prescription" relation and we are considering, for each of the patient p, 
+        #all the prescription that the patient had.
+
+        #this approach is naturally more general than the previous one, because we can pass different "current_nodes" depending
+        #on the current relation we are considering from the metapath (in other words this approach is perfectly correct 
+        #also when we consider further relation of the metapath, such as "prescripion->medication").
+
         if len(neighbors_u) == 0:
             continue
 
