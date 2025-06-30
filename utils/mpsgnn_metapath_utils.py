@@ -304,16 +304,12 @@ def greedy_metapath_search_with_bags_learned(
     metapaths = [] #the thing we will return
     current_paths = [[]] #current partial paths that we are going to expand 
 
-    current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
+    current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+    #at the first step, the bags are simply a list of list values, where each list contained inside the 
+    #list id the driver index node, if that driver is in the train_mask mask.
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-
-    # current_nodes = torch.where(train_mask)[0].tolist() #initial target nodes
-    # original_labels = {int(i): y[i].item() for i in current_nodes} #very much important
-    # #in order to have a ground list of values to pass through all the relations that 
-    # #we are going to encounter.
-    # alpha = {int(i): 1.0 for i in current_nodes} #simple alfa inzizialization, al the 
-    # #alfa values are set to 1. WE SHOULD VERIFY WHETHER THIS INIZIALIZATION IS CORRECT
+    #initialize the alpha scores as equal to one.
 
     for level in range(L_max): #cycle in the level of metapath
         new_paths = []
@@ -321,7 +317,6 @@ def greedy_metapath_search_with_bags_learned(
         new_alpha_all = [] 
         new_bags_all = []
         new_labels_all = []
-        #new_alpha_values is a list of dictionaries Dict[int, float], one for 
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
@@ -337,19 +332,14 @@ def greedy_metapath_search_with_bags_learned(
                   },
                   node_to_col_stats=col_stats_dict,
               ).to(device)
-
-              #just to be sure (not very relevant)
               for module in encoder.modules():
                   for name, buf in module._buffers.items():
                       if buf is not None:
                           module._buffers[name] = buf.to(device)
-
-              #get the features of nodes
               tf_dict = {
                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
-              }
-
-              node_embeddings_dict = encoder(tf_dict)
+              }#get the features of nodes
+              node_embeddings_dict = encoder(tf_dict)  #get the features of nodes
 
             candidate_rels = [
                 (src, rel, dst)
@@ -361,30 +351,17 @@ def greedy_metapath_search_with_bags_learned(
             best_rel = None
             best_score = float("inf")
             best_alpha = None
-            #best_nodes = None
             best_bags = None
             best_labels = None
 
             for rel in candidate_rels: #consider all the possible relations
                 src, _, dst = rel
-                node_embeddings = node_embeddings_dict.get(dst) #get embeddings
-                #of the dst node.
+                node_embeddings = node_embeddings_dict.get(dst) #get embeddings of the dst node.
                 if node_embeddings is None:
                     print(f"error: embedding of node {dst} not found")
                     continue
 
                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
-
-                # bags, labels, alpha_next = construct_bags_with_alpha(
-                #     data=data,
-                #     current_nodes=current_nodes,
-                #     alpha_prev=alpha,
-                #     rel=rel,
-                #     node_embeddings=node_embeddings,
-                #     theta=theta,
-                #     src_type=src,
-                #     original_labels=original_labels
-                # ) #build the next hop bag.
 
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
@@ -398,11 +375,10 @@ def greedy_metapath_search_with_bags_learned(
                 )
 
                 if len(bags) < 5:
-                    continue
-                #this avoid to consider few bags to avoid overfitting
+                    continue#this avoid to consider few bags to avoid overfitting
 
-                score = evaluate_relation_learned(bags, labels, node_embeddings)
-                #assign the score value to current split, similar to DECISION TREES
+                score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
+                
                 if score < best_score:
                     best_score = score
                     best_rel = rel
