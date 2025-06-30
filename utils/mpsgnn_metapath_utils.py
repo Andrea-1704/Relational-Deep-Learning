@@ -86,8 +86,6 @@ def construct_bags_with_alpha(
     rel: Tuple[str, str, str],
     node_embeddings: torch.Tensor,
     theta: nn.Module,                 # network to compute Θᵗx_v
-    src_type: str,
-    original_labels: Dict[int, float] #this is the result of many propagation and simply contains the labels of v nodes.
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     """
     Estend the bags through relation "rel", propagating α following eq. (6) di https://arxiv.org/abs/2412.00521.
@@ -369,8 +367,7 @@ def greedy_metapath_search_with_bags_learned(
                     alpha_prev=alpha,
                     rel=rel,
                     node_embeddings=node_embeddings,
-                    theta=theta,
-                    src_type=src,
+                    theta=theta
                 )
 
                 if len(bags) < 5:
