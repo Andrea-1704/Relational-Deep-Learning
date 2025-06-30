@@ -140,11 +140,11 @@ def construct_bags_with_alpha(
 
 
 class ScoringFunctionReg(nn.Module):
-    """
+    """    
     This function is one of possibly infinite different implementation for 
     computing how "significative" is a bag.
     In particular, this approach, which follows https://arxiv.org/abs/2412.00521,
-    uses a mini neural network taht takes an embedding and produces a score value.
+    uses a "mini" neural network taht takes an embedding and produces a score value.
     Each bag is a list of embeddings of the reached nodes at a specific time step
     (each of these nodes share the same node type) and we desire to return a score 
     values to the bag.
