@@ -136,53 +136,6 @@ def construct_bags_with_alpha(
 
 
 
-def construct_bags_with_alpha(
-    data,
-    current_nodes: List[int],         # nodi dell’iterazione precedente
-    alpha_prev: Dict[int, float],     # pesi α(v, B) da step precedente
-    rel: Tuple[str, str, str],
-    node_embeddings: torch.Tensor,
-    theta: nn.Module,                 # rete per Θᵗx_v
-    src_type: str,
-    original_labels: Dict[int, float]  # NEW: mappa v → y(v) del nodo target
-) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
-    """
-    Estende i bags tramite relazione rel, propagando α secondo eq. (6).
-    Ritorna:
-    - nuove bag (una per ciascun v ∈ current_nodes con vicini)
-    - y(v) associata a ciascuna bag (del nodo v iniziale)
-    - nuovi alpha[u] per i nodi raggiunti u
-    """
-    edge_index = data.edge_index_dict.get(rel)
-    if edge_index is None:
-        return [], [], {}
-
-    edge_src, edge_dst = edge_index
-    bags = []
-    labels = []
-    alpha_next = {}
-
-    for v in current_nodes:
-        neighbors_u = edge_dst[edge_src == v]
-        if len(neighbors_u) == 0:
-            continue
-
-        bags.append(neighbors_u.tolist())
-        labels.append(original_labels[v])  # ✅ usa la label del nodo target iniziale
-
-        x_v = node_embeddings[v]
-        theta_xv = theta(x_v).item()
-        alpha_v = alpha_prev.get(v, 1.0)
-
-        for u in neighbors_u.tolist():
-            alpha_u = theta_xv * alpha_v
-            if u not in alpha_next:
-                alpha_next[u] = 0.0
-            alpha_next[u] += alpha_u
-
-    return bags, labels, alpha_next
-
-
 
 
 
