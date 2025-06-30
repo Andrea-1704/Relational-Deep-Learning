@@ -142,8 +142,6 @@ def construct_bags_with_alpha(
 
 
 
-
-
 class ScoringFunctionReg(nn.Module):
     """
     This function is one of possibly infinite different implementation for 
@@ -305,17 +303,24 @@ def greedy_metapath_search_with_bags_learned(
     device = y.device
     metapaths = [] #the thing we will return
     current_paths = [[]] #current partial paths that we are going to expand 
-    current_nodes = torch.where(train_mask)[0].tolist() #initial target nodes
-    original_labels = {int(i): y[i].item() for i in current_nodes} #very much important
-    #in order to have a ground list of values to pass through all the relations that 
-    #we are going to encounter.
-    alpha = {int(i): 1.0 for i in current_nodes} #simple alfa inzizialization, al the 
-    #alfa values are set to 1. WE SHOULD VERIFY WHETHER THIS INIZIALIZATION IS CORRECT
+
+    current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
+    current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+
+    # current_nodes = torch.where(train_mask)[0].tolist() #initial target nodes
+    # original_labels = {int(i): y[i].item() for i in current_nodes} #very much important
+    # #in order to have a ground list of values to pass through all the relations that 
+    # #we are going to encounter.
+    # alpha = {int(i): 1.0 for i in current_nodes} #simple alfa inzizialization, al the 
+    # #alfa values are set to 1. WE SHOULD VERIFY WHETHER THIS INIZIALIZATION IS CORRECT
 
     for level in range(L_max): #cycle in the level of metapath
         new_paths = []
-        new_nodes_all = [] 
+        #new_nodes_all = [] 
         new_alpha_all = [] 
+        new_bags_all = []
+        new_labels_all = []
         #new_alpha_values is a list of dictionaries Dict[int, float], one for 
 
         for path in current_paths:
@@ -356,7 +361,9 @@ def greedy_metapath_search_with_bags_learned(
             best_rel = None
             best_score = float("inf")
             best_alpha = None
-            best_nodes = None
+            #best_nodes = None
+            best_bags = None
+            best_labels = None
 
             for rel in candidate_rels: #consider all the possible relations
                 src, _, dst = rel
@@ -368,127 +375,16 @@ def greedy_metapath_search_with_bags_learned(
 
                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
 
-                bags, labels, alpha_next = construct_bags_with_alpha(
-                    data=data,
-                    current_nodes=current_nodes,
-                    alpha_prev=alpha,
-                    rel=rel,
-                    node_embeddings=node_embeddings,
-                    theta=theta,
-                    src_type=src,
-                    original_labels=original_labels
-                ) #build the next hop bag.
-
-                if len(bags) < 5:
-                    continue
-                #this avoid to consider few bags to avoid overfitting
-
-                score = evaluate_relation_learned(bags, labels, node_embeddings)
-                #assign the score value to current split, similar to DECISION TREES
-                if score < best_score:
-                    best_score = score
-                    best_rel = rel
-                    best_alpha = alpha_next
-                    #best_nodes = list(set([u for bag in bags for u in bag]))  --> severe error!!!
-
-
-            if best_rel:
-                new_paths.append(path + [best_rel]) #add the best_rel to path
-                new_alpha_all.append(best_alpha) 
-                #NB: the best_alpha are the alpha scores returned from the best current relation 
-                #"rel" that was found. It is a dictionary that has as keys all the values 
-                #of the u nodes and as values the alpha values of those nodes.
-                #new_alpha_all is then a list of these dictionaries, where each dictionary
-                #contains one key for each of the u nodes, and this is done for each relation
-                #in the metapath. In practice, we have a list of elements of the same length as
-                #the number of relations in the metapath, and for each of them we have a 
-                #dictionary containing for each source node "u" the alpha value.
-                new_nodes_all.append(best_nodes) 
-                 
-
-        current_paths = new_paths
-        alpha = {k: v for d in new_alpha_all for k, v in d.items()} #update the alfa values as the last values
-        current_nodes = list(set([u for l in new_nodes_all for u in l])) #update the "u" nodes
-        metapaths.extend(current_paths)
-
-    return metapaths
-
-
-
-
-def greedy_metapath_search_with_bags_learned(
-    data,
-    y: torch.Tensor,
-    train_mask: torch.Tensor,
-    node_type: str,
-    col_stats_dict: Dict[str, Dict[str, Dict]],
-    L_max: int = 3,
-    max_rels: int = 10,
-    channels: int = 64,
-) -> List[List[Tuple[str, str, str]]]:
-    """
-    Implementa la ricerca greedy dei meta-path come nel paper MPS-GNN (sez. 4.4),
-    usando la propagazione delle α-scores (sez. 4.2).
-    """
-    device = y.device
-    metapaths = []
-    current_paths = [[]]
-
-    # Inizializzazione: ogni nodo target è una bag iniziale
-    current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
-    current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
-    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-
-    for level in range(L_max):
-        new_paths = []
-        new_alpha_all = []
-        new_bags_all = []
-        new_labels_all = []
-
-        for path in current_paths:
-            last_ntype = node_type if not path else path[-1][2]
-
-            with torch.no_grad():
-                encoder = HeteroEncoder(
-                    channels=channels,
-                    node_to_col_names_dict={
-                        ntype: data[ntype].tf.col_names_dict
-                        for ntype in data.node_types
-                    },
-                    node_to_col_stats=col_stats_dict,
-                ).to(device)
-
-                for module in encoder.modules():
-                    for name, buf in module._buffers.items():
-                        if buf is not None:
-                            module._buffers[name] = buf.to(device)
-
-                tf_dict = {
-                    ntype: data[ntype].tf.to(device)
-                    for ntype in data.node_types if 'tf' in data[ntype]
-                }
-
-                node_embeddings_dict = encoder(tf_dict)
-
-            candidate_rels = [
-                (src, rel, dst)
-                for (src, rel, dst) in data.edge_index_dict.keys()
-                if src == last_ntype
-            ][:max_rels]
-
-            best_rel = None
-            best_score = float("inf")
-            best_alpha = None
-            best_bags = None
-            best_labels = None
-
-            for rel in candidate_rels:
-                src, _, dst = rel
-                node_embeddings = node_embeddings_dict.get(dst)
-                if node_embeddings is None:
-                    continue
-
-                theta = nn.Linear(node_embeddings.size(-1), 1).to(device)
+                # bags, labels, alpha_next = construct_bags_with_alpha(
+                #     data=data,
+                #     current_nodes=current_nodes,
+                #     alpha_prev=alpha,
+                #     rel=rel,
+                #     node_embeddings=node_embeddings,
+                #     theta=theta,
+                #     src_type=src,
+                #     original_labels=original_labels
+                # ) #build the next hop bag.
 
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
@@ -503,26 +399,44 @@ def greedy_metapath_search_with_bags_learned(
 
                 if len(bags) < 5:
                     continue
+                #this avoid to consider few bags to avoid overfitting
 
                 score = evaluate_relation_learned(bags, labels, node_embeddings)
-
+                #assign the score value to current split, similar to DECISION TREES
                 if score < best_score:
                     best_score = score
                     best_rel = rel
                     best_alpha = alpha_next
+                    #best_nodes = list(set([u for bag in bags for u in bag]))  --> severe error!!!
                     best_bags = bags
                     best_labels = labels
 
+
             if best_rel:
-                new_paths.append(path + [best_rel])
-                new_alpha_all.append(best_alpha)
+                new_paths.append(path + [best_rel]) #add the best_rel to path
+                new_alpha_all.append(best_alpha) 
+                #NB: the best_alpha are the alpha scores returned from the best current relation 
+                #"rel" that was found. It is a dictionary that has as keys all the values 
+                #of the u nodes and as values the alpha values of those nodes.
+                #new_alpha_all is then a list of these dictionaries, where each dictionary
+                #contains one key for each of the u nodes, and this is done for each relation
+                #in the metapath. In practice, we have a list of elements of the same length as
+                #the number of relations in the metapath, and for each of them we have a 
+                #dictionary containing for each source node "u" the alpha value.
+                #new_nodes_all.append(best_nodes) 
+
                 new_bags_all.extend(best_bags)
                 new_labels_all.extend(best_labels)
+                 
 
         current_paths = new_paths
-        alpha = {k: v for d in new_alpha_all for k, v in d.items()}
+        alpha = {k: v for d in new_alpha_all for k, v in d.items()} #update the alfa values as the last values
+        # current_nodes = list(set([u for l in new_nodes_all for u in l])) #update the "u" nodes
+        # metapaths.extend(current_paths)
         current_bags = new_bags_all
         current_labels = new_labels_all
         metapaths.extend(current_paths)
 
     return metapaths
+
+
