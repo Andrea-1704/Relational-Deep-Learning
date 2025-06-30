@@ -266,6 +266,9 @@ def evaluate_relation_learned(
 
 
 
+
+
+
 def greedy_metapath_search_with_bags_learned(
     data,
     y: torch.Tensor,
@@ -294,9 +297,17 @@ def greedy_metapath_search_with_bags_learned(
     device = y.device
     metapaths = [] #the thing we will return
     current_paths = [[]] #current partial paths that we are going to expand 
+    current_nodes = torch.where(train_mask)[0].tolist() #initial target nodes
+    original_labels = {int(i): y[i].item() for i in current_nodes} #very much important
+    #in order to have a ground list of values to pass through all the relations that 
+    #we are going to encounter.
+    alpha = {int(i): 1.0 for i in current_nodes} #simple alfa inzizialization, al the 
+    #alfa values are set to 1. WE SHOULD VERIFY WHETHER THIS INIZIALIZATION IS CORRECT
 
     for level in range(L_max): #cycle in the level of metapath
         new_paths = []
+        new_nodes_all = [] #new "u" ("son") nodes
+        new_alpha_all = [] #new alfa values
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
@@ -335,6 +346,8 @@ def greedy_metapath_search_with_bags_learned(
 
             best_rel = None
             best_score = float("inf")
+            best_alpha = None
+            best_nodes = None
 
             for rel in candidate_rels: #consider all the possible relations
                 src, _, dst = rel
@@ -344,8 +357,19 @@ def greedy_metapath_search_with_bags_learned(
                     print(f"error: embedding of node {dst} not found")
                     continue
 
-                bags, labels = construct_bags(data, train_mask, y, rel, node_type)
-                #build the bag considering "rel"
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
+
+                bags, labels, alpha_next = construct_bags_with_alpha(
+                    data=data,
+                    current_nodes=current_nodes,
+                    alpha_prev=alpha,
+                    rel=rel,
+                    node_embeddings=node_embeddings,
+                    theta=theta,
+                    src_type=src,
+                    original_labels=original_labels
+                ) #build the next hop bag.
+
                 if len(bags) < 5:
                     continue
                 #this avoid to consider few bags to avoid overfitting
@@ -355,11 +379,17 @@ def greedy_metapath_search_with_bags_learned(
                 if score < best_score:
                     best_score = score
                     best_rel = rel
+                    best_alpha = alpha_next
+                    best_nodes = list(set([u for bag in bags for u in bag]))
 
             if best_rel:
-                new_paths.append(path + [best_rel])
+                new_paths.append(path + [best_rel]) #add the best_rel to path
+                new_alpha_all.append(best_alpha) #add the alfa values as the new values.
+                new_nodes_all.append(best_nodes) #add the "u" nodes
 
         current_paths = new_paths
+        alpha = {k: v for d in new_alpha_all for k, v in d.items()} #update the alfa values as the last values
+        current_nodes = list(set([u for l in new_nodes_all for u in l])) #update the "u" nodes
         metapaths.extend(current_paths)
 
     return metapaths
