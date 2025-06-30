@@ -86,6 +86,7 @@ def construct_bags_with_alpha(
     rel: Tuple[str, str, str],
     node_embeddings: torch.Tensor,
     theta: nn.Module,                 # network to compute Θᵗx_v
+    src_embeddings,
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     """
     Estend the bags through relation "rel", propagating α following eq. (6) di https://arxiv.org/abs/2412.00521.
@@ -119,7 +120,9 @@ def construct_bags_with_alpha(
             if len(neighbors_u) == 0:
                 continue
 
-            x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
+            #x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
+            x_v = src_embeddings[v]
+            
             theta_xv = theta(x_v).item() # Θᵗ x_v scalar
             alpha_v = alpha_prev.get(v, 1.0)
 
@@ -353,7 +356,7 @@ def greedy_metapath_search_with_bags_learned(
 
             for rel in candidate_rels: #consider all the possible relations
                 src, _, dst = rel
-                node_embeddings = node_embeddings_dict.get(dst) #get embeddings of the dst node.
+                node_embeddings = node_embeddings_dict.get(dst) #get embeddings dict of the dst node.
                 if node_embeddings is None:
                     print(f"error: embedding of node {dst} not found")
                     continue
@@ -367,7 +370,8 @@ def greedy_metapath_search_with_bags_learned(
                     alpha_prev=alpha,
                     rel=rel,
                     node_embeddings=node_embeddings,
-                    theta=theta
+                    theta=theta,
+                    src_embeddings = node_embeddings_dict[src]
                 )
 
                 if len(bags) < 5:
