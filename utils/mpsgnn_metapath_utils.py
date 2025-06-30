@@ -80,20 +80,20 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 
 def construct_bags_with_alpha(
     data,
-    current_nodes: List[int],         # lista dei nodi nel bag precedente
-    alpha_prev: Dict[int, float],     # pesi α(v, B) per ogni v ∈ bag precedente
+    current_nodes: List[int],         # list of nodes in the previous bag ("fathers")
+    alpha_prev: Dict[int, float],     # weights α(v, B) for each v ∈ bag previous
     rel: Tuple[str, str, str],
     node_embeddings: torch.Tensor,
-    theta: nn.Module,                 # la rete per calcolare Θᵗx_v
+    theta: nn.Module,                 # network to compute Θᵗx_v
     src_type: str,
     original_labels: Dict[int, float] #this is the result of many propagation and simply contains the labels of v nodes.
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     """
-    Estende i bags tramite relazione rel, propagando α secondo eq. (6) di https://arxiv.org/abs/2412.00521.
-    Ritorna:
-    - nuove bag (una per ciascun v ∈ current_nodes con vicini)
-    - labels associate ai nodi v
-    - nuovi alpha[u] per i nodi raggiunti u
+    Estend the bags through relation "rel", propagating α following eq. (6) di https://arxiv.org/abs/2412.00521.
+    Returns:
+    - new bag (one for each v ∈ current_nodes)
+    - labels associated to nodes v
+    - new alpha[u] for reached nodes u
     """
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
@@ -132,12 +132,6 @@ def construct_bags_with_alpha(
             alpha_next[u] += alpha_u
 
     return bags, labels, alpha_next
-
-
-
-
-
-
 
 
 
