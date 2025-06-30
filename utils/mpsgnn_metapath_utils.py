@@ -142,51 +142,6 @@ def construct_bags_with_alpha(
 
 
 
-def construct_bags_with_alpha(
-    data,
-    previous_bags: List[List[int]],
-    previous_labels: List[float],
-    alpha_prev: Dict[int, float],
-    rel: Tuple[str, str, str],
-    node_embeddings: torch.Tensor,
-    theta: nn.Module,
-    src_type: str,
-) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
-    """
-    Estende le bag tramite relazione rel, propagando α secondo eq. (6) del paper.
-    """
-    edge_index = data.edge_index_dict.get(rel)
-    if edge_index is None:
-        print(f"[WARN] relation {rel} not found")
-        return [], [], {}
-
-    edge_src, edge_dst = edge_index
-    bags = []
-    labels = []
-    alpha_next = {}
-
-    for bag, label in zip(previous_bags, previous_labels):
-        bag_u = []
-
-        for v in bag:
-            neighbors_u = edge_dst[edge_src == v]
-            if len(neighbors_u) == 0:
-                continue
-
-            x_v = node_embeddings[v]
-            theta_xv = theta(x_v).item()
-            alpha_v = alpha_prev.get(v, 1.0)
-
-            for u in neighbors_u.tolist():
-                alpha_u = theta_xv * alpha_v
-                alpha_next[u] = alpha_next.get(u, 0.0) + alpha_u
-                bag_u.append(u)
-
-        if len(bag_u) > 0:
-            bags.append(bag_u)
-            labels.append(label)
-
-    return bags, labels, alpha_next
 
 
 class ScoringFunctionReg(nn.Module):
@@ -454,6 +409,120 @@ def greedy_metapath_search_with_bags_learned(
         current_paths = new_paths
         alpha = {k: v for d in new_alpha_all for k, v in d.items()} #update the alfa values as the last values
         current_nodes = list(set([u for l in new_nodes_all for u in l])) #update the "u" nodes
+        metapaths.extend(current_paths)
+
+    return metapaths
+
+
+
+
+def greedy_metapath_search_with_bags_learned(
+    data,
+    y: torch.Tensor,
+    train_mask: torch.Tensor,
+    node_type: str,
+    col_stats_dict: Dict[str, Dict[str, Dict]],
+    L_max: int = 3,
+    max_rels: int = 10,
+    channels: int = 64,
+) -> List[List[Tuple[str, str, str]]]:
+    """
+    Implementa la ricerca greedy dei meta-path come nel paper MPS-GNN (sez. 4.4),
+    usando la propagazione delle α-scores (sez. 4.2).
+    """
+    device = y.device
+    metapaths = []
+    current_paths = [[]]
+
+    # Inizializzazione: ogni nodo target è una bag iniziale
+    current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
+    current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+
+    for level in range(L_max):
+        new_paths = []
+        new_alpha_all = []
+        new_bags_all = []
+        new_labels_all = []
+
+        for path in current_paths:
+            last_ntype = node_type if not path else path[-1][2]
+
+            with torch.no_grad():
+                encoder = HeteroEncoder(
+                    channels=channels,
+                    node_to_col_names_dict={
+                        ntype: data[ntype].tf.col_names_dict
+                        for ntype in data.node_types
+                    },
+                    node_to_col_stats=col_stats_dict,
+                ).to(device)
+
+                for module in encoder.modules():
+                    for name, buf in module._buffers.items():
+                        if buf is not None:
+                            module._buffers[name] = buf.to(device)
+
+                tf_dict = {
+                    ntype: data[ntype].tf.to(device)
+                    for ntype in data.node_types if 'tf' in data[ntype]
+                }
+
+                node_embeddings_dict = encoder(tf_dict)
+
+            candidate_rels = [
+                (src, rel, dst)
+                for (src, rel, dst) in data.edge_index_dict.keys()
+                if src == last_ntype
+            ][:max_rels]
+
+            best_rel = None
+            best_score = float("inf")
+            best_alpha = None
+            best_bags = None
+            best_labels = None
+
+            for rel in candidate_rels:
+                src, _, dst = rel
+                node_embeddings = node_embeddings_dict.get(dst)
+                if node_embeddings is None:
+                    continue
+
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device)
+
+                bags, labels, alpha_next = construct_bags_with_alpha(
+                    data=data,
+                    previous_bags=current_bags,
+                    previous_labels=current_labels,
+                    alpha_prev=alpha,
+                    rel=rel,
+                    node_embeddings=node_embeddings,
+                    theta=theta,
+                    src_type=src,
+                )
+
+                if len(bags) < 5:
+                    continue
+
+                score = evaluate_relation_learned(bags, labels, node_embeddings)
+
+                if score < best_score:
+                    best_score = score
+                    best_rel = rel
+                    best_alpha = alpha_next
+                    best_bags = bags
+                    best_labels = labels
+
+            if best_rel:
+                new_paths.append(path + [best_rel])
+                new_alpha_all.append(best_alpha)
+                new_bags_all.extend(best_bags)
+                new_labels_all.extend(best_labels)
+
+        current_paths = new_paths
+        alpha = {k: v for d in new_alpha_all for k, v in d.items()}
+        current_bags = new_bags_all
+        current_labels = new_labels_all
         metapaths.extend(current_paths)
 
     return metapaths
