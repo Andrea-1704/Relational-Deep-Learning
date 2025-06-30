@@ -80,7 +80,6 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 
 def construct_bags_with_alpha(
     data,
-    #current_nodes: List[int],         # list of nodes in the previous bag ("fathers")
     previous_bags: List[List[int]],
     previous_labels: List[float],
     alpha_prev: Dict[int, float],     # weights α(v, B) for each v ∈ bag previous
@@ -93,7 +92,7 @@ def construct_bags_with_alpha(
     """
     Estend the bags through relation "rel", propagating α following eq. (6) di https://arxiv.org/abs/2412.00521.
     Returns:
-    - new bag (one for each v ∈ current_nodes)
+    - new bag 
     - labels associated to nodes v
     - new alpha[u] for reached nodes u. This is a dictionary where the key is the node u reached and the value
       is the alfa score for that node.
