@@ -80,7 +80,9 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 
 def construct_bags_with_alpha(
     data,
-    current_nodes: List[int],         # list of nodes in the previous bag ("fathers")
+    #current_nodes: List[int],         # list of nodes in the previous bag ("fathers")
+    previous_bags: List[List[int]],
+    previous_labels: List[float],
     alpha_prev: Dict[int, float],     # weights α(v, B) for each v ∈ bag previous
     rel: Tuple[str, str, str],
     node_embeddings: torch.Tensor,
@@ -93,7 +95,8 @@ def construct_bags_with_alpha(
     Returns:
     - new bag (one for each v ∈ current_nodes)
     - labels associated to nodes v
-    - new alpha[u] for reached nodes u
+    - new alpha[u] for reached nodes u. This is a dictionary where the key is the node u reached and the value
+      is the alfa score for that node.
     """
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
@@ -105,35 +108,85 @@ def construct_bags_with_alpha(
     labels = [] #for each bag we consider its label, given by the one of the src in relation r.
     alpha_next = {} #the result of the computation of the alfa scores given by equation 6.
 
-    for v in current_nodes: #for each node "v" of the previous bag
-        neighbors_u = edge_dst[edge_src == v] #we consider all the edge indexes of destination type that are linked to the 
-        #src type through relation "rel", for which the source was exactly the node "v". Pratically, here we are going through a 
-        #relation rel, for example the "patient->prescription" relation and we are consideringall the prescription that "father" 
-        #node of kind patient had.
+    for bag_v, label in zip(previous_bags, previous_labels):
+        #the previous bag now becomes a "v" node
 
-        #this approach is naturally more general than the previous one, because we can pass different "current_nodes" depending
-        #on the current relation we are considering from the metapath (in other words this approach is perfectly correct 
-        #also when we consider further relation of the metapath, such as "prescripion->medication").
+        bag_u = [] #new bag for the node (bag) "bag_v"
 
-        if len(neighbors_u) == 0:
-            continue
+        for v in bag_v: #for each node in the previous bag 
+            neighbors_u = edge_dst[edge_src == v]
+            #we consider all the edge indexes of destination type that are linked to the 
+            #src type through relation "rel", for which the source was exactly the node "v". Pratically, here we are going through a 
+            #relation rel, for example the "patient->prescription" relation and we are consideringall the prescription that "father" 
+            #node of kind patient had.
+            if len(neighbors_u) == 0:
+                continue
 
-        bags.append(neighbors_u.tolist()) #we build B new (either B+new, or B-new, depending on the label)
-        labels.append(original_labels[v])  # assign the original label of node v (the "father" of the current node "u")
+            x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
+            theta_xv = theta(x_v).item() # Θᵗ x_v scalar
+            alpha_v = alpha_prev.get(v, 1.0)
 
-        x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
-        theta_xv = theta(x_v).item()  # Θᵗ x_v scalar
-        alpha_v = alpha_prev.get(v, 1.0)
+            for u in neighbors_u.tolist():  #consider all the "sons" of node "v" through relation "rel"
+                alpha_u = theta_xv * alpha_v #compute the new alfa, according to eq 6
+                alpha_next[u] = alpha_next.get(u, 0.0) + alpha_u
+                bag_u.append(u)
 
-        for u in neighbors_u.tolist(): #consider all the "sons" of node "v" through relation "rel"
-            alpha_u = theta_xv * alpha_v #compute the new alfa, according to eq 6
-            if u not in alpha_next:
-                alpha_next[u] = 0.0
-            alpha_next[u] += alpha_u
+        if len(bag_u) > 0:
+            bags.append(bag_u) #updates the new list of bags
+            labels.append(label) #the label of the current bag is the same 
+            #as the one that the father bag had.
 
     return bags, labels, alpha_next
 
 
+
+
+
+def construct_bags_with_alpha(
+    data,
+    previous_bags: List[List[int]],
+    previous_labels: List[float],
+    alpha_prev: Dict[int, float],
+    rel: Tuple[str, str, str],
+    node_embeddings: torch.Tensor,
+    theta: nn.Module,
+    src_type: str,
+) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
+    """
+    Estende le bag tramite relazione rel, propagando α secondo eq. (6) del paper.
+    """
+    edge_index = data.edge_index_dict.get(rel)
+    if edge_index is None:
+        print(f"[WARN] relation {rel} not found")
+        return [], [], {}
+
+    edge_src, edge_dst = edge_index
+    bags = []
+    labels = []
+    alpha_next = {}
+
+    for bag, label in zip(previous_bags, previous_labels):
+        bag_u = []
+
+        for v in bag:
+            neighbors_u = edge_dst[edge_src == v]
+            if len(neighbors_u) == 0:
+                continue
+
+            x_v = node_embeddings[v]
+            theta_xv = theta(x_v).item()
+            alpha_v = alpha_prev.get(v, 1.0)
+
+            for u in neighbors_u.tolist():
+                alpha_u = theta_xv * alpha_v
+                alpha_next[u] = alpha_next.get(u, 0.0) + alpha_u
+                bag_u.append(u)
+
+        if len(bag_u) > 0:
+            bags.append(bag_u)
+            labels.append(label)
+
+    return bags, labels, alpha_next
 
 
 class ScoringFunctionReg(nn.Module):
@@ -306,8 +359,9 @@ def greedy_metapath_search_with_bags_learned(
 
     for level in range(L_max): #cycle in the level of metapath
         new_paths = []
-        new_nodes_all = [] #new "u" ("son") nodes
-        new_alpha_all = [] #new alfa values
+        new_nodes_all = [] 
+        new_alpha_all = [] 
+        #new_alpha_values is a list of dictionaries Dict[int, float], one for 
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
@@ -380,12 +434,22 @@ def greedy_metapath_search_with_bags_learned(
                     best_score = score
                     best_rel = rel
                     best_alpha = alpha_next
-                    best_nodes = list(set([u for bag in bags for u in bag]))
+                    #best_nodes = list(set([u for bag in bags for u in bag]))  --> severe error!!!
+
 
             if best_rel:
                 new_paths.append(path + [best_rel]) #add the best_rel to path
-                new_alpha_all.append(best_alpha) #add the alfa values as the new values.
-                new_nodes_all.append(best_nodes) #add the "u" nodes
+                new_alpha_all.append(best_alpha) 
+                #NB: the best_alpha are the alpha scores returned from the best current relation 
+                #"rel" that was found. It is a dictionary that has as keys all the values 
+                #of the u nodes and as values the alpha values of those nodes.
+                #new_alpha_all is then a list of these dictionaries, where each dictionary
+                #contains one key for each of the u nodes, and this is done for each relation
+                #in the metapath. In practice, we have a list of elements of the same length as
+                #the number of relations in the metapath, and for each of them we have a 
+                #dictionary containing for each source node "u" the alpha value.
+                new_nodes_all.append(best_nodes) 
+                 
 
         current_paths = new_paths
         alpha = {k: v for d in new_alpha_all for k, v in d.items()} #update the alfa values as the last values
