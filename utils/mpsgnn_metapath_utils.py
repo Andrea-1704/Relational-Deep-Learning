@@ -85,7 +85,8 @@ def construct_bags_with_alpha(
     rel: Tuple[str, str, str],
     node_embeddings: torch.Tensor,
     theta: nn.Module,                 # la rete per calcolare Θᵗx_v
-    src_type: str
+    src_type: str,
+    original_labels: Dict[int, float] #this is the result of many propagation and simply contains the labels of v nodes.
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     """
     Estende i bags tramite relazione rel, propagando α secondo eq. (6) di https://arxiv.org/abs/2412.00521.
@@ -107,8 +108,8 @@ def construct_bags_with_alpha(
     for v in current_nodes: #for each node "v" of the previous bag
         neighbors_u = edge_dst[edge_src == v] #we consider all the edge indexes of destination type that are linked to the 
         #src type through relation "rel", for which the source was exactly the node "v". Pratically, here we are going through a 
-        #relation rel, for example the "patient->prescription" relation and we are considering, for each of the patient p, 
-        #all the prescription that the patient had.
+        #relation rel, for example the "patient->prescription" relation and we are consideringall the prescription that "father" 
+        #node of kind patient had.
 
         #this approach is naturally more general than the previous one, because we can pass different "current_nodes" depending
         #on the current relation we are considering from the metapath (in other words this approach is perfectly correct 
@@ -117,11 +118,60 @@ def construct_bags_with_alpha(
         if len(neighbors_u) == 0:
             continue
 
+        bags.append(neighbors_u.tolist()) #we build B new (either B+new, or B-new, depending on the label)
+        labels.append(original_labels[v])  # assign the original label of node v (the "father" of the current node "u")
+
+        x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
+        theta_xv = theta(x_v).item()  # Θᵗ x_v scalar
+        alpha_v = alpha_prev.get(v, 1.0)
+
+        for u in neighbors_u.tolist(): #consider all the "sons" of node "v" through relation "rel"
+            alpha_u = theta_xv * alpha_v #compute the new alfa, according to eq 6
+            if u not in alpha_next:
+                alpha_next[u] = 0.0
+            alpha_next[u] += alpha_u
+
+    return bags, labels, alpha_next
+
+
+
+
+def construct_bags_with_alpha(
+    data,
+    current_nodes: List[int],         # nodi dell’iterazione precedente
+    alpha_prev: Dict[int, float],     # pesi α(v, B) da step precedente
+    rel: Tuple[str, str, str],
+    node_embeddings: torch.Tensor,
+    theta: nn.Module,                 # rete per Θᵗx_v
+    src_type: str,
+    original_labels: Dict[int, float]  # NEW: mappa v → y(v) del nodo target
+) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
+    """
+    Estende i bags tramite relazione rel, propagando α secondo eq. (6).
+    Ritorna:
+    - nuove bag (una per ciascun v ∈ current_nodes con vicini)
+    - y(v) associata a ciascuna bag (del nodo v iniziale)
+    - nuovi alpha[u] per i nodi raggiunti u
+    """
+    edge_index = data.edge_index_dict.get(rel)
+    if edge_index is None:
+        return [], [], {}
+
+    edge_src, edge_dst = edge_index
+    bags = []
+    labels = []
+    alpha_next = {}
+
+    for v in current_nodes:
+        neighbors_u = edge_dst[edge_src == v]
+        if len(neighbors_u) == 0:
+            continue
+
         bags.append(neighbors_u.tolist())
-        labels.append(v)  # NB: in questa fase la label di v (usata fuori)
+        labels.append(original_labels[v])  # ✅ usa la label del nodo target iniziale
 
         x_v = node_embeddings[v]
-        theta_xv = theta(x_v).item()  # Θᵗ x_v scalare
+        theta_xv = theta(x_v).item()
         alpha_v = alpha_prev.get(v, 1.0)
 
         for u in neighbors_u.tolist():
@@ -131,6 +181,10 @@ def construct_bags_with_alpha(
             alpha_next[u] += alpha_u
 
     return bags, labels, alpha_next
+
+
+
+
 
 
 
