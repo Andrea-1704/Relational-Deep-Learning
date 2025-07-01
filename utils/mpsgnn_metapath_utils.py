@@ -38,13 +38,11 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 #the first node, the target node. So this function does not provide a solid solution for 
 #all the relations in the metapath, after the first one (for which, we have instead 
 #a source node that is equal to the target node).
-
 #to solve this major mistake we now provide a different solution that aims to solve the 
 #mentioned error, but also to align more closely to section 4.2 of the aforementioned 
 #paper by implementing in an integral way the alfa scores values calculation for all
 #the node "u" present in the bag, using a recursive function that takes into account
 #the "v" nodes of the previous bags.
-
 def construct_bags_with_alpha(
     data,
     previous_bags: List[List[int]],
@@ -124,7 +122,7 @@ class ScoringFunctionReg(nn.Module):
     Then, we normalize the scores through softmax function in order to obtain the 
     attention weights, these score values corresponds to the "α(v, B)" computed
     by https://arxiv.org/abs/2412.00521 in section 4.1, and formally indicates 
-    how much attention we should "dedicate" to a node of the bag.
+    how much attention we should give to a node of the bag.
 
     Then, followign the formulation indicated in section 4.1 of the aforementioned
     paper, we simply compute a weighted mean of the embeddings of the nodes in the
@@ -144,7 +142,7 @@ class ScoringFunctionReg(nn.Module):
         self.theta = nn.Sequential(
             nn.Linear(in_dim, in_dim),
             nn.ReLU(),
-            nn.Linear(in_dim, 1)  # from embedding to scalar
+            nn.Linear(in_dim, 1)  # from embeddings to scalar
         )
         self.out = nn.Sequential(
           nn.Linear(in_dim, in_dim),
@@ -164,17 +162,17 @@ class ScoringFunctionReg(nn.Module):
                 print(f"this bag is empty")
                 preds.append(torch.tensor(0.0, device=bag.device))
                 continue
-            scores = self.theta(bag).squeeze(-1)  # [B_i] #alfa scores
+            scores = self.theta(bag).squeeze(-1)  # [B_i] #alfa scores: one for each v in bag
             weights = torch.softmax(scores, dim=0)  # [B_i] #normalize alfa
             weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D] #mean
             # pred = weighted_avg.mean()  #final scalar -> terrible solution!
-            pred = self.out(weighted_avg).squeeze(-1)
+            pred = self.out(weighted_avg).squeeze(-1) #apply another nn to indicate the importance of bag
             preds.append(pred)
         return torch.stack(preds)
 
     def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
-        Computes the m1 score between the two vectors.
+        Computes the M1 score between the two vectors.
         """
         return F.l1_loss(preds, targets)
 
