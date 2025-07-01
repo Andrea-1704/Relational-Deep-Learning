@@ -263,6 +263,13 @@ def greedy_metapath_search_with_bags_learned(
     to consider the second stopping criteria indicated in section 4.4 of the 
     reference, in order to avoid to consider a strict threshold for the 
     allowed minimal improvement.
+
+    We can simply say that the "score" value of a given set of bags, which 
+    resemples the "informativeness" of a certain relation in the metapath
+    is given by the ability that a network (the same over the different
+    relations in order to be comparable) has to assign correctly the label
+    of the bags by only locking to the embeddings of nodes "v" inside the
+    bag.
     """
     device = y.device
     metapaths = [] #returned object
