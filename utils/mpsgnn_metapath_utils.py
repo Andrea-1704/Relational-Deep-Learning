@@ -172,7 +172,7 @@ class ScoringFunctionReg(nn.Module):
 
     def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
-        Computes the M1 score between the two vectors.
+        Computes the MAE score between the two vectors.
         """
         return F.l1_loss(preds, targets)
 
@@ -189,7 +189,7 @@ def evaluate_relation_learned(
     This function follows the algorithm indicated into section 4.4 in 
     https://arxiv.org/abs/2412.00521, by trainign the model on the 
     current bag in order to choose the most "discriminative" relation 
-    ri to add to the meta path. 
+    r_i to be added to the meta path. 
     This function returns a mae value which indicates how predictive 
     is the current bag nodes to make the classification.
 
