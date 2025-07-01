@@ -122,12 +122,16 @@ class MPSGNN(nn.Module):
     explainability of the model, having a score value for each of the metapaths
     we can easily indicate how much attention is given to every metapath, 
     allowing us to gain more explainability.
+
+    Finally, we also added the statistic counts in order to indicate how many
+    times each metapath is really employed in the graph.
     """
     def __init__(self,
                  data: HeteroData,
                  col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
                  metadata: Tuple[List[str], List[Tuple[str, str, str]]],
                  metapaths: List[List[int]],  # rel_indices
+                 metapath_counts: Dict[Tuple, int], #statistics of each metapath
                  hidden_channels: int = 64,
                  out_channels: int = 64,
                  final_out_channels: int = 1):
@@ -137,6 +141,12 @@ class MPSGNN(nn.Module):
             MetaPathGNN(mp, hidden_channels, out_channels)
             for mp in metapaths
         ]) # we construct a MetaPathGNN for each metapath
+
+        weights = torch.tensor(
+            [metapath_counts.get(tuple(mp), 1) for mp in metapaths], dtype=torch.float
+        )
+        weights = weights/weights.sum() #normalization of count
+        self.register_buffer("metapath_weights_tensor", weights) 
 
         self.regressor = MetaPathSelfAttention(out_channels, num_heads=4)
 
@@ -156,5 +166,6 @@ class MPSGNN(nn.Module):
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
       concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
-      return self.regressor(concat) #finally apply regression
+      weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
+      return self.regressor(weighted) #finally apply regression
 
