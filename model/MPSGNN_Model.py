@@ -106,6 +106,9 @@ class MPSGNN(nn.Module):
     through MetaPathGNN Model to make a final prediction, which in 
     our is a regression task (driver position only for now).
 
+    We use a different GNN model for each distinct metapath 
+    making the aggregation only considering that metapath
+
     We use HeteroEncoder in order to get intial enbeddings for nodes.
 
     Finally, we employ a nn (a Regressor) to combine the results 

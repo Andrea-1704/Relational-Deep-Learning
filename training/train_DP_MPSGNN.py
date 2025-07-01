@@ -37,7 +37,7 @@ from utils.mpsgnn_metapath_utils import binarize_targets# greedy_metapath_search
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned
+from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
 
 
 
@@ -52,7 +52,6 @@ def train2():
 
     out_channels = 1
     loss_fn = L1Loss()
-    # this is the mae loss and is used when have regressions tasks.
     tune_metric = "mae"
     higher_is_better = False
 
@@ -87,7 +86,6 @@ def train2():
         if driver_id in id_to_idx:
             target_vector[id_to_idx[driver_id]] = driver_labels[i]
 
-    #
     data_official['drivers'].y = target_vector
     data_official['drivers'].train_mask = ~torch.isnan(target_vector)
 
@@ -128,19 +126,16 @@ def train2():
     hidden_channels = 1024
     out_channels = 512
 
-    metapaths = greedy_metapath_search_with_bags_learned(
+    metapaths = beam_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,
         data=data_full,
         y=y_full,
         train_mask=train_mask_full,
         node_type='drivers',
         L_max=3, #----> tune
-        channels = hidden_channels
-    )  #to be checked, but seems to work providing a list of tuples which 
-    #represents the edges.
-
-    #metadata is correctly working by providing 
-    #relevant informations about the dataset.
+        channels = hidden_channels, 
+        beam_width = 5
+    )  
 
     #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
