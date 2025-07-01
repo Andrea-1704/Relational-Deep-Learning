@@ -272,6 +272,10 @@ def greedy_metapath_search_with_bags_learned(
     to consider the second stopping criteria indicated in section 4.4 of the 
     reference, in order to avoid to consider a strict threshold for the 
     allowed minimal improvement.
+    We also added a statistics count that takes into account the counts of how many 
+    times each metapath has been use in the path (for example assuming to have the 
+    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
+    set of relations).  
     """
     device = y.device
     metapaths = [] #returned object
@@ -391,6 +395,7 @@ def greedy_metapath_search_with_bags_learned(
                 new_bags_all.extend(best_bags)
                 new_labels_all.extend(best_labels)
                 #plesase note that these list are inizialized for aeche level indipendently
+
                  
 
         current_paths = new_paths
@@ -425,9 +430,14 @@ def beam_metapath_search_with_bags_learned(
     algorithm from creating sub-optimal and un-usefull long metapaths: 
     it simply considers all the metapaths (also the intermediate ones and their score
     value to be able to consider also intermediate metapaths).
+    We also added a statistics count that takes into account the counts of how many 
+    times each metapath has been use in the path (for example assuming to have the 
+    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
+    set of relations).    
     """
     device = y.device
     metapaths = []
+    metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
     current_paths = [[]]
     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
@@ -514,7 +524,12 @@ def beam_metapath_search_with_bags_learned(
             current_labels.extend(labels)
             alpha.update(alpha_next)
 
-        metapaths.extend(current_paths)
+            path_key = tuple(path)
+            metapath_counts[path_key] = metapath_counts.get(path_key, 0) + len(bags) #update number of instances for metapath
 
-    return metapaths
+        metapaths.extend(current_paths)
+        print(f"final metapaths are: {metapaths}")
+        print(f"metapath counts are: {metapath_counts}")
+
+    return metapaths, metapath_counts
 
