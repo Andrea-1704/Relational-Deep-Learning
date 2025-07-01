@@ -166,7 +166,7 @@ def train2():
 
     optimizer = torch.optim.Adam(   #----> tune
       model.parameters(),
-      lr=0.00005,
+      lr=0.0001,
       weight_decay=0
     )
 
@@ -183,7 +183,7 @@ def train2():
     test_table = task.get_table("test", mask_input_cols=False)
     best_val_metric = -math.inf if higher_is_better else math.inf
     best_test_metric = -math.inf if higher_is_better else math.inf
-    epochs = 64
+    epochs = 150
     for epoch in range(0, epochs):
       train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
       train_pred = test(model, loader_dict["train"], device=device, task=task)

@@ -282,6 +282,7 @@ def greedy_metapath_search_with_bags_learned(
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
 
     for level in range(L_max): #cycle in the level of metapath
+        print(f"level {level}")
         new_paths = []
         new_alpha_all = [] 
         new_bags_all = []
@@ -289,6 +290,7 @@ def greedy_metapath_search_with_bags_learned(
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
+            print(f"current source node is {last_ntype}")
             #if the current next node is empty, start from the target node ("driver")
 
             with torch.no_grad():
@@ -332,6 +334,7 @@ def greedy_metapath_search_with_bags_learned(
             best_labels = None
 
             for rel in candidate_rels: 
+                print(f"considering relation {rel}")
                 src, _, dst = rel
                 node_embeddings = node_embeddings_dict.get(dst) 
                 #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
@@ -357,7 +360,8 @@ def greedy_metapath_search_with_bags_learned(
                     continue#this avoid to consider few bags to avoid overfitting
 
                 score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
-                
+                print(f"relation {rel} allow us to obtain score {score}")
+
                 if score < best_score:
                     best_score = score
                     best_rel = rel
@@ -369,6 +373,7 @@ def greedy_metapath_search_with_bags_learned(
 
             if best_rel:
                 new_paths.append(path + [best_rel]) #add the best_rel to path
+                print(f"The best relation found is {best_rel}")
                 new_alpha_all.append(best_alpha) 
                 #NB: the best_alpha are the alpha scores returned from the best current relation 
                 #"rel" that was found. It is a dictionary that has as keys all the values 
@@ -392,6 +397,7 @@ def greedy_metapath_search_with_bags_learned(
         current_bags = new_bags_all
         current_labels = new_labels_all
         metapaths.extend(current_paths)
+        print(f"final metapaths are {metapaths}")
 
     return metapaths
 
