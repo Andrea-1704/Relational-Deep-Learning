@@ -285,7 +285,6 @@ def greedy_metapath_search_with_bags_learned(
             last_ntype = node_type if not path else path[-1][2]
             #if the current next node is empty, start from the target node ("driver")
 
-            #Encoder to get the embeddings
             with torch.no_grad():
               encoder = HeteroEncoder(
                   channels=channels,
@@ -299,6 +298,7 @@ def greedy_metapath_search_with_bags_learned(
                   for name, buf in module._buffers.items():
                       if buf is not None:
                           module._buffers[name] = buf.to(device)
+              
               tf_dict = {
                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
               }#get the features of nodes
@@ -317,7 +317,7 @@ def greedy_metapath_search_with_bags_learned(
             best_bags = None
             best_labels = None
 
-            for rel in candidate_rels: #consider all the possible relations
+            for rel in candidate_rels: 
                 src, _, dst = rel
                 node_embeddings = node_embeddings_dict.get(dst) #get embeddings dict of the dst node.
                 if node_embeddings is None:
@@ -330,7 +330,7 @@ def greedy_metapath_search_with_bags_learned(
                     data=data,
                     previous_bags=current_bags,
                     previous_labels=current_labels,
-                    alpha_prev=alpha,
+                    alpha_prev=alpha, #current alfa values for v nodes
                     rel=rel,
                     node_embeddings=node_embeddings,
                     theta=theta,
@@ -366,6 +366,7 @@ def greedy_metapath_search_with_bags_learned(
 
                 new_bags_all.extend(best_bags)
                 new_labels_all.extend(best_labels)
+                #plesase note that these list are inizialized for aeche level indipendently
                  
 
         current_paths = new_paths
