@@ -8,28 +8,28 @@ from relbench.modeling.nn import HeteroEncoder
 
 
 def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
-  """
-  This function trasforms a regression task (like the one of driver position)
-  into a binary classification problem. 
-  To incorporate the original https://arxiv.org/abs/2412.00521 paper, which 
-  was only for binary classification we decided to trnasform our task into a 
-  binary classfication task, where the driver position gets converted into a 
-  binary label:
-  1 if position < threshold;
-  o otherwise.
-  """
-  return (y < threshold).long()
+    """
+    This function trasforms a regression task (like the one of driver position)
+    into a binary classification problem. 
+    To incorporate the original https://arxiv.org/abs/2412.00521 paper, which 
+    was only for binary classification we decided to trnasform our task into a 
+    binary classfication task, where the driver position gets converted into a 
+    binary label:
+    1 if position < threshold;
+    o otherwise.
+    """
+    return (y < threshold).long()
 
 
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
-  """
-  This function takes the "metadata" of the grafo (which are basicly all the 
-  relevant informations about the graph, such as edge types, node types, etc.)
-  and returns all the edges (in tuple format "(src_type, name of relation, 
-  dst_type)") that starts from "current_node_type" as "src_type".
-  """
-  return [rel for rel in metadata[1] if rel[0] == current_node_type]
+    """
+    This function takes the "metadata" of the grafo (which are basicly all the 
+    relevant informations about the graph, such as edge types, node types, etc.)
+    and returns all the edges (in tuple format "(src_type, name of relation, 
+    dst_type)") that starts from "current_node_type" as "src_type".
+    """
+    return [rel for rel in metadata[1] if rel[0] == current_node_type]
 
 
 
