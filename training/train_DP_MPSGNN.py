@@ -132,9 +132,9 @@ def train2():
         y=y_full,
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=3, #----> tune
+        L_max=4, #----> tune
         channels = hidden_channels, 
-        beam_width = 5
+        beam_width = 3
     )  
 
     #now we can use the loader dict and batch work SGD
