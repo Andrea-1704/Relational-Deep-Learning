@@ -198,10 +198,10 @@ def evaluate_relation_learned(
     surrogate function (in the paper the binary ranking loss was used,
     we, instead, use a MAE loss since we need to deal with a regression
     task).
-    Also, in the paper, the scoring function "F(B)" was parametrized by
-    relations, not for metadapath; we are, instead, building a 
+    Notice that in the paper the scoring function "F(B)" was parametrized by
+    relations, not for metadapath; We are, instead, building a 
     ScoringFunctionReg from scratch for each relation, reducing the 
-    risk of overfitting, but also increasing the complexity.
+    risk of overfitting, but also increasing the complexity of the model.
     """
     device = node_embeddings.device
     in_dim = node_embeddings.size(-1)
@@ -251,7 +251,7 @@ def greedy_metapath_search_with_bags_learned(
     channels : int = 64,
 ) -> List[List[Tuple[str, str, str]]]:
     """
-    This is the main component of this set of function and classes, is the 
+    This is the main component of this set of functions and classes, is the 
     complete algorithm used to implement the meta paths.
 
     This function searches in a greedy fashion the best meta-paths 
@@ -266,19 +266,17 @@ def greedy_metapath_search_with_bags_learned(
     allowed minimal improvement.
     """
     device = y.device
-    metapaths = [] #the thing we will return
+    metapaths = [] #returned object
     current_paths = [[]] #current partial paths that we are going to expand 
 
     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
     #at the first step, the bags are simply a list of list values, where each list contained inside the 
-    #list id the driver index node, if that driver is in the train_mask mask.
+    #list is the id the driver index node, if that driver is in the train_mask mask.
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-    #initialize the alpha scores as equal to one.
 
     for level in range(L_max): #cycle in the level of metapath
         new_paths = []
-        #new_nodes_all = [] 
         new_alpha_all = [] 
         new_bags_all = []
         new_labels_all = []
