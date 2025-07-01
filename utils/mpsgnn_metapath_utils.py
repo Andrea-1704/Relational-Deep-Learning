@@ -419,7 +419,12 @@ def beam_metapath_search_with_bags_learned(
     beam_width: int = 5, #number of metapaths to look for
 ) -> List[List[Tuple[str, str, str]]]:
     """
-    
+    This function provides more than one metapaths by applying a beam search over the 
+    metapaths.
+    This implementation also do not require to use a hard cutoff value to stop the 
+    algorithm from creating sub-optimal and un-usefull long metapaths: 
+    it simply considers all the metapaths (also the intermediate ones and their score
+    value to be able to consider also intermediate metapaths).
     """
     device = y.device
     metapaths = []
@@ -448,11 +453,9 @@ def beam_metapath_search_with_bags_learned(
                   for name, buf in module._buffers.items():
                       if buf is not None:
                           module._buffers[name] = buf.to(device)
-              
               tf_dict = {
                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
               }
-              
               node_embeddings_dict = encoder(tf_dict)
 
             candidate_rels = [
@@ -465,7 +468,6 @@ def beam_metapath_search_with_bags_learned(
                 print(f"considering relation {rel}")
                 src, _, dst = rel
                 node_embeddings = node_embeddings_dict.get(dst) 
-                #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
 
                 if node_embeddings is None:
                     print(f"error: embedding of node {dst} not found")
@@ -494,11 +496,11 @@ def beam_metapath_search_with_bags_learned(
                 new_path = path + [rel]
                 candidate_path_info.append((
                     score, new_path, bags, labels, alpha_next
-                ))
+                )) #immediatly add this path, but also consider its score value
            
         
-        candidate_path_info.sort(key=lambda x: x[0])
-        selected = candidate_path_info[:beam_width]
+        candidate_path_info.sort(key=lambda x: x[0]) #sort the metapaths
+        selected = candidate_path_info[:beam_width]  #mantain only the main ones.
 
         current_paths = []
         current_bags = []
