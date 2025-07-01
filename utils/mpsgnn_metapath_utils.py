@@ -32,40 +32,7 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
   return [rel for rel in metadata[1] if rel[0] == current_node_type]
 
 
-#mistaken function for building the bag:
 
-# def construct_bags(
-#     data,
-#     train_mask: torch.Tensor,
-#     y: torch.Tensor,
-#     rel: Tuple[str, str, str],
-#     node_type: str,
-# ) -> Tuple[List[List[int]], List[float]]:
-#     """
-#     This function returns the bags for relation "rel" and the correspondings labels. 
-#     """
-#     src, rel_name, dst = rel
-#     if (src, rel_name, dst) not in data.edge_index_dict: #this should be counted as error
-#         print(f"edge type {rel} not found")
-#         return [], []
-
-#     edge_index = data.edge_index_dict[(src, rel_name, dst)]#taks the edges of that type
-#     bags = [] #inizialize the bag 
-#     labels = [] #inizialize the label for each bag (patient -> prescription, we construct
-#     #bag B for patient p1 which is healthy-> so B is linked to label healthy)
-
-#     for i in torch.where(train_mask)[0]:
-#       #train mask is constructed at the beginning of the train and is simply a boolean vector 
-#       #of the same size of drivers (target in general) nodes and contains true if that node 
-#       #is in the train split and we know its label and has some neighbours.
-#         node_id = i.item()
-#         neighbors = edge_index[1][edge_index[0] == node_id]
-#         #we construct the bag considering the rel kind of relation staring from src
-#         if len(neighbors) > 0:
-#             bags.append(neighbors.tolist())
-#             labels.append(y[node_id].item())
-
-#     return bags, labels
 
 #The previous bag creation function had an important error: it always consider ad node_id
 #the first node, the target node. So this function does not provide a solid solution for 
@@ -122,7 +89,7 @@ def construct_bags_with_alpha(
 
             #x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
             x_v = src_embeddings[v]
-            
+
             theta_xv = theta(x_v).item() # Θᵗ x_v scalar
             alpha_v = alpha_prev.get(v, 1.0)
 
