@@ -135,7 +135,7 @@ class MPSGNN(nn.Module):
             for mp in metapaths
         ]) # we construct a MetaPathGNN for each metapath
 
-        self.regressor = MetaPathSelfAttention(out_channels, num_head=4)
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=4)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
