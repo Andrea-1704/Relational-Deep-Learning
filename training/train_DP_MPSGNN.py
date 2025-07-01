@@ -123,8 +123,8 @@ def train2():
     train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
 
-    hidden_channels = 1024
-    out_channels = 512
+    hidden_channels = 512
+    out_channels = 256
 
     metapaths = beam_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,

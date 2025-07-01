@@ -7,7 +7,7 @@ from relbench.modeling.nn import HeteroEncoder
 
 
 
-def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
+def binarize_targets(y: torch.Tensor, threshold: float = 11) -> torch.Tensor:
     """
     This function trasforms a regression task (like the one of driver position)
     into a binary classification problem. 
@@ -434,6 +434,7 @@ def beam_metapath_search_with_bags_learned(
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
 
     for level in range(L_max):
+        print(f"we are at level {level}")
         candidate_path_info = []
 
         for path in current_paths:
