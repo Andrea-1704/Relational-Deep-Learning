@@ -22,6 +22,7 @@ def binarize_targets(y: torch.Tensor, threshold: float = 10) -> torch.Tensor:
 
 
 
+
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
     """
     This function takes the "metadata" of the grafo (which are basicly all the 
@@ -106,7 +107,6 @@ def construct_bags_with_alpha(
 
 
 
-
 class ScoringFunctionReg(nn.Module):
     """    
     This function is one of possibly infinite different implementation for 
@@ -178,6 +178,7 @@ class ScoringFunctionReg(nn.Module):
 
 
 
+
 def evaluate_relation_learned(
     bags: List[List[int]],  #one for each node
     labels: List[float],    #len(labels)==len(bags)
@@ -234,8 +235,6 @@ def evaluate_relation_learned(
         final_mae = model.loss(preds, target_tensor).item()
 
     return final_mae
-
-
 
 
 
@@ -302,7 +301,15 @@ def greedy_metapath_search_with_bags_learned(
               tf_dict = {
                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
               }#get the features of nodes
-              node_embeddings_dict = encoder(tf_dict)  #get the features of nodes
+              #tf_dict is a dictionary:
+              # [node type]:Tensor Frame object containing the columns of such node
+              
+              
+              node_embeddings_dict = encoder(tf_dict)
+              #HeteroEncoder takes as input the tf_dict object mentioned before and return 
+              #a dictionary in which for each type of node (key of the dictionary) 
+              #contains the embeddings for all the nodes of that type: 
+              # [node_type]: Tensor[node_type, hidden_dim]
 
             candidate_rels = [
                 (src, rel, dst)
@@ -319,7 +326,9 @@ def greedy_metapath_search_with_bags_learned(
 
             for rel in candidate_rels: 
                 src, _, dst = rel
-                node_embeddings = node_embeddings_dict.get(dst) #get embeddings dict of the dst node.
+                node_embeddings = node_embeddings_dict.get(dst) 
+                #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
+
                 if node_embeddings is None:
                     print(f"error: embedding of node {dst} not found")
                     continue
@@ -378,5 +387,6 @@ def greedy_metapath_search_with_bags_learned(
         metapaths.extend(current_paths)
 
     return metapaths
+
 
 
