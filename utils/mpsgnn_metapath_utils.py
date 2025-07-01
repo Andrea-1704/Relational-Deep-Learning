@@ -4,6 +4,7 @@ from typing import List, Tuple, Dict
 import torch.nn as nn
 import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
+from collections import defaultdict
 
 
 
@@ -257,7 +258,7 @@ def greedy_metapath_search_with_bags_learned(
     L_max: int = 3,
     max_rels: int = 10,
     channels : int = 64,
-) -> List[List[Tuple[str, str, str]]]:
+) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     """
     This is the main component of this set of functions and classes, is the 
     complete algorithm used to implement the meta paths.
@@ -279,6 +280,7 @@ def greedy_metapath_search_with_bags_learned(
     """
     device = y.device
     metapaths = [] #returned object
+    metapath_counts = defaultdict(int)
     current_paths = [[]] #current partial paths that we are going to expand 
 
     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
@@ -380,6 +382,7 @@ def greedy_metapath_search_with_bags_learned(
 
             if best_rel:
                 new_paths.append(path + [best_rel]) #add the best_rel to path
+                metapath_counts[tuple(path+[best_rel])] += 1
                 print(f"The best relation found is {best_rel}")
                 new_alpha_all.append(best_alpha) 
                 #NB: the best_alpha are the alpha scores returned from the best current relation 
@@ -408,7 +411,7 @@ def greedy_metapath_search_with_bags_learned(
         metapaths.extend(current_paths)
         print(f"final metapaths are {metapaths}")
 
-    return metapaths
+    return metapaths, metapath_counts
 
 
 
@@ -422,7 +425,7 @@ def beam_metapath_search_with_bags_learned(
     max_rels: int = 10,
     channels : int = 64,
     beam_width: int = 5, #number of metapaths to look for
-) -> List[List[Tuple[str, str, str]]]:
+) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     """
     This function provides more than one metapaths by applying a beam search over the 
     metapaths.
