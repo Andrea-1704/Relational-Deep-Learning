@@ -27,55 +27,15 @@ class MetaPathGNNLayer(MessagePassing):
         self.w_l = nn.Linear(in_channels, out_channels) # W_l appears here: W_l * ∑ u∈N h_u 
         self.w_1 = nn.Linear(in_channels, out_channels) # W_1 appears here: W_1 * h(0) SKIP CONNECTION
 
-    def forward(self, x, edge_index, edge_type, h):
-        edge_mask = edge_type == self.relation_index
-        out = self.propagate(edge_index[:, edge_mask], x=h)
+    def forward(self, x_initial, edge_index, h_src_current, h_dst_current):
+        #edge_mask = edge_type == self.relation_index
+        out = self.propagate(edge_index, x=(h_src_current, h_dst_current))
         #the propagate function call the message, aggregate and update function
-        return self.w_l(out) + self.w_0(h) + self.w_1(x)
+        return self.w_l(out) + self.w_0(h_src_current) + self.w_1(x_initial)
 
     def message(self, x_j):
         return x_j
 
-
-# class MetaPathGNN(nn.Module):
-#     """
-#     This is the network that express the GNN operations over a meta path.
-#     We create a GNN layer for each relation in the metapath. Then, we 
-#     propagate over the metapath using convolutions.
-#     Finally we apply a final prejection to the initial node embeddings.
-
-#     So, we generate embeddings considering the metapath "metapath".
-#     A metapath is passed, and is a list of tuple (src, rel, dst).
-
-#     Here, we use SAGEConv as GNN layer, but we can change this choice.
-#     """
-#     def __init__(self,
-#                  metapath: List[Tuple[str, str, str]],
-#                  hidden_channels: int,  #dimension of the hidden state, 
-#                  #after each aggregation
-#                  out_channels: int #final dimension of the 
-#                  #embeddings produced by the GNN
-#         ):
-#         super().__init__()
-#         self.metapath = metapath
-#         self.convs = nn.ModuleList()
-
-#         for _ in metapath:
-#             #for each relation in the metapath we consider 
-#             #a SAGEConv layer
-#             conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
-#             self.convs.append(conv)
-
-#         self.out_proj = nn.Linear(hidden_channels, out_channels)
-
-#     def forward(self, x_dict, edge_index_dict):
-#         h_dict = x_dict.copy()
-#         for i, (src, rel, dst) in enumerate(self.metapath):
-#             edge_index = edge_index_dict[(src, rel, dst)]
-#             h_dst = self.convs[i]((h_dict[src], h_dict[dst]), edge_index)
-#             h_dict[dst] = F.relu(h_dst)
-#         start_type = self.metapath[0][0]
-#         return self.out_proj(h_dict[start_type])
 
 class MetaPathGNN(nn.Module):
     """
@@ -86,6 +46,8 @@ class MetaPathGNN(nn.Module):
 
     So, we generate embeddings considering the metapath "metapath".
     A metapath is passed, and is a list of tuple (src, rel, dst).
+
+    Here, we use SAGEConv as GNN layer, but we can change this choice.
     """
     def __init__(self,
                  metapath: List[Tuple[str, str, str]],
@@ -98,9 +60,10 @@ class MetaPathGNN(nn.Module):
         self.metapath = metapath
         self.convs = nn.ModuleList()
 
-        # For each relation in the metapath, use your custom MetaPathGNNLayer
-        for i, (src, rel, dst) in enumerate(metapath):
-            conv = MetaPathGNNLayer(hidden_channels, hidden_channels, rel) # Pass rel (relation_index)
+        for _ in metapath:
+            #for each relation in the metapath we consider 
+            #a SAGEConv layer
+            conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
             self.convs.append(conv)
 
         self.out_proj = nn.Linear(hidden_channels, out_channels)
@@ -109,11 +72,55 @@ class MetaPathGNN(nn.Module):
         h_dict = x_dict.copy()
         for i, (src, rel, dst) in enumerate(self.metapath):
             edge_index = edge_index_dict[(src, rel, dst)]
-            h_dst = self.convs[i](x_dict[src], edge_index, rel, h_dict[src]) 
+            h_dst = self.convs[i]((h_dict[src], h_dict[dst]), edge_index)
             h_dict[dst] = F.relu(h_dst)
-
-        start_type = self.metapath[0][0] 
+        start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
+
+# class MetaPathGNN(nn.Module):
+#     """
+#     This is the network that express the GNN operations over a meta path.
+#     We create a GNN layer for each relation in the metapath. Then, we 
+#     propagate over the metapath using convolutions.
+#     Finally we apply a final prejection to the initial node embeddings.
+
+#     So, we generate embeddings considering the metapath "metapath".
+#     A metapath is passed, and is a list of tuple (src, rel, dst).
+#     """
+#     def __init__(self,
+#                  metapath: List[Tuple[str, str, str]],
+#                  hidden_channels: int,  #dimension of the hidden state, 
+#                  #after each aggregation
+#                  out_channels: int #final dimension of the 
+#                  #embeddings produced by the GNN
+#         ):
+#         super().__init__()
+#         self.metapath = metapath
+#         self.convs = nn.ModuleList()
+
+#         # For each relation in the metapath, use your custom MetaPathGNNLayer
+#         for i, (src, rel, dst) in enumerate(metapath):
+#             conv = MetaPathGNNLayer(hidden_channels, hidden_channels, rel) # Pass rel (relation_index)
+#             self.convs.append(conv)
+
+#         self.out_proj = nn.Linear(hidden_channels, out_channels)
+
+#     def forward(self, x_dict, edge_index_dict):
+#         h_dict = x_dict.copy()
+#         for i, (src, rel, dst) in enumerate(self.metapath):
+#             edge_index = edge_index_dict[(src, rel, dst)]
+#             #h_dst = self.convs[i](x_dict[src], edge_index, rel, h_dict[src]) 
+            
+#             h_dst = self.convs[i](
+#                     x_dict[src],        
+#                     edge_index,         
+#                     h_dict[src],        
+#                     h_dict[dst]         
+#             )
+#             h_dict[dst] = F.relu(h_dst)
+
+#         start_type = self.metapath[0][0] 
+#         return self.out_proj(h_dict[start_type])
 
 
 
