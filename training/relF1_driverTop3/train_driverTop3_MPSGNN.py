@@ -45,7 +45,8 @@ def train2():
     test_table = task.get_table("test")
 
     out_channels = 1
-    loss_fn = nn.BCEWithLogitsLoss()
+    
+    #loss_fn = nn.BCEWithLogitsLoss()
     tune_metric = "f1"
     higher_is_better = True #is referred to the tune metric
 
@@ -106,7 +107,11 @@ def train2():
 
     y_full = data_full['drivers'].y.float()
     train_mask_full = data_full['drivers'].train_mask
-    
+    num_pos = (y_full[train_mask_full] == 1).sum()
+    num_neg = (y_full[train_mask_full] == 0).sum()
+    pos_weight = torch.tensor([num_neg / num_pos], device=device)
+
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     hidden_channels = 32
     out_channels = 32
@@ -124,6 +129,15 @@ def train2():
 
     metapaths = [[('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')]]
     metapath_counts = {(('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')): 92, (('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')): 92, (('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')): 867}
+
+    y = data_official['drivers'].y
+    train_mask = data_official['drivers'].train_mask
+
+    print("Num training targets:", train_mask.sum().item())
+    print("Class balance in training set:")
+    print("  Class 0:", (y[train_mask] == 0).sum().item())
+    print("  Class 1:", (y[train_mask] == 1).sum().item())
+
 
     loader_dict = loader_dict_fn(
         batch_size=1024,
@@ -148,7 +162,7 @@ def train2():
 
     optimizer = torch.optim.Adam(
       model.parameters(),
-      lr=0.01,
+      lr=0.005,
       weight_decay=0.005
     )
 
@@ -158,6 +172,7 @@ def train2():
         patience=60,
         delta=0.0,
         verbose=True,
+        higher_is_better = True,
         path="best_basic_model.pt"
     )
 
