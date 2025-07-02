@@ -9,34 +9,43 @@ from torch_frame.data.stats import StatType
 from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
 
-
-
 class MetaPathGNNLayer(MessagePassing):
     """
-    This model follows the section 4.3 formulation. 
-    The W0, W1, Wneigh appearing in equation 7 are threated as Linear 
-    layers. 
-    This allows to distinguish between the different contribution that 
-    each component of eq 7 share.
+    MetaPathGNNLayer implements equation 7 from the MPS-GNN paper.
+
+    h'_v = W_l * sum_{u in N(v)} h_u + W_0 * h_v + W_1 * x_v
+    where:
+      - h_v is the current hidden state of node v,
+      - x_v is the original embedding of v,
+      - h_u are the neighbors' embeddings.
     """
-    def __init__(self, in_channels, out_channels, relation_index):
-        super().__init__(aggr='add', flow="target_to_source")
-        #we use the add function as aggregation function
+    def __init__(self, in_channels: int, out_channels: int, relation_index: int):
+        super().__init__(aggr='add', flow='target_to_source')
         self.relation_index = relation_index
-        self.w_0 = nn.Linear(in_channels, out_channels) # W_0 appears here: W_0 · h (in eq 7)
-        self.w_l = nn.Linear(in_channels, out_channels) # W_l appears here: W_l * ∑ u∈N h_u 
-        self.w_1 = nn.Linear(in_channels, out_channels) # W_1 appears here: W_1 * h(0) SKIP CONNECTION
 
-    def forward(self, x_initial, edge_index, h_src_current, h_dst_current):
-        #edge_mask = edge_type == self.relation_index
-        out = self.propagate(edge_index, x=(h_src_current, h_dst_current))
-        #the propagate function call the message, aggregate and update function
-        return self.w_l(out) + self.w_0(h_src_current) + self.w_1(x_initial)
+        # Linear layers for each component of equation 7
+        self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
+        self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
+        self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
 
-    def message(self, x_j):
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Original input features of the node (x_v), shape [N_dst, in_channels]
+            edge_index: Edge index for this relation, shape [2, num_edges]
+            h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
+        Returns:
+            Updated node representation after applying the layer, shape [N_dst, out_channels]
+        """
+
+        agg_messages = self.propagate(edge_index, x=h)
+
+        return self.w_l(agg_messages) + self.w_0(h) + self.w_1(x)
+
+    def message(self, x_j: torch.Tensor) -> torch.Tensor:
         return x_j
 
-
+#version 2 
 class MetaPathGNN(nn.Module):
     """
     This is the network that express the GNN operations over a meta path.
@@ -47,36 +56,36 @@ class MetaPathGNN(nn.Module):
     So, we generate embeddings considering the metapath "metapath".
     A metapath is passed, and is a list of tuple (src, rel, dst).
 
-    Here, we use SAGEConv as GNN layer, but we can change this choice.
+    Here, we use MetaPathGNNLayer as GNN layer, which follows the paper 
+    implementation.
     """
-    def __init__(self,
-                 metapath: List[Tuple[str, str, str]],
-                 hidden_channels: int,  #dimension of the hidden state, 
-                 #after each aggregation
-                 out_channels: int #final dimension of the 
-                 #embeddings produced by the GNN
-        ):
+    def __init__(self, metapath, hidden_channels, out_channels):
         super().__init__()
         self.metapath = metapath
         self.convs = nn.ModuleList()
-
-        for _ in metapath:
-            #for each relation in the metapath we consider 
-            #a SAGEConv layer
-            conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
-            self.convs.append(conv)
-
+        for i in range(len(metapath)):
+            self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
-    def forward(self, x_dict, edge_index_dict):
+    def forward(self, x_dict, edge_index_dict, edge_type_dict):
+        #edge_type_dict is the list of edge types
+        #edge_index_dict contains for each edge_type the edges
         h_dict = x_dict.copy()
         for i, (src, rel, dst) in enumerate(self.metapath):
             edge_index = edge_index_dict[(src, rel, dst)]
-            h_dst = self.convs[i]((h_dict[src], h_dict[dst]), edge_index)
+            #only the one of the relation specified
+            h_dst = self.convs[i](
+                x=h_dict[dst],
+                h=h_dict[dst],
+                edge_index=edge_index
+            )
             h_dict[dst] = F.relu(h_dst)
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
 
+
+
+#Version one, using SAGEConv:
 # class MetaPathGNN(nn.Module):
 #     """
 #     This is the network that express the GNN operations over a meta path.
@@ -86,6 +95,8 @@ class MetaPathGNN(nn.Module):
 
 #     So, we generate embeddings considering the metapath "metapath".
 #     A metapath is passed, and is a list of tuple (src, rel, dst).
+
+#     Here, we use SAGEConv as GNN layer, but we can change this choice.
 #     """
 #     def __init__(self,
 #                  metapath: List[Tuple[str, str, str]],
@@ -98,9 +109,10 @@ class MetaPathGNN(nn.Module):
 #         self.metapath = metapath
 #         self.convs = nn.ModuleList()
 
-#         # For each relation in the metapath, use your custom MetaPathGNNLayer
-#         for i, (src, rel, dst) in enumerate(metapath):
-#             conv = MetaPathGNNLayer(hidden_channels, hidden_channels, rel) # Pass rel (relation_index)
+#         for _ in metapath:
+#             #for each relation in the metapath we consider 
+#             #a SAGEConv layer
+#             conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
 #             self.convs.append(conv)
 
 #         self.out_proj = nn.Linear(hidden_channels, out_channels)
@@ -109,18 +121,13 @@ class MetaPathGNN(nn.Module):
 #         h_dict = x_dict.copy()
 #         for i, (src, rel, dst) in enumerate(self.metapath):
 #             edge_index = edge_index_dict[(src, rel, dst)]
-#             #h_dst = self.convs[i](x_dict[src], edge_index, rel, h_dict[src]) 
-            
-#             h_dst = self.convs[i](
-#                     x_dict[src],        
-#                     edge_index,         
-#                     h_dict[src],        
-#                     h_dict[dst]         
-#             )
+#             h_dst = self.convs[i]((h_dict[src], h_dict[dst]), edge_index)
 #             h_dict[dst] = F.relu(h_dst)
-
-#         start_type = self.metapath[0][0] 
+#         start_type = self.metapath[0][0]
 #         return self.out_proj(h_dict[start_type])
+
+
+
 
 
 
@@ -139,6 +146,7 @@ class MetaPathSelfAttention(nn.Module):
         attn_output, _ = self.attn(metapath_embeddings, metapath_embeddings, metapath_embeddings)  # [N, M, D]
         pooled = attn_output.mean(dim=1)  #matapaths mean -> [N, D]
         return self.output_proj(pooled).squeeze(-1)  # output: [N]
+
 
 
 
@@ -224,12 +232,14 @@ class MPSGNN(nn.Module):
 
       for node_type, rel_time in rel_time_dict.items():
             x_dict[node_type] = x_dict[node_type] + rel_time
-
+      #print(f"edge_index_dict è {batch.edge_index_dict}")
+      #print(f"edge_types è {batch.edge_types}") 
       embeddings = [
-          model(x_dict, batch.edge_index_dict)
+          model(x_dict, batch.edge_index_dict, batch.edge_types)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
       concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
       weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
+      
       return self.regressor(weighted) #finally apply regression
 
