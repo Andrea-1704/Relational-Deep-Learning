@@ -113,8 +113,8 @@ def train2():
 
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    hidden_channels = 32
-    out_channels = 32
+    hidden_channels = 128
+    out_channels = 128
 
     # metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
     #     col_stats_dict = col_stats_dict_full,
