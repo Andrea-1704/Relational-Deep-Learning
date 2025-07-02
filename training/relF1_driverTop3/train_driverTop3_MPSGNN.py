@@ -111,16 +111,19 @@ def train2():
     hidden_channels = 32
     out_channels = 32
 
-    metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
-        col_stats_dict = col_stats_dict_full,
-        data=data_full,
-        y=y_full, 
-        train_mask=train_mask_full,
-        node_type='drivers',
-        L_max=3,
-        channels = hidden_channels,
-        beam_width = 3
-    )
+    # metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
+    #     col_stats_dict = col_stats_dict_full,
+    #     data=data_full,
+    #     y=y_full, 
+    #     train_mask=train_mask_full,
+    #     node_type='drivers',
+    #     L_max=3,
+    #     channels = hidden_channels,
+    #     beam_width = 3
+    # )
+
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')]]
+    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')): 92, (('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')): 92, (('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')): 867}
 
     loader_dict = loader_dict_fn(
         batch_size=1024,
@@ -174,7 +177,7 @@ def train2():
       val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
       test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-      scheduler.step(val_metrics[tune_metric])
+      #scheduler.step(val_metrics[tune_metric])
 
       if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
         best_val_metric = val_metrics[tune_metric]
