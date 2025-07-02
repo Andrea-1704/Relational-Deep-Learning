@@ -450,10 +450,13 @@ def beam_metapath_search_with_bags_learned(
     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+    all_path_info = [] #memorize all the metapaths with scores, in order
+    #to select only the best beam_width at the end
 
     for level in range(L_max):
         print(f"we are at level {level}")
-        candidate_path_info = []
+        #candidate_path_info = []
+        next_paths_info = []
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
@@ -515,33 +518,33 @@ def beam_metapath_search_with_bags_learned(
                 score = evaluate_relation_learned(bags, labels, node_embeddings)
                 print(f"relation {rel} allow us to obtain score {score}")
 
-
                 new_path = path + [rel]
-                candidate_path_info.append((
-                    score, new_path, bags, labels, alpha_next
-                )) #immediatly add this path, but also consider its score value
-           
-        
-        candidate_path_info.sort(key=lambda x: x[0]) #sort the metapaths
-        selected = candidate_path_info[:beam_width]  #mantain only the main ones.
+
+                next_paths_info.append((score, new_path, bags, labels, alpha_next))
 
         current_paths = []
         current_bags = []
         current_labels = []
         alpha = {}
 
-        for _, path, bags, labels, alpha_next in selected:
-            current_paths.append(path)
-            current_bags.extend(bags)
-            current_labels.extend(labels)
-            alpha.update(alpha_next)
+        for info in next_paths_info:
+          _, path, bags, labels, alpha_next = info
+          current_paths.append(path)
+          current_bags.extend(bags)
+          current_labels.extend(labels)
+          alpha.update(alpha_next)
 
-            path_key = tuple(path)
-            metapath_counts[path_key] = metapath_counts.get(path_key, 0) + len(bags) #update number of instances for metapath
+        all_path_info.extend(next_paths_info)
 
-        metapaths.extend(current_paths)
-        print(f"final metapaths are: {metapaths}")
-        print(f"metapath counts are: {metapath_counts}")
-
+    #final selection of the best beamwodth paths:
+    all_path_info.sort(key=lambda x:x[0])
+    selected = all_path_info[:beam_width]
+    for _, path, bags, _, _ in selected:
+      metapaths.append(path)
+      metapath_counts[tuple(path)] = len(bags)
+    print(f"final metapaths are: {metapaths}")
+    print(f"metapath counts are: {metapath_counts}")
     return metapaths, metapath_counts
+        
+
 
