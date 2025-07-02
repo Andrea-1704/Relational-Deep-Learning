@@ -37,6 +37,46 @@ class MetaPathGNNLayer(MessagePassing):
         return x_j
 
 
+# class MetaPathGNN(nn.Module):
+#     """
+#     This is the network that express the GNN operations over a meta path.
+#     We create a GNN layer for each relation in the metapath. Then, we 
+#     propagate over the metapath using convolutions.
+#     Finally we apply a final prejection to the initial node embeddings.
+
+#     So, we generate embeddings considering the metapath "metapath".
+#     A metapath is passed, and is a list of tuple (src, rel, dst).
+
+#     Here, we use SAGEConv as GNN layer, but we can change this choice.
+#     """
+#     def __init__(self,
+#                  metapath: List[Tuple[str, str, str]],
+#                  hidden_channels: int,  #dimension of the hidden state, 
+#                  #after each aggregation
+#                  out_channels: int #final dimension of the 
+#                  #embeddings produced by the GNN
+#         ):
+#         super().__init__()
+#         self.metapath = metapath
+#         self.convs = nn.ModuleList()
+
+#         for _ in metapath:
+#             #for each relation in the metapath we consider 
+#             #a SAGEConv layer
+#             conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
+#             self.convs.append(conv)
+
+#         self.out_proj = nn.Linear(hidden_channels, out_channels)
+
+#     def forward(self, x_dict, edge_index_dict):
+#         h_dict = x_dict.copy()
+#         for i, (src, rel, dst) in enumerate(self.metapath):
+#             edge_index = edge_index_dict[(src, rel, dst)]
+#             h_dst = self.convs[i]((h_dict[src], h_dict[dst]), edge_index)
+#             h_dict[dst] = F.relu(h_dst)
+#         start_type = self.metapath[0][0]
+#         return self.out_proj(h_dict[start_type])
+
 class MetaPathGNN(nn.Module):
     """
     This is the network that express the GNN operations over a meta path.
@@ -46,8 +86,6 @@ class MetaPathGNN(nn.Module):
 
     So, we generate embeddings considering the metapath "metapath".
     A metapath is passed, and is a list of tuple (src, rel, dst).
-
-    Here, we use SAGEConv as GNN layer, but we can change this choice.
     """
     def __init__(self,
                  metapath: List[Tuple[str, str, str]],
@@ -60,10 +98,9 @@ class MetaPathGNN(nn.Module):
         self.metapath = metapath
         self.convs = nn.ModuleList()
 
-        for _ in metapath:
-            #for each relation in the metapath we consider 
-            #a SAGEConv layer
-            conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
+        # For each relation in the metapath, use your custom MetaPathGNNLayer
+        for i, (src, rel, dst) in enumerate(metapath):
+            conv = MetaPathGNNLayer(hidden_channels, hidden_channels, rel) # Pass rel (relation_index)
             self.convs.append(conv)
 
         self.out_proj = nn.Linear(hidden_channels, out_channels)
@@ -72,10 +109,12 @@ class MetaPathGNN(nn.Module):
         h_dict = x_dict.copy()
         for i, (src, rel, dst) in enumerate(self.metapath):
             edge_index = edge_index_dict[(src, rel, dst)]
-            h_dst = self.convs[i]((h_dict[src], h_dict[dst]), edge_index)
+            h_dst = self.convs[i](x_dict[src], edge_index, rel, h_dict[src]) 
             h_dict[dst] = F.relu(h_dst)
-        start_type = self.metapath[0][0]
+
+        start_type = self.metapath[0][0] 
         return self.out_proj(h_dict[start_type])
+
 
 
 class MetaPathSelfAttention(nn.Module):
