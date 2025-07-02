@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
 from torch_geometric.nn import MLP
-from relbench.modeling.nn import HeteroEncoder
+from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 from torch_geometric.data import HeteroData
 from torch_frame.data.stats import StatType
 from typing import Any, Dict, List, Tuple
@@ -159,8 +159,26 @@ class MPSGNN(nn.Module):
             node_to_col_stats=col_stats_dict
         )
 
+        self.temporal_encoder = HeteroTemporalEncoder(
+            node_types=[
+                node_type for node_type in data.node_types if "time" in data[node_type]
+            ],
+            channels=hidden_channels,
+        )
+
     def forward(self, batch: HeteroData, entity_table=None):
+
+      seed_time = batch[entity_table].seed_time
+      
       x_dict = self.encoder(batch.tf_dict)
+
+      rel_time_dict = self.temporal_encoder(
+            seed_time, batch.time_dict, batch.batch_dict
+      )
+
+      for node_type, rel_time in rel_time_dict.items():
+            x_dict[node_type] = x_dict[node_type] + rel_time
+
       embeddings = [
           model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
