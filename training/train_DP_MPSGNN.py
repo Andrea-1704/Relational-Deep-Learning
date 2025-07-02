@@ -123,24 +123,24 @@ def train2():
     train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
 
-    hidden_channels = 256
-    out_channels = 128
+    hidden_channels = 128
+    out_channels = 64
 
-    metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
+    metapaths, metapath_counts = greedy_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,
         data=data_full,
         y=y_full,
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=1, #----> tune
+        L_max=2, #----> tune
         channels = hidden_channels, 
-        beam_width = 4
+        #beam_width = 4
     )  
 
     #now we can use the loader dict and batch work SGD
     loader_dict = loader_dict_fn(
-        batch_size=512, #----> tune
-        num_neighbours=256,  #----> tune
+        batch_size=256, #----> tune
+        num_neighbours=128,  #----> tune
         data=data_official, 
         task=task,
         train_table=train_table, 
