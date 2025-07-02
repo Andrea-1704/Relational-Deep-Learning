@@ -30,7 +30,7 @@ sys.path.append(os.path.abspath("."))
 
 from model.MPSGNN_Model import MPSGNN
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.mpsgnn_metapath_utils import binarize_targets # Questa funzione non sarà usata per i target principali, ma potrebbe essere ancora rilevante per la logica interna di evaluate_relation_learned se non modificata
+from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
@@ -38,17 +38,16 @@ from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned
 
 def train2():
     dataset = get_dataset("rel-f1", download=True)
-    task = get_task("rel-f1", "driver-top3", download=True) 
+    task = get_task("rel-f1", "driver-top3", download=True)
 
-    # Ottieni le tabelle principali
     train_table = task.get_table("train")
     val_table = task.get_table("val")
     test_table = task.get_table("test")
 
-    out_channels = 1 # Corretto per la classificazione binaria (output un logit)
-    loss_fn = nn.BCEWithLogitsLoss() # Usa la Binary Cross-Entropy Loss per la classificazione
-    tune_metric = "f1" # La metrica principale diventa F1-score
-    higher_is_better = True # Per F1-score, valori più alti sono migliori
+    out_channels = 1
+    loss_fn = nn.BCEWithLogitsLoss()
+    tune_metric = "f1"
+    higher_is_better = True
 
     seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,7 +57,6 @@ def train2():
     col_to_stype_dict = get_stype_proposal(db)
     db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
-    # Crea il grafo per data_official
     data_official, col_stats_dict_official = make_pkey_fkey_graph(
         db_nuovo,
         col_to_stype_dict=col_to_stype_dict_nuovo,
@@ -69,23 +67,27 @@ def train2():
     graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
-    # --- INIZIO MODIFICA PER ETICHETTE BINARIE (driver-top3) ---
-    # Ottieni le etichette binarie direttamente dal task di Relbench
-    # task.get_labels() restituisce un DataFrame con 'row_id' (che è driverId) e 'label' (0 o 1)
-    train_labels_df = task.get_labels(train_table)
-    val_labels_df = task.get_labels(val_table)
-    test_labels_df = task.get_labels(test_table) # Questo DataFrame avrà le etichette reali per il set di test
+    # --- INIZIO MODIFICA RIVEDUTA BASATA SULLA TUA CORREZIONE ('qualifying') ---
+    
+    # Estrai i driverId e le posizioni di 'qualifying' dalla train_table
+    train_df_raw = train_table.df
+    driver_ids_raw = train_df_raw["driverId"].to_numpy()
+    qualifying_positions = train_df_raw["qualifying"].to_numpy()
 
-    # Mappa le etichette binarie corrette ai nodi del grafo in data_official
+    # Binarizza le posizioni di 'qualifying': 1 se <= 3, 0 altrimenti (per "top3")
+    # binarize_targets richiede un tensore PyTorch e restituisce un tensore.
+    # Applica una soglia di 3 per definire "top3".
+    binary_top3_labels_raw = binarize_targets(torch.from_numpy(qualifying_positions), threshold=3).numpy().astype(float)
+
+
+    # Mappa le etichette binarie ai driverId presenti nel grafo completo
     target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
-    for _, row in train_labels_df.df.iterrows():
-        driver_id = row['row_id'] # 'row_id' è l'ID del driver
-        label = row['label']    # 'label' è l'etichetta binaria (0 o 1)
+    for i, driver_id in enumerate(driver_ids_raw):
         if driver_id in id_to_idx:
-            target_vector_official[id_to_idx[driver_id]] = label
+            target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
 
     # Assegna il vettore di etichette binarie a data_official['drivers'].y
-    data_official['drivers'].y = target_vector_official.float() # Assicurati che sia float per la loss
+    data_official['drivers'].y = target_vector_official.float()
     data_official['drivers'].train_mask = ~torch.isnan(target_vector_official)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -99,40 +101,37 @@ def train2():
     )
     data_full = data_full.to(device)
 
-    # Mappa le etichette binarie corrette ai nodi del grafo in data_full,
-    # usando lo stesso vettore di etichette binarie già preparato
+    # Assicurati che data_full['drivers'].y abbia anch'esso le etichette binarie corrette
     data_full['drivers'].y = target_vector_official.float()
     data_full['drivers'].train_mask = ~torch.isnan(target_vector_official)
 
     # y_full ora conterrà direttamente le etichette binarie per la ricerca delle metapath
     y_full = data_full['drivers'].y.float()
     train_mask_full = data_full['drivers'].train_mask
-    # y_bin_full = binarize_targets(y_full, threshold=10) # Non più strettamente necessaria qui, y_full è già binaria
-    # --- FINE MODIFICA PER ETICHETTE BINARIE ---
+    # La riga y_bin_full = binarize_targets(y_full, threshold=10) non è più necessaria qui
+    # perché y_full è già binaria e con la soglia corretta.
+    # --- FINE MODIFICA RIVEDUTA ---
 
-    hidden_channels = 128
-    out_channels = 64
+    hidden_channels = 1024
+    out_channels = 512
 
-    # Utilizza greedy_metapath_search_with_bags_learned o beam_metapath_search_with_bags_learned
-    # y_full è già binaria, quindi la funzione di scoring userà etichette 0/1.
     metapaths, metapath_counts = greedy_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,
         data=data_full,
-        y=y_full, # y_full è ora il tensore binario
+        y=y_full, # y_full è ora il tensore binario corretto
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=2,
+        L_max=4,
         channels = hidden_channels,
         #beam_width = 4 # Decommenta se vuoi usare beam search
     )
 
-    # Configurazione del loader, passa le tabelle corrette
     loader_dict = loader_dict_fn(
-        batch_size=256,
-        num_neighbours=128,
+        batch_size=1024,
+        num_neighbours=512,
         data=data_official,
         task=task,
-        train_table=train_table, # Tabella non modificata, serve per i loader
+        train_table=train_table,
         val_table=val_table,
         test_table=test_table
     )
@@ -150,7 +149,7 @@ def train2():
 
     optimizer = torch.optim.Adam(
       model.parameters(),
-      lr=0.001,
+      lr=0.005,
       weight_decay=0
     )
 
@@ -163,39 +162,39 @@ def train2():
         path="best_basic_model.pt"
     )
 
-    test_table_eval = task.get_table("test", mask_input_cols=False) # Rinomina per chiarezza
-
-    best_val_metric = -math.inf # F1 è "più alto è meglio", quindi inizia con -inf
-    best_test_metric = -math.inf # F1 è "più alto è meglio", quindi inizia con -inf
+    # Per la valutazione, passiamo le tabelle originali val_table e test_table.
+    # evaluate_performance (o task.metrics) dovrebbe essere in grado di estrarre
+    # i 'qualifying' da queste tabelle e binarizzarli internamente per l'F1-score.
+    
+    best_val_metric = -math.inf 
+    test_table = task.get_table("test", mask_input_cols=False)
+    best_test_metric = -math.inf 
     epochs = 150
     for epoch in range(0, epochs):
       train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-      # Ottieni le predizioni per train/val/test
       train_pred = test(model, loader_dict["train"], device=device, task=task)
       val_pred = test(model, loader_dict["val"], device=device, task=task)
       test_pred = test(model, loader_dict["test"], device=device, task=task)
 
-      # Calcola le metriche di performance usando i DataFrame delle etichette
-      # Assicurati che evaluate_performance sia compatibile con i DataFrame restituiti da task.get_labels
-      train_metrics = evaluate_performance(train_pred, train_labels_df, task.metrics, task=task)
-      val_metrics = evaluate_performance(val_pred, val_labels_df, task.metrics, task=task)
-      test_metrics = evaluate_performance(test_pred, test_labels_df, task.metrics, task=task)
+      # Passa le tabelle originali, non i dataframe delle etichette,
+      # dato che evaluate_performance dovrebbe estrarre i target da lì
+      train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+      val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+      test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-      scheduler.step(val_metrics[tune_metric]) # Scheduler basato sulla metrica di tuning F1
+      scheduler.step(val_metrics[tune_metric])
 
-      # Logica di early stopping e salvataggio del modello basata sulla metrica F1
       if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
         best_val_metric = val_metrics[tune_metric]
-        state_dict = copy.deepcopy(model.state_dict()) # Salva il modello con la migliore validazione F1
+        state_dict = copy.deepcopy(model.state_dict())
 
       if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
           best_test_metric = test_metrics[tune_metric]
-          state_dict_test = copy.deepcopy(model.state_dict()) # Salva il modello con il migliore test F1 (opzionale, di solito si usa solo la validazione)
+          state_dict_test = copy.deepcopy(model.state_dict())
 
       current_lr = optimizer.param_groups[0]["lr"]
       
-      # Stampa le metriche F1 per train, validation e test
       print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
       early_stopping(val_metrics[tune_metric], model)
