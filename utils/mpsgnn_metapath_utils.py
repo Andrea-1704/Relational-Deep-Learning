@@ -344,6 +344,11 @@ def greedy_metapath_search_with_bags_learned(
             for rel in candidate_rels: 
                 print(f"considering relation {rel}")
                 src, _, dst = rel
+                if dst in [step[0] for step in path]:  # avoid loops in met.
+                  continue
+                if dst == node_type:
+                  continue  # avoid to return to the source node
+
                 node_embeddings = node_embeddings_dict.get(dst) 
                 #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
 
@@ -481,6 +486,10 @@ def beam_metapath_search_with_bags_learned(
             for rel in candidate_rels: 
                 print(f"considering relation {rel}")
                 src, _, dst = rel
+                if dst in [step[0] for step in path]:  # avoid loops in met.
+                  continue
+                if dst == node_type:
+                  continue  # avoid to return to the source node
                 node_embeddings = node_embeddings_dict.get(dst) 
 
                 if node_embeddings is None:

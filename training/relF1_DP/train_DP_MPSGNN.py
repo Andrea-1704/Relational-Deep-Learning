@@ -123,8 +123,8 @@ def train2():
     train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
 
-    hidden_channels = 128
-    out_channels = 64
+    hidden_channels = 32
+    out_channels = 32
 
     metapaths, metapath_counts = greedy_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,
