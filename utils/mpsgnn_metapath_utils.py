@@ -429,7 +429,7 @@ def beam_metapath_search_with_bags_learned(
     L_max: int = 3,
     max_rels: int = 10,
     channels : int = 64,
-    beam_width: int = 5, #number of metapaths to look for
+    beam_width: int = 5,  #number of metapaths to look for
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     """
     This function provides more than one metapaths by applying a beam search over the 
