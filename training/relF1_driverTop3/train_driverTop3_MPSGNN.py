@@ -117,7 +117,7 @@ def train2():
         y=y_full, 
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=4,
+        L_max=3,
         channels = hidden_channels,
         beam_width = 3
     )
@@ -145,14 +145,14 @@ def train2():
 
     optimizer = torch.optim.Adam(
       model.parameters(),
-      lr=0.005,
-      weight_decay=0
+      lr=0.01,
+      weight_decay=0.005
     )
 
     scheduler = CosineAnnealingLR(optimizer, T_max=25)
 
     early_stopping = EarlyStopping(
-        patience=30,
+        patience=60,
         delta=0.0,
         verbose=True,
         path="best_basic_model.pt"
@@ -162,7 +162,7 @@ def train2():
     best_val_metric = -math.inf 
     test_table = task.get_table("test", mask_input_cols=False)
     best_test_metric = -math.inf 
-    epochs = 150
+    epochs = 500
     for epoch in range(0, epochs):
       train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
