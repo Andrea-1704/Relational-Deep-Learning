@@ -162,7 +162,7 @@ def train2():
 
     optimizer = torch.optim.Adam(
       model.parameters(),
-      lr=0.007,
+      lr=0.005,
       weight_decay=0
     )
 
