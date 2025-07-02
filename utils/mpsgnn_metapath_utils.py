@@ -186,7 +186,7 @@ def evaluate_relation_learned(
     bags: List[List[int]],  #one for each node
     labels: List[float],    #len(labels)==len(bags)
     node_embeddings: torch.Tensor, #embeddings for each node in the graph
-    epochs: int = 50,
+    epochs: int = 30,
     lr: float = 1e-2,#should be tuned
 ) -> float:
     """
