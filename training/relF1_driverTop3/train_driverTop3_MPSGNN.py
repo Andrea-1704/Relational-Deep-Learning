@@ -47,9 +47,10 @@ def train2():
     out_channels = 1
     loss_fn = nn.BCEWithLogitsLoss()
     tune_metric = "f1"
-    higher_is_better = True
+    higher_is_better = True #is referred to the tune metric
 
-    seed_everything(42)
+    seed_everything(42) #We should remember to try results 5 times with
+    #different seed values to provide a confidence interval over results.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     root_dir = "./data"
 
@@ -63,6 +64,7 @@ def train2():
         text_embedder_cfg = None,
         cache_dir=None
     )
+    #do not use the textual information: this db is mostly not textual
 
     graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
@@ -70,15 +72,16 @@ def train2():
     
     train_df_raw = train_table.df
     driver_ids_raw = train_df_raw["driverId"].to_numpy()
-    qualifying_positions = train_df_raw["qualifying"].to_numpy()
+    qualifying_positions = train_df_raw["qualifying"].to_numpy() #labels (train)
 
     
-    binary_top3_labels_raw = qualifying_positions
+    binary_top3_labels_raw = qualifying_positions #do not need to binarize 
+    #since the task is already a binary classification task
 
 
     target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
     for i, driver_id in enumerate(driver_ids_raw):
-        if driver_id in id_to_idx:
+        if driver_id in id_to_idx:#if the driver is in the training
             target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
 
 
