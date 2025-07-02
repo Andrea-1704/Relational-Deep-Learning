@@ -123,8 +123,8 @@ def train2():
     train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
 
-    hidden_channels = 64
-    out_channels = 32
+    hidden_channels = 512
+    out_channels = 256
 
     metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,
@@ -132,9 +132,9 @@ def train2():
         y=y_full,
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=1, #----> tune
+        L_max=2, #----> tune
         channels = hidden_channels, 
-        beam_width = 2#3
+        beam_width = 4
     )  
 
     #now we can use the loader dict and batch work SGD
@@ -162,7 +162,7 @@ def train2():
 
     optimizer = torch.optim.Adam(   #----> tune
       model.parameters(),
-      lr=0.0001,
+      lr=0.001,
       weight_decay=0
     )
 

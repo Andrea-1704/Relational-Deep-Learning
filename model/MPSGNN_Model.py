@@ -132,6 +132,8 @@ class MetaPathGNN(nn.Module):
 
 
 class MetaPathSelfAttention(nn.Module):
+    """
+    """
     def __init__(self, dim, num_heads=4):
         super().__init__()
         self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
@@ -143,6 +145,10 @@ class MetaPathSelfAttention(nn.Module):
 
     def forward(self, metapath_embeddings):  # [N, M, D]
         #self attention requires an input of shape [batch, seq_len, embed_dim]
+        print("metapath_embeddings.shape:", metapath_embeddings.shape)
+        assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
+        assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
+
         attn_output, _ = self.attn(metapath_embeddings, metapath_embeddings, metapath_embeddings)  # [N, M, D]
         pooled = attn_output.mean(dim=1)  #matapaths mean -> [N, D]
         return self.output_proj(pooled).squeeze(-1)  # output: [N]
@@ -163,7 +169,9 @@ class MPSGNN(nn.Module):
     We use a different GNN model for each distinct metapath 
     making the aggregation only considering that metapath
 
-    We use HeteroEncoder in order to get intial enbeddings for nodes.
+    We use HeteroEncoder in order to get intial enbeddings for nodes, we also use 
+    the TemporalHeteroEncoder provided by Relbench, in order to model in a 
+    valid way the temporal information.
 
     Finally, we employ a nn (a Regressor) to combine the results 
     of the aggregation of the different metapaths.
