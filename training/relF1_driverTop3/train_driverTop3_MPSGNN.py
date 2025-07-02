@@ -113,8 +113,8 @@ def train2():
 
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    hidden_channels = 32
-    out_channels = 32
+    hidden_channels = 256
+    out_channels = 256
 
     # metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
     #     col_stats_dict = col_stats_dict_full,
@@ -162,8 +162,8 @@ def train2():
 
     optimizer = torch.optim.Adam(
       model.parameters(),
-      lr=0.005,
-      weight_decay=0.005
+      lr=0.003,
+      weight_decay=0
     )
 
     scheduler = CosineAnnealingLR(optimizer, T_max=25)
