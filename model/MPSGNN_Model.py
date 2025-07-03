@@ -46,6 +46,10 @@ class MetaPathGNNLayer(MessagePassing):
     def message(self, x_j: torch.Tensor) -> torch.Tensor:
         return x_j
 
+
+
+
+
 #version 2 
 class MetaPathGNN(nn.Module):
     """
@@ -186,12 +190,8 @@ class MetaPathSelfAttention(nn.Module):
     def __init__(self, dim, num_heads=4):
         super().__init__()
         self.attn_encoder = TransformerEncoder(
-            TransformerEncoderLayer(
-                d_model=dim,
-                nhead=num_heads,
-                batch_first=True
-            ),
-            num_layers=2
+            TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
+            num_layers=4
         )
 
         self.output_proj = nn.Sequential(
