@@ -162,7 +162,7 @@ def train2():
     optimizer = torch.optim.Adam(
       model.parameters(),
       lr=0.0001,
-      weight_decay=0
+      weight_decay=0.0005
     )
 
     scheduler = CosineAnnealingLR(optimizer, T_max=25)
