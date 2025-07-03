@@ -138,7 +138,6 @@ def train2():
     print("  Class 0:", (y[train_mask] == 0).sum().item())
     print("  Class 1:", (y[train_mask] == 1).sum().item())
 
-
     loader_dict = loader_dict_fn(
         batch_size=1024,
         num_neighbours=512,
@@ -162,7 +161,7 @@ def train2():
 
     optimizer = torch.optim.Adam(
       model.parameters(),
-      lr=0.005,
+      lr=0.001,
       weight_decay=0
     )
 
