@@ -8,6 +8,7 @@ from torch_geometric.data import HeteroData
 from torch_frame.data.stats import StatType
 from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 class MetaPathGNNLayer(MessagePassing):
     """
@@ -149,31 +150,63 @@ class MetaPathGNN(nn.Module):
 
 
 
+# class MetaPathSelfAttention(nn.Module):
+#     """
+#     This module apply self attention between the different metapaths. 
+#     It is mostly used as a source of explainability, in orfer to assess
+#     the relevance contribution of every metapath to the final result.
+#     It was not present in the original paper.
+#     """
+#     def __init__(self, dim, num_heads=4):
+#         super().__init__()
+#         self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+#         self.output_proj = nn.Sequential(
+#             nn.Linear(dim, dim),
+#             nn.ReLU(),
+#             nn.Linear(dim, 1)  #final prediction
+#         )
+
+#     def forward(self, metapath_embeddings):  # [N, M, D]
+#         #self attention requires an input of shape [batch, seq_len, embed_dim]
+#         #print("metapath_embeddings.shape:", metapath_embeddings.shape)
+#         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
+#         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
+
+#         attn_output, _ = self.attn(metapath_embeddings, metapath_embeddings, metapath_embeddings)  # [N, M, D]
+#         pooled = attn_output.mean(dim=1)  #matapaths mean -> [N, D]
+#         return self.output_proj(pooled).squeeze(-1)  # output: [N]
+
+
+
 class MetaPathSelfAttention(nn.Module):
     """
-    This module apply self attention between the different metapaths. 
-    It is mostly used as a source of explainability, in orfer to assess
-    the relevance contribution of every metapath to the final result.
-    It was not present in the original paper.
+    This module applies Transformer-based self-attention between the different metapaths.
+    It replaces the original MultiHeadAttention + mean pooling with a TransformerEncoder.
     """
     def __init__(self, dim, num_heads=4):
         super().__init__()
-        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+        self.attn_encoder = TransformerEncoder(
+            TransformerEncoderLayer(
+                d_model=dim,
+                nhead=num_heads,
+                batch_first=True
+            ),
+            num_layers=2
+        )
+
         self.output_proj = nn.Sequential(
             nn.Linear(dim, dim),
             nn.ReLU(),
-            nn.Linear(dim, 1)  #final prediction
+            nn.Linear(dim, 1)  # Final scalar regression prediction
         )
 
     def forward(self, metapath_embeddings):  # [N, M, D]
-        #self attention requires an input of shape [batch, seq_len, embed_dim]
-        #print("metapath_embeddings.shape:", metapath_embeddings.shape)
         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
 
-        attn_output, _ = self.attn(metapath_embeddings, metapath_embeddings, metapath_embeddings)  # [N, M, D]
-        pooled = attn_output.mean(dim=1)  #matapaths mean -> [N, D]
-        return self.output_proj(pooled).squeeze(-1)  # output: [N]
+        attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
+        pooled = attn_out.mean(dim=1)                      # [N, D]
+        return self.output_proj(pooled).squeeze(-1)        # [N]
 
 
 
