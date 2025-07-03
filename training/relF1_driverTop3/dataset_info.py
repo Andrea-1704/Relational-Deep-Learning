@@ -76,6 +76,13 @@ unique_driver_ids = train_df["driverId"].nunique()
 print(f"Numero di driver unici nel training set: {unique_driver_ids}")
 print("Totale driver nel grafo:", db_nuovo.table_dict["drivers"].df["driverId"].nunique())
 
+drivers_in_graph = set(db_nuovo.table_dict["drivers"].df["driverId"].astype(str))
+drivers_in_train = set(train_table.df["driverId"].astype(str))
+
+print(f"Driver del train NON presenti nel grafo: {drivers_in_train - drivers_in_graph}")
+print(f"Tutti i driver del train sono nel grafo? {(drivers_in_train - drivers_in_graph) == set()}")
+
+
 
 
 
