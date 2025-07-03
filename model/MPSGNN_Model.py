@@ -80,7 +80,11 @@ class MetaPathGNN(nn.Module):
                 h=h_dict[dst],
                 edge_index=edge_index
             )
-            h_dict[dst] = F.relu(h_dst)
+            #residual information (MLP post-residual):
+            res = h_dst + h_dict[dst]
+            h_dict[dst] = self.mlp[conv_idx](F.relu(res))
+
+            #h_dict[dst] = F.relu(h_dst)
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
 
