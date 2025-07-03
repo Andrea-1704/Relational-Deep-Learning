@@ -200,37 +200,15 @@ class MetaPathSelfAttention(nn.Module):
         #     nn.Linear(dim, 1)  # Final scalar regression prediction
         # )
 
-        # self.output_proj = nn.Sequential(
-        #     nn.Linear(dim, dim * 2),
-        #     nn.ReLU(),
-        #     nn.Dropout(0.3),
-        #     nn.Linear(dim * 2, dim),
-        #     nn.ReLU(),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(dim, 1)
-        # )
-
         self.output_proj = nn.Sequential(
-            nn.LayerNorm(dim),
             nn.Linear(dim, dim * 2),
             nn.ReLU(),
             nn.Dropout(0.3),
-            
-            nn.Linear(dim * 2, dim * 2),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            
             nn.Linear(dim * 2, dim),
             nn.ReLU(),
             nn.Dropout(0.2),
-            
-            nn.Linear(dim, dim),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-
-            nn.Linear(dim, 1)  # Final output
+            nn.Linear(dim, 1)
         )
-
 
 
     def forward(self, metapath_embeddings):  # [N, M, D]
