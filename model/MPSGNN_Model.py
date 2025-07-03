@@ -66,6 +66,15 @@ class MetaPathGNN(nn.Module):
         for i in range(len(metapath)):
             self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
         self.out_proj = nn.Linear(hidden_channels, out_channels)
+        self.mlps = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(hidden_channels, hidden_channels),
+                nn.ReLU(),
+                nn.Linear(hidden_channels, hidden_channels)
+            )
+            for _ in metapath
+        ])
+
 
     def forward(self, x_dict, edge_index_dict, edge_type_dict):
         #edge_type_dict is the list of edge types
