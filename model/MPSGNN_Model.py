@@ -150,6 +150,10 @@ class MetaPathGNN(nn.Module):
 
 class MetaPathSelfAttention(nn.Module):
     """
+    This module apply self attention between the different metapaths. 
+    It is mostly used as a source of explainability, in orfer to assess
+    the relevance contribution of every metapath to the final result.
+    It was not present in the original paper.
     """
     def __init__(self, dim, num_heads=4):
         super().__init__()
