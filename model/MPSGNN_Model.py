@@ -49,7 +49,6 @@ class MetaPathGNNLayer(MessagePassing):
 
 
 
-
 #version 2 
 class MetaPathGNN(nn.Module):
     """
@@ -92,7 +91,8 @@ class MetaPathGNN(nn.Module):
 
 
 
-#Version one, using SAGEConv:
+
+#Version 1, using SAGEConv:
 # class MetaPathGNN(nn.Module):
 #     """
 #     This is the network that express the GNN operations over a meta path.
