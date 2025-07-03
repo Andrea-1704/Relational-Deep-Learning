@@ -194,11 +194,22 @@ class MetaPathSelfAttention(nn.Module):
             num_layers=4
         )
 
+        # self.output_proj = nn.Sequential(
+        #     nn.Linear(dim, dim),
+        #     nn.ReLU(),
+        #     nn.Linear(dim, 1)  # Final scalar regression prediction
+        # )
+
         self.output_proj = nn.Sequential(
-            nn.Linear(dim, dim),
+            nn.Linear(dim, dim * 2),
             nn.ReLU(),
-            nn.Linear(dim, 1)  # Final scalar regression prediction
+            nn.Dropout(0.3),
+            nn.Linear(dim * 2, dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(dim, 1)
         )
+
 
     def forward(self, metapath_embeddings):  # [N, M, D]
         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
