@@ -66,14 +66,6 @@ class MetaPathGNN(nn.Module):
         for i in range(len(metapath)):
             self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
         self.out_proj = nn.Linear(hidden_channels, out_channels)
-        self.mlps = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(hidden_channels, hidden_channels),
-                nn.ReLU(),
-                nn.Linear(hidden_channels, hidden_channels)
-            )
-            for _ in metapath
-        ])
 
 
     def forward(self, x_dict, edge_index_dict, edge_type_dict):
@@ -89,11 +81,7 @@ class MetaPathGNN(nn.Module):
                 h=h_dict[dst],
                 edge_index=edge_index
             )
-            #residual information (MLP post-residual):
-            res = h_dst + h_dict[dst]
-            h_dict[dst] = self.mlps[conv_idx](F.relu(res))
-
-            #h_dict[dst] = F.relu(h_dst)
+            h_dict[dst] = F.relu(h_dst)
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
 
