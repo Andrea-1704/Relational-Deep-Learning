@@ -91,7 +91,7 @@ class MetaPathGNN(nn.Module):
             )
             #residual information (MLP post-residual):
             res = h_dst + h_dict[dst]
-            h_dict[dst] = self.mlp[conv_idx](F.relu(res))
+            h_dict[dst] = self.mlps[conv_idx](F.relu(res))
 
             #h_dict[dst] = F.relu(h_dst)
         start_type = self.metapath[0][0]
