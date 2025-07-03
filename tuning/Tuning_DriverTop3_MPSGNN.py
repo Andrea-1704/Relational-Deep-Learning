@@ -112,20 +112,6 @@ pos_weight = torch.tensor([num_neg / num_pos], device=device)
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-hidden_channels = 128
-out_channels = 128
-
-# metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
-#     col_stats_dict = col_stats_dict_full,
-#     data=data_full,
-#     y=y_full, 
-#     train_mask=train_mask_full,
-#     node_type='drivers',
-#     L_max=3,
-#     channels = hidden_channels,
-#     beam_width = 3
-# )
-
 metapaths = [[('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')]]
 metapath_counts = {(('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')): 92, (('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')): 92, (('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')): 867}
 
@@ -148,7 +134,7 @@ loader_dict = loader_dict_fn(
 )
 
 
-def run_with_config(optimizer_name: str, lr: float, weight_decay: float = 0.0):
+def run_with_config(hidden_channels, out_channels, optimizer_name: str, lr: float, weight_decay: float = 0.0):
     print(f"\nTraining with optimizer={optimizer_name}, lr={lr}, weight_decay={weight_decay}\n")
     test_table = task.get_table("test", mask_input_cols=True)
 
@@ -179,7 +165,7 @@ def run_with_config(optimizer_name: str, lr: float, weight_decay: float = 0.0):
         delta=0.0,
         verbose=False,
         higher_is_better=True,
-        path=f"best_{optimizer_name}_lr{lr:.0e}_wd{weight_decay:.0e}.pt"
+        path=f"best_{optimizer_name}_lr{lr:.0e}_wd{weight_decay:.0e}_hidden_channels{hidden_channels:.0e}_out_channels{out_channels:.0e}.pt"
     )
 
     best_val_metric = -math.inf
@@ -209,13 +195,16 @@ if __name__ == '__main__':
     learning_rates = [1e-5, 1e-4, 5e-4, 1e-3, 1e-2]
     optimizers = ["Adam", "AdamW", "SGD"]
     weight_decay = 0.0
+    hidden_channels = [64, 128, 256]
+    out_channels = [64, 128, 256]
+
 
     results = {}
 
     for opt in optimizers:
         for lr in learning_rates:
-            val_score, test_score = run_with_config(opt, lr, weight_decay)
-            key = f"{opt}_lr{lr:.0e}"
+            val_score, test_score = run_with_config(hidden_channels, out_channels, opt, lr, weight_decay)
+            key = f"{opt}_lr{lr:.0e}_hidden_channels{hidden_channels:.0e}_out_channels{out_channels:.0e}"
             results[key] = (val_score, test_score)
             print(f"{key} → Val {tune_metric}: {val_score:.4f}, Test: {test_score:.4f}")
 
