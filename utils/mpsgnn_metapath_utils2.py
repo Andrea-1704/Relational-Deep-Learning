@@ -686,131 +686,131 @@ def greedy_metapath_search_with_bags_learned(
 
 
 
-# def beam_metapath_search_with_bags_learned(
-#     data,
-#     y: torch.Tensor,
-#     train_mask: torch.Tensor,
-#     node_type: str, 
-#     col_stats_dict: Dict[str, Dict[str, Dict]], 
-#     L_max: int = 3,
-#     max_rels: int = 10,
-#     channels : int = 64,
-#     beam_width: int = 5,  #number of metapaths to look for
-# ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
-#     """
-#     This function provides more than one metapaths by applying a beam search over the 
-#     metapaths.
-#     This implementation also do not require to use a hard cutoff value to stop the 
-#     algorithm from creating sub-optimal and un-usefull long metapaths: 
-#     it simply considers all the metapaths (also the intermediate ones and their score
-#     value to be able to consider also intermediate metapaths).
-#     We also added a statistics count that takes into account the counts of how many 
-#     times each metapath has been use in the path (for example assuming to have the 
-#     metapath A->B->C, we count how many A nodes are linked to C nodes throught this
-#     set of relations).    
-#     """
-#     device = y.device
-#     metapaths = []
-#     metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
-#     current_paths = [[]]
-#     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
-#     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
-#     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-#     all_path_info = [] #memorize all the metapaths with scores, in order
-#     #to select only the best beam_width at the end
+def beam_metapath_search_with_bags_learned(
+    data,
+    y: torch.Tensor,
+    train_mask: torch.Tensor,
+    node_type: str, 
+    col_stats_dict: Dict[str, Dict[str, Dict]], 
+    L_max: int = 3,
+    max_rels: int = 10,
+    channels : int = 64,
+    beam_width: int = 5,  #number of metapaths to look for
+) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+    """
+    This function provides more than one metapaths by applying a beam search over the 
+    metapaths.
+    This implementation also do not require to use a hard cutoff value to stop the 
+    algorithm from creating sub-optimal and un-usefull long metapaths: 
+    it simply considers all the metapaths (also the intermediate ones and their score
+    value to be able to consider also intermediate metapaths).
+    We also added a statistics count that takes into account the counts of how many 
+    times each metapath has been use in the path (for example assuming to have the 
+    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
+    set of relations).    
+    """
+    device = y.device
+    metapaths = []
+    metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
+    current_paths = [[]]
+    current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+    current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+    all_path_info = [] #memorize all the metapaths with scores, in order
+    #to select only the best beam_width at the end
 
-#     for level in range(L_max):
-#         print(f"we are at level {level}")
-#         #candidate_path_info = []
-#         next_paths_info = []
+    for level in range(L_max):
+        print(f"we are at level {level}")
+        #candidate_path_info = []
+        next_paths_info = []
 
-#         for path in current_paths:
-#             last_ntype = node_type if not path else path[-1][2]
-#             print(f"current source node is {last_ntype}")
+        for path in current_paths:
+            last_ntype = node_type if not path else path[-1][2]
+            print(f"current source node is {last_ntype}")
 
-#             with torch.no_grad():
-#               encoder = HeteroEncoder(
-#                   channels=channels,
-#                   node_to_col_names_dict={
-#                       ntype: data[ntype].tf.col_names_dict
-#                       for ntype in data.node_types
-#                   },
-#                   node_to_col_stats=col_stats_dict,
-#               ).to(device)
-#               for module in encoder.modules():
-#                   for name, buf in module._buffers.items():
-#                       if buf is not None:
-#                           module._buffers[name] = buf.to(device)
-#               tf_dict = {
-#                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
-#               }
-#               node_embeddings_dict = encoder(tf_dict)
+            with torch.no_grad():
+              encoder = HeteroEncoder(
+                  channels=channels,
+                  node_to_col_names_dict={
+                      ntype: data[ntype].tf.col_names_dict
+                      for ntype in data.node_types
+                  },
+                  node_to_col_stats=col_stats_dict,
+              ).to(device)
+              for module in encoder.modules():
+                  for name, buf in module._buffers.items():
+                      if buf is not None:
+                          module._buffers[name] = buf.to(device)
+              tf_dict = {
+                  ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
+              }
+              node_embeddings_dict = encoder(tf_dict)
 
-#             candidate_rels = [
-#                 (src, rel, dst)
-#                 for (src, rel, dst) in data.edge_index_dict.keys()
-#                 if src == last_ntype
-#             ][:max_rels] 
+            candidate_rels = [
+                (src, rel, dst)
+                for (src, rel, dst) in data.edge_index_dict.keys()
+                if src == last_ntype
+            ][:max_rels] 
 
-#             for rel in candidate_rels: 
-#                 print(f"considering relation {rel}")
-#                 src, _, dst = rel
-#                 if dst in [step[0] for step in path]:  # avoid loops in met.
-#                   continue
-#                 if dst == node_type:
-#                   continue  # avoid to return to the source node
-#                 node_embeddings = node_embeddings_dict.get(dst) 
+            for rel in candidate_rels: 
+                print(f"considering relation {rel}")
+                src, _, dst = rel
+                if dst in [step[0] for step in path]:  # avoid loops in met.
+                  continue
+                if dst == node_type:
+                  continue  # avoid to return to the source node
+                node_embeddings = node_embeddings_dict.get(dst) 
 
-#                 if node_embeddings is None:
-#                     print(f"error: embedding of node {dst} not found")
-#                     continue
+                if node_embeddings is None:
+                    print(f"error: embedding of node {dst} not found")
+                    continue
 
-#                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) 
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) 
                 
-#                 bags, labels, alpha_next = construct_bags_with_alpha(
-#                     data=data,
-#                     previous_bags=current_bags,
-#                     previous_labels=current_labels,
-#                     alpha_prev=alpha, 
-#                     rel=rel,
-#                     node_embeddings=node_embeddings,
-#                     theta=theta,
-#                     src_embeddings = node_embeddings_dict[src]
-#                 )
+                bags, labels, alpha_next = construct_bags_with_alpha(
+                    data=data,
+                    previous_bags=current_bags,
+                    previous_labels=current_labels,
+                    alpha_prev=alpha, 
+                    rel=rel,
+                    node_embeddings=node_embeddings,
+                    theta=theta,
+                    src_embeddings = node_embeddings_dict[src]
+                )
 
-#                 if len(bags) < 5:
-#                     continue
+                if len(bags) < 5:
+                    continue
                 
-#                 score = evaluate_relation_learned(bags, labels, node_embeddings)
-#                 print(f"relation {rel} allow us to obtain score {score}")
+                score = evaluate_relation_learned(bags, labels, node_embeddings)
+                print(f"relation {rel} allow us to obtain score {score}")
 
-#                 new_path = path + [rel]
+                new_path = path + [rel]
 
-#                 next_paths_info.append((score, new_path, bags, labels, alpha_next))
+                next_paths_info.append((score, new_path, bags, labels, alpha_next))
 
-#         current_paths = []
-#         current_bags = []
-#         current_labels = []
-#         alpha = {}
+        current_paths = []
+        current_bags = []
+        current_labels = []
+        alpha = {}
 
-#         for info in next_paths_info:
-#           _, path, bags, labels, alpha_next = info
-#           current_paths.append(path)
-#           current_bags.extend(bags)
-#           current_labels.extend(labels)
-#           alpha.update(alpha_next)
+        for info in next_paths_info:
+          _, path, bags, labels, alpha_next = info
+          current_paths.append(path)
+          current_bags.extend(bags)
+          current_labels.extend(labels)
+          alpha.update(alpha_next)
 
-#         all_path_info.extend(next_paths_info)
+        all_path_info.extend(next_paths_info)
 
-#     #final selection of the best beamwodth paths:
-#     all_path_info.sort(key=lambda x:x[0])
-#     selected = all_path_info[:beam_width]
-#     for _, path, bags, _, _ in selected:
-#       metapaths.append(path)
-#       metapath_counts[tuple(path)] = len(bags)
-#     print(f"final metapaths are: {metapaths}")
-#     print(f"metapath counts are: {metapath_counts}")
-#     return metapaths, metapath_counts
+    #final selection of the best beamwodth paths:
+    all_path_info.sort(key=lambda x:x[0])
+    selected = all_path_info[:beam_width]
+    for _, path, bags, _, _ in selected:
+      metapaths.append(path)
+      metapath_counts[tuple(path)] = len(bags)
+    print(f"final metapaths are: {metapaths}")
+    print(f"metapath counts are: {metapath_counts}")
+    return metapaths, metapath_counts
         
 
 
