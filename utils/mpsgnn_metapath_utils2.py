@@ -471,7 +471,7 @@ def greedy_metapath_search_with_bags_learned(
                     bags=current_bags,
                     labels=current_labels,
                     node_embeddings=node_embeddings_dict[src],
-                    alpha_prev=alpha,
+                    #alpha_prev=alpha,
                 )
 
                 bags, labels, alpha_next = construct_bags_with_alpha(
