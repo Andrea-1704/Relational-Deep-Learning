@@ -41,6 +41,8 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
     return [rel for rel in metadata[1] if rel[0] == current_node_type]
 
 
+
+
 def train_theta_for_relation(
     bags: List[List[int]],
     labels: List[int],
@@ -101,6 +103,7 @@ def construct_bags_with_alpha(
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
+        print(f"this should not have happened, but the relation was not found.")
         return [], [], {}
 
     edge_src, edge_dst = edge_index
@@ -131,14 +134,13 @@ def construct_bags_with_alpha(
 
 
 
-
 def evaluate_relation_learned(
     bags: List[List[int]],
     labels: List[float],
     node_embeddings: torch.Tensor,
     alpha_prev: Dict[int, float],
     epochs: int = 100,
-    lr: float = 0.01,
+    lr: float = 1e-2,
 ) -> Tuple[float, nn.Module]:
     device = node_embeddings.device
     binary_labels = torch.tensor(labels, device=device)
