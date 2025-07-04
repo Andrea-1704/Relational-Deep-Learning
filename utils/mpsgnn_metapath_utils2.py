@@ -324,69 +324,69 @@ class ScoringFunctionReg(nn.Module):
 
 
 
-def evaluate_relation_learned(
-    bags: List[List[int]],  #one for each node
-    labels: List[float],    #len(labels)==len(bags)
-    node_embeddings: torch.Tensor, #embeddings for each node in the graph
-    epochs: int = 30,
-    lr: float = 1e-2,#should be tuned
-) -> float:
-    """
-    This function follows the algorithm indicated into section 4.4 in 
-    https://arxiv.org/abs/2412.00521, by trainign the model on the 
-    current bag in order to choose the most "discriminative" relation 
-    r_i to be added to the meta path. 
-    This function returns a mae value which indicates how predictive 
-    is the current bag nodes to make the classification.
+# def evaluate_relation_learned(
+#     bags: List[List[int]],  #one for each node
+#     labels: List[float],    #len(labels)==len(bags)
+#     node_embeddings: torch.Tensor, #embeddings for each node in the graph
+#     epochs: int = 30,
+#     lr: float = 1e-2,#should be tuned
+# ) -> float:
+#     """
+#     This function follows the algorithm indicated into section 4.4 in 
+#     https://arxiv.org/abs/2412.00521, by trainign the model on the 
+#     current bag in order to choose the most "discriminative" relation 
+#     r_i to be added to the meta path. 
+#     This function returns a mae value which indicates how predictive 
+#     is the current bag nodes to make the classification.
 
-    This approach is inspired by the aforementioned paper, but is 
-    different in the nature because we need to employ a different
-    surrogate function (in the paper the binary ranking loss was used,
-    we, instead, use a MAE loss since we need to deal with a regression
-    task).
-    Notice that in the paper the scoring function "F(B)" was parametrized by
-    relations, not for metadapath; We are, instead, building a 
-    ScoringFunctionReg from scratch for each relation, reducing the 
-    risk of overfitting, but also increasing the complexity of the model.
+#     This approach is inspired by the aforementioned paper, but is 
+#     different in the nature because we need to employ a different
+#     surrogate function (in the paper the binary ranking loss was used,
+#     we, instead, use a MAE loss since we need to deal with a regression
+#     task).
+#     Notice that in the paper the scoring function "F(B)" was parametrized by
+#     relations, not for metadapath; We are, instead, building a 
+#     ScoringFunctionReg from scratch for each relation, reducing the 
+#     risk of overfitting, but also increasing the complexity of the model.
 
-    We can simply say that the "score" value of a given set of bags, which 
-    resemples the "informativeness" of a certain relation in the metapath
-    is given by the ability that a network (the same over the different
-    relations in order to be comparable) has to assign correctly the label
-    of the bags by only locking to the embeddings of nodes "v" inside the
-    bag.
-    """
-    device = node_embeddings.device
-    in_dim = node_embeddings.size(-1)
+#     We can simply say that the "score" value of a given set of bags, which 
+#     resemples the "informativeness" of a certain relation in the metapath
+#     is given by the ability that a network (the same over the different
+#     relations in order to be comparable) has to assign correctly the label
+#     of the bags by only locking to the embeddings of nodes "v" inside the
+#     bag.
+#     """
+#     device = node_embeddings.device
+#     in_dim = node_embeddings.size(-1)
 
-    model = ScoringFunctionReg(in_dim).to(device)#use the class model 
-    #defined before
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+#     model = ScoringFunctionReg(in_dim).to(device)#use the class model 
+#     #defined before
+#     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    bag_embeddings = [
-        node_embeddings[torch.tensor(bag, device=device)] for bag in bags
-    ] #for each bag take the embeddings of that node, because remember 
-    #that a bag is a set of nodes of the same types, but we need to 
-    #obtain the embeddings of the nodes. 
-    #The result is a list of tensors of shape [B_i, D], where B_i is the 
-    #number of nodes in the bag, and D the dimensionality of embeddings.
+#     bag_embeddings = [
+#         node_embeddings[torch.tensor(bag, device=device)] for bag in bags
+#     ] #for each bag take the embeddings of that node, because remember 
+#     #that a bag is a set of nodes of the same types, but we need to 
+#     #obtain the embeddings of the nodes. 
+#     #The result is a list of tensors of shape [B_i, D], where B_i is the 
+#     #number of nodes in the bag, and D the dimensionality of embeddings.
 
-    target_tensor = torch.tensor(labels, device=device)
+#     target_tensor = torch.tensor(labels, device=device)
 
-    for _ in range(epochs):
-        model.train()
-        optimizer.zero_grad()
-        preds = model(bag_embeddings)#forward
-        loss = model.loss(preds, target_tensor)
-        loss.backward()
-        optimizer.step()
+#     for _ in range(epochs):
+#         model.train()
+#         optimizer.zero_grad()
+#         preds = model(bag_embeddings)#forward
+#         loss = model.loss(preds, target_tensor)
+#         loss.backward()
+#         optimizer.step()
 
-    model.eval()
-    with torch.no_grad():
-        preds = model(bag_embeddings)
-        final_mae = model.loss(preds, target_tensor).item()
+#     model.eval()
+#     with torch.no_grad():
+#         preds = model(bag_embeddings)
+#         final_mae = model.loss(preds, target_tensor).item()
 
-    return final_mae
+#     return final_mae
 
 
 
@@ -471,7 +471,7 @@ def greedy_metapath_search_with_bags_learned(
                     bags=current_bags,
                     labels=current_labels,
                     node_embeddings=node_embeddings_dict[src],
-                    #alpha_prev=alpha,
+                    alpha_prev=alpha,
                 )
 
                 bags, labels, alpha_next = construct_bags_with_alpha(
