@@ -36,6 +36,22 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 
 
 
+def build_global_to_local_from_edge_index(data: HeteroData) -> Dict[str, Dict[int, int]]:
+    mapping = {}
+    for ntype in data.node_types:
+        node_ids = set()
+        for (src, _, dst), edge_index in data.edge_index_dict.items():
+            if src == ntype:
+                node_ids.update(edge_index[0].tolist())
+            if dst == ntype:
+                node_ids.update(edge_index[1].tolist())
+        sorted_ids = sorted(node_ids)
+        mapping[ntype] = {global_id: i for i, global_id in enumerate(sorted_ids)}
+    return mapping
+
+
+
+
 #The previous bag creation function had an important error: it always consider ad node_id
 #the first node, the target node. So this function does not provide a solid solution for 
 #all the relations in the metapath, after the first one (for which, we have instead 
