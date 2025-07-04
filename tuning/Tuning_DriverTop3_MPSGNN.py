@@ -201,19 +201,27 @@ if __name__ == '__main__':
 
     results = {}
 
+
+    executed_configs = set()
+    with open("Partial_tuning_results_filtered_no_training", "r", encoding="utf-8") as f:
+        for line in f:
+            if "→" in line:
+                config_key = line.split("→")[0].strip()
+                executed_configs.add(config_key)
+
     for opt in optimizers:
         for lr in learning_rates:
           for hidden_channel in hidden_channels:
             for out_channel in out_channels:
-                #val_score, test_score = run_with_config(hidden_channels, out_channels, opt, lr, weight_decay)
-                val_score, test_score = run_with_config(hidden_channel, out_channel, opt, lr, weight_decay)
-
-                #key = f"{opt}_lr{lr:.0e}_hidden_channels{hidden_channels:.0e}_out_channels{out_channels:.0e}"
-                
                 key = f"{opt}_lr{lr:.0e}_hidden_channels{hidden_channel}_out_channels{out_channel}"
+                if key in executed_configs:
+                    print(f"Skipping already executed config: {key}")
+                    continue
 
+                val_score, test_score = run_with_config(hidden_channel, out_channel, opt, lr, weight_decay)
                 results[key] = (val_score, test_score)
                 print(f"{key} → Val {tune_metric}: {val_score:.4f}, Test: {test_score:.4f}")
+
 
     # Trova la combinazione migliore
     best_key = max(results, key=lambda k: results[k][0])

@@ -1,0 +1,117 @@
+
+Adam_lr1e-05_hidden_channels64_out_channels64 → Val f1: 0.3480, Test: 0.2355
+
+
+Adam_lr1e-05_hidden_channels64_out_channels128 → Val f1: 0.3557, Test: 0.3188
+
+
+Adam_lr1e-05_hidden_channels64_out_channels256 → Val f1: 0.3439, Test: 0.2998
+
+
+Adam_lr1e-05_hidden_channels128_out_channels64 → Val f1: 0.3895, Test: 0.3736
+
+
+Adam_lr1e-05_hidden_channels128_out_channels128 → Val f1: 0.3221, Test: 0.1695
+
+
+Adam_lr1e-05_hidden_channels128_out_channels256 → Val f1: 0.3972, Test: 0.2656
+
+
+Adam_lr1e-05_hidden_channels256_out_channels64 → Val f1: 0.3503, Test: 0.2857
+
+
+Adam_lr1e-05_hidden_channels256_out_channels128 → Val f1: 0.4311, Test: 0.3871
+
+
+Adam_lr1e-05_hidden_channels256_out_channels256 → Val f1: 0.4069, Test: 0.2256
+
+
+Adam_lr1e-04_hidden_channels64_out_channels64 → Val f1: 0.3856, Test: 0.2320
+
+
+Adam_lr1e-04_hidden_channels64_out_channels128 → Val f1: 0.3738, Test: 0.4030
+
+
+Adam_lr1e-04_hidden_channels64_out_channels256 → Val f1: 0.4425, Test: 0.3275
+
+
+Adam_lr1e-04_hidden_channels128_out_channels64 → Val f1: 0.4204, Test: 0.2892
+
+
+Adam_lr1e-04_hidden_channels128_out_channels128 → Val f1: 0.4712, Test: 0.3735
+
+
+Adam_lr1e-04_hidden_channels128_out_channels256 → Val f1: 0.4074, Test: 0.1818
+
+
+Adam_lr1e-04_hidden_channels256_out_channels64 → Val f1: 0.4324, Test: 0.2527
+
+
+Adam_lr1e-04_hidden_channels256_out_channels128 → Val f1: 0.3582, Test: 0.2183
+
+
+Adam_lr1e-04_hidden_channels256_out_channels256 → Val f1: 0.3731, Test: 0.3648
+
+
+Adam_lr5e-04_hidden_channels64_out_channels64 → Val f1: 0.4112, Test: 0.1720
+
+
+Adam_lr5e-04_hidden_channels64_out_channels128 → Val f1: 0.4129, Test: 0.2192
+
+
+Adam_lr5e-04_hidden_channels64_out_channels256 → Val f1: 0.4710, Test: 0.1791
+
+
+Adam_lr5e-04_hidden_channels128_out_channels64 → Val f1: 0.4312, Test: 0.1659
+
+
+Adam_lr5e-04_hidden_channels128_out_channels128 → Val f1: 0.3731, Test: 0.5076
+
+
+Adam_lr5e-04_hidden_channels128_out_channels256 → Val f1: 0.4054, Test: 0.1783
+
+
+Adam_lr5e-04_hidden_channels256_out_channels64 → Val f1: 0.3928, Test: 0.3214
+
+
+Adam_lr5e-04_hidden_channels256_out_channels128 → Val f1: 0.4068, Test: 0.4576
+
+
+Adam_lr5e-04_hidden_channels256_out_channels256 → Val f1: 0.4012, Test: 0.2357
+
+
+Adam_lr1e-03_hidden_channels64_out_channels64 → Val f1: 0.3368, Test: 0.2587
+
+
+Adam_lr1e-03_hidden_channels64_out_channels128 → Val f1: 0.4132, Test: 0.2601
+
+
+Adam_lr1e-03_hidden_channels64_out_channels256 → Val f1: 0.3411, Test: 0.1245
+
+
+Adam_lr1e-03_hidden_channels128_out_channels64 → Val f1: 0.4214, Test: 0.3105
+
+
+Adam_lr1e-03_hidden_channels128_out_channels128 → Val f1: 0.3366, Test: 0.2998
+
+
+Adam_lr1e-03_hidden_channels128_out_channels256 → Val f1: 0.3923, Test: 0.3966
+
+
+Adam_lr1e-03_hidden_channels256_out_channels64 → Val f1: 0.3444, Test: 0.1333
+
+
+Adam_lr1e-03_hidden_channels256_out_channels128 → Val f1: 0.3925, Test: 0.3482
+
+
+Adam_lr1e-03_hidden_channels256_out_channels256 → Val f1: 0.4490, Test: 0.1374
+
+
+Adam_lr1e-02_hidden_channels64_out_channels64 → Val f1: 0.3366, Test: 0.2998
+
+
+Adam_lr1e-02_hidden_channels64_out_channels128 → Val f1: 0.3366, Test: 0.2998
+
+
+Adam_lr1e-02_hidden_channels64_out_channels256 → Val f1: 0.3366, Test: 0.2998
+
