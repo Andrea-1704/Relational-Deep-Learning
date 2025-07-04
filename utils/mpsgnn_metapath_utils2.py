@@ -707,7 +707,7 @@ def beam_metapath_search_with_bags_learned(
             for local_idx, global_id in enumerate(data[ntype].n_id)
         }
         for ntype in data.node_types
-        if 'n_id' in data[ntype]
+        if 'n_id' in  data[ntype]
     }
 
     print(f"global_to_local_id_map: {enumerate(data['drivers'].n_id)}")
