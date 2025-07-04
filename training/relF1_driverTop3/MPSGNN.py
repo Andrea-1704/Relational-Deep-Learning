@@ -122,7 +122,7 @@ def train2():
         y=y_full, 
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=3,
+        L_max=4,
         channels = hidden_channels,
         max_rels=10
     )
