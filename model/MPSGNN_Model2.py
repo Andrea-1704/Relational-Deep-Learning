@@ -15,17 +15,20 @@ from torch_frame.data.stats import StatType
 
 class MetaPathGNNLayer(MessagePassing):
     def __init__(self, in_channels, out_channels):
-        super().__init__(aggr='add', flow="target_to_source")
+        super().__init__(aggr='add', flow="source_to_target")  # importante!
         self.w_0 = nn.Linear(in_channels, out_channels)
         self.w_l = nn.Linear(in_channels, out_channels)
         self.w_1 = nn.Linear(in_channels, out_channels)
 
-    def forward(self, x, h, edge_index):
-        aggr_out = self.propagate(edge_index=edge_index, x=h)
-        return self.w_l(aggr_out) + self.w_0(h) + self.w_1(x)
+    def forward(self, x, edge_index):
+        # x è [num_nodes, in_channels]
+        aggr_out = self.propagate(edge_index=edge_index, x=x)
+        return self.w_l(aggr_out) + self.w_0(x) + self.w_1(x)
 
     def message(self, x_j):
         return x_j
+
+
 
 
 
@@ -39,16 +42,31 @@ class MetaPathGNN(nn.Module):
         ])
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
-    def forward(self, x: torch.Tensor, edge_index_dict: Dict[Tuple[str, str, str], torch.Tensor]) -> torch.Tensor:
-        h = x
-        for k, edge_index in edge_index_dict.items():
-          print(f"{k} → edge_index max: {edge_index.max().item()}, shape: {edge_index.shape}")
+    def forward(self, x_dict: Dict[str, torch.Tensor],
+                edge_index_dict: Dict[Tuple[str, str, str], torch.Tensor]) -> torch.Tensor:
+        
+        h_dict = {k: v.clone() for k, v in x_dict.items()}
 
+        # Propagazione lungo il metapath
         for i, (src, rel, dst) in enumerate(reversed(self.metapath)):
+            conv_idx = len(self.metapath) - 1 - i
             edge_index = edge_index_dict[(src, rel, dst)]
-            h = self.convs[i](x, h, edge_index)
-            h = F.relu(h)
-        return self.out_proj(h)
+
+            # Verifica che i tensori esistano nei dizionari
+            assert dst in h_dict and src in h_dict, f"Missing node type {dst} or {src} in x_dict"
+
+            # h_dst = self.convs[conv_idx](
+            #     x=h_dict[dst],
+            #     h=h_dict[src],
+            #     edge_index=edge_index
+            # )
+            x_src = h_dict[src]
+            h_dst = self.convs[conv_idx](x_src, edge_index)
+            h_dict[dst] = F.relu(h_dst)
+
+        start_type = self.metapath[0][0]
+        return self.out_proj(h_dict[start_type])
+
 
 
 
@@ -113,16 +131,24 @@ class MPSGNN_Original(nn.Module):
         for node_type, rel_time in rel_time_dict.items():
             x_dict[node_type] = x_dict[node_type] + rel_time
 
-        x = x_dict[self.target_node_type]  # solo i nodi target
-        x = self.input_mlp(x)
+        # x = x_dict[self.target_node_type]  # solo i nodi target
+        # x = self.input_mlp(x)
 
         # edge index e type globali
         edge_index = batch.edge_index_dict
         edge_type = batch.edge_types
 
+        # embeddings = [
+        #     model(x, edge_index) for model in self.metapath_models
+        # ]
+
+        for node_type in x_dict:
+            x_dict[node_type] = self.input_mlp(x_dict[node_type])
+
         embeddings = [
-            model(x, edge_index) for model in self.metapath_models
+            model(x_dict, batch.edge_index_dict) for model in self.metapath_models
         ]
+
         concat = torch.cat(embeddings, dim=-1)  # [N, hidden * M]
 
         h = F.relu(self.fc1(concat))
