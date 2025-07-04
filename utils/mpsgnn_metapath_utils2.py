@@ -206,101 +206,10 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
     return [rel for rel in metadata[1] if rel[0] == current_node_type]
 
 
-def construct_bags_with_alpha(
-    data,
-    previous_bags: List[List[int]],
-    previous_labels: List[float],
-    alpha_prev: Dict[int, float],     # weights α(v, B) for each v ∈ bag previous
-    rel: Tuple[str, str, str],
-    node_embeddings: torch.Tensor,
-    theta: nn.Module,                 # network to compute Θᵗx_v
-    src_embeddings,
-) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
-    """
-    Estend the bags through relation "rel", propagating α following eq. (6) di https://arxiv.org/abs/2412.00521.
-    Returns:
-    - new bag 
-    - labels associated to nodes v
-    - new alpha[u] for reached nodes u. This is a dictionary where the key is the node u reached and the value
-      is the alfa score for that node.
-    """
-    edge_index = data.edge_index_dict.get(rel)
-    if edge_index is None:
-        print(f"this should not have happened, but the relation was not found.")
-        return [], [], {}
-
-    edge_src, edge_dst = edge_index #tensor [2, #edges], the first one has the node indexes of the src_type, the second of the dst_type
-    bags = [] #the new bags, one for each "v" node.
-    labels = [] #for each bag we consider its label, given by the one of the src in relation r.
-    alpha_next = {} #the result of the computation of the alfa scores given by equation 6.
-
-    for bag_v, label in zip(previous_bags, previous_labels):
-        #the previous bag now becomes a "v" node
-
-        bag_u = [] #new bag for the node (bag) "bag_v"
-
-        for v in bag_v: #for each node in the previous bag 
-            neighbors_u = edge_dst[edge_src == v]
-            #we consider all the edge indexes of destination type that are linked to the 
-            #src type through relation "rel", for which the source was exactly the node "v".
-            #  Pratically, here we are going through a 
-            #relation rel, for example the "patient->prescription" relation and we are 
-            # consideringall the prescription that "father" 
-            #node of kind patient had.
-            if len(neighbors_u) == 0:
-                continue
-
-            #x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
-            x_v = src_embeddings[v]
-
-            theta_xv = theta(x_v).item() # Θᵗ x_v scalar
-            alpha_v = alpha_prev.get(v, 1.0)
-
-            for u in neighbors_u.tolist():  #consider all the "sons" of node "v" through relation "rel"
-                alpha_u = theta_xv * alpha_v #compute the new alfa, according to eq 6
-                alpha_next[u] = alpha_next.get(u, 0.0) + alpha_u
-                bag_u.append(u)
-
-        if len(bag_u) > 0:
-            bags.append(bag_u) #updates the new list of bags
-            labels.append(label) #the label of the current bag is the same 
-            #as the one that the father bag had.
-
-    return bags, labels, alpha_next
-
-
 
 
 class ScoringFunctionReg(nn.Module):
-    """    
-    This function is one of possibly infinite different implementation for 
-    computing how "significative" is a bag.
-    In particular, this approach, which follows https://arxiv.org/abs/2412.00521,
-    uses a "mini" neural network taht takes an embedding and produces a score value.
-    Each bag is a list of embeddings of the reached nodes at a specific time step
-    (each of these nodes share the same node type) and we desire to return a score 
-    values to the bag.
-
-    We first apply the theta NN to each of the embeddings of the nodes of the bag, 
-    getting its score. 
-    Then, we normalize the scores through softmax function in order to obtain the 
-    attention weights, these score values corresponds to the "α(v, B)" computed
-    by https://arxiv.org/abs/2412.00521 in section 4.1, and formally indicates 
-    how much attention we should give to a node of the bag.
-
-    Then, followign the formulation indicated in section 4.1 of the aforementioned
-    paper, we simply compute a weighted mean of the embeddings of the nodes in the
-    bag.
-
-    Finally, we pass the embeddings of the bag to another NN which computes a
-    single prediction score for the bag.
-
-    We are using these two networks to "predict" whether the current bag is 
-    able to capture important signals about the predictive label.... DOES THIS MAKE
-    SENSE????
-
-    Here we work on a single bag.
-    """
+    
     def __init__(self, in_dim: int): #in_dim is the dimension of the embedding of nodes
         super().__init__()
         self.theta = nn.Sequential(
@@ -479,6 +388,7 @@ def beam_metapath_search_with_bags_learned(
     beam_width: int = 5,
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     device = y.device
+
     global_to_local_id_map = {
         ntype: {
             global_id.item(): local_idx
