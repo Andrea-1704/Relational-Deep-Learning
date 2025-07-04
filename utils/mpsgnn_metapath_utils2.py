@@ -121,7 +121,7 @@ def construct_bags_with_alpha(
             theta_xv = theta(x_v).item()
             alpha_v = alpha_prev.get(v, 1.0)
             for u in neighbors_u.tolist():
-                alpha_u = theta_xv * alpha_v
+                alpha_u = theta_xv * alpha_v 
                 alpha_next[u] = alpha_next.get(u, 0.0) + alpha_u
                 bag_u.append(u)
 
@@ -170,47 +170,6 @@ def evaluate_relation_learned(
     mae = F.l1_loss(preds_tensor, binary_labels).item()
     return mae, theta
 
-
-
-class ScoringFunctionReg(nn.Module):
-    def __init__(self, in_dim: int): #in_dim is the dimension of the embedding of nodes
-        super().__init__()
-        self.theta = nn.Sequential(
-            nn.Linear(in_dim, in_dim),
-            nn.ReLU(),
-            nn.Linear(in_dim, 1)  # from embeddings to scalar
-        )
-        self.out = nn.Sequential(
-          nn.Linear(in_dim, in_dim),
-          nn.ReLU(),
-          nn.Linear(in_dim, 1)
-        ) # final nn on embedding of bag
-
-    def forward(self, bags: List[torch.Tensor]) -> torch.Tensor:
-        """
-        Each bag is a tensor of shape [B_i, D]
-        This function return a scalar value, which represent the 
-        prediction of each bag.
-        """
-        preds = []
-        for bag in bags:
-            if bag.size(0) == 0:
-                print(f"this bag is empty")
-                preds.append(torch.tensor(0.0, device=bag.device))
-                continue
-            scores = self.theta(bag).squeeze(-1)  # [B_i] #alfa scores: one for each v in bag
-            weights = torch.softmax(scores, dim=0)  # [B_i] #normalize alfa
-            weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D] #mean
-            # pred = weighted_avg.mean()  #final scalar -> terrible solution!
-            pred = self.out(weighted_avg).squeeze(-1) #apply another nn to indicate the importance of bag
-            preds.append(pred)
-        return torch.stack(preds)
-
-    def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """
-        Computes the MAE score between the two vectors.
-        """
-        return F.l1_loss(preds, targets)
 
 
 
