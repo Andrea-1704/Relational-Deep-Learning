@@ -36,22 +36,12 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 
 
 
-#The previous bag creation function had an important error: it always consider ad node_id
-#the first node, the target node. So this function does not provide a solid solution for 
-#all the relations in the metapath, after the first one (for which, we have instead 
-#a source node that is equal to the target node).
-#to solve this major mistake we now provide a different solution that aims to solve the 
-#mentioned error, but also to align more closely to section 4.2 of the aforementioned 
-#paper by implementing in an integral way the alfa scores values calculation for all
-#the node "u" present in the bag, using a recursive function that takes into account
-#the "v" nodes of the previous bags.
 def construct_bags_with_alpha(
     data,
-    previous_bags: List[List[int]],
-    previous_labels: List[float],
+    previous_bags: List[List[int]], 
+    previous_labels: List[float],     # list of the "v" nodes
     alpha_prev: Dict[int, float],     # weights α(v, B) for each v ∈ bag previous
     rel: Tuple[str, str, str],
-    node_embeddings: torch.Tensor,
     theta: nn.Module,                 # network to compute Θᵗx_v
     src_embeddings,
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
@@ -68,7 +58,7 @@ def construct_bags_with_alpha(
         print(f"this should not have happened, but the relation was not found.")
         return [], [], {}
 
-    edge_src, edge_dst = edge_index #tensor [2, #edges], the first one has the node indexes of the src_type, the second of the dst_type
+    edge_src, edge_dst = edge_index #tensor [2, #edges]
     bags = [] #the new bags, one for each "v" node.
     labels = [] #for each bag we consider its label, given by the one of the src in relation r.
     alpha_next = {} #the result of the computation of the alfa scores given by equation 6.
@@ -88,7 +78,7 @@ def construct_bags_with_alpha(
             # consideringall the prescription that "father" 
             #node of kind patient had.
             if len(neighbors_u) == 0:
-                print(f"did not found node embeddings")
+                print(f"did not found node embeddings: this means that probably bag has local indices, while edge index global ones (as we already know)")
                 continue
 
             #x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
@@ -362,7 +352,6 @@ def greedy_metapath_search_with_bags_learned(
                     previous_labels=current_labels,
                     alpha_prev=alpha, #current alfa values for v nodes
                     rel=rel,
-                    node_embeddings=node_embeddings,
                     theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
