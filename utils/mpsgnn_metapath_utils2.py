@@ -43,6 +43,22 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 
 
 
+def build_global_to_local_from_edge_index(data: HeteroData) -> Dict[str, Dict[int, int]]:
+    mapping = {}
+    for ntype in data.node_types:
+        node_ids = set()
+        for (src, _, dst), edge_index in data.edge_index_dict.items():
+            if src == ntype:
+                node_ids.update(edge_index[0].tolist())
+            if dst == ntype:
+                node_ids.update(edge_index[1].tolist())
+        sorted_ids = sorted(node_ids)
+        mapping[ntype] = {global_id: i for i, global_id in enumerate(sorted_ids)}
+    return mapping
+
+
+
+
 def train_theta_for_relation(
     bags: List[List[int]],
     labels: List[int],
@@ -96,9 +112,11 @@ def evaluate_relation_learned(
     labels: List[float],
     node_embeddings: torch.Tensor,
     alpha_prev: Dict[int, float],
+    global_to_local: Dict[int, int],  # nuovo
     epochs: int = 100,
     lr: float = 1e-2,
 ) -> Tuple[float, nn.Module]:
+
     device = node_embeddings.device
     binary_labels = torch.tensor(labels, device=device)
 
@@ -204,6 +222,9 @@ def beam_metapath_search_with_bags_learned(
     current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+
+    global_to_local = build_global_to_local_from_edge_index(data)
+
 
     for level in range(L_max):
         print(f"LEVEL {level}")
