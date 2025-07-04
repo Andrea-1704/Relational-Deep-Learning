@@ -141,7 +141,7 @@ def run_with_config(hidden_channels, out_channels, optimizer_name: str, lr: floa
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        metadata=data_full.metadata(),
+        metadata=data_official.metadata(),
         metapath_counts=metapath_counts,
         metapaths=metapaths,
         hidden_channels=hidden_channels,
@@ -203,10 +203,17 @@ if __name__ == '__main__':
 
     for opt in optimizers:
         for lr in learning_rates:
-            val_score, test_score = run_with_config(hidden_channels, out_channels, opt, lr, weight_decay)
-            key = f"{opt}_lr{lr:.0e}_hidden_channels{hidden_channels:.0e}_out_channels{out_channels:.0e}"
-            results[key] = (val_score, test_score)
-            print(f"{key} → Val {tune_metric}: {val_score:.4f}, Test: {test_score:.4f}")
+          for hidden_channel in hidden_channels:
+            for out_channel in out_channels:
+                #val_score, test_score = run_with_config(hidden_channels, out_channels, opt, lr, weight_decay)
+                val_score, test_score = run_with_config(hidden_channel, out_channel, opt, lr, weight_decay)
+
+                #key = f"{opt}_lr{lr:.0e}_hidden_channels{hidden_channels:.0e}_out_channels{out_channels:.0e}"
+                
+                key = f"{opt}_lr{lr:.0e}_hidden_channels{hidden_channel}_out_channels{out_channel}"
+
+                results[key] = (val_score, test_score)
+                print(f"{key} → Val {tune_metric}: {val_score:.4f}, Test: {test_score:.4f}")
 
     # Trova la combinazione migliore
     best_key = max(results, key=lambda k: results[k][0])

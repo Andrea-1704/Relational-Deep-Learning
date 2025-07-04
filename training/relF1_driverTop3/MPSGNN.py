@@ -151,7 +151,7 @@ def train2():
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        metadata=data_full.metadata(),
+        metadata=data_official.metadata(),
         metapath_counts = metapath_counts,
         metapaths=metapaths,
         hidden_channels=hidden_channels,
@@ -167,13 +167,13 @@ def train2():
 
     scheduler = CosineAnnealingLR(optimizer, T_max=25)
 
-    early_stopping = EarlyStopping(
-        patience=60,
-        delta=0.0,
-        verbose=True,
-        higher_is_better = True,
-        path="best_basic_model.pt"
-    )
+    # early_stopping = EarlyStopping(
+    #     patience=60,
+    #     delta=0.0,
+    #     verbose=True,
+    #     higher_is_better = True,
+    #     path="best_basic_model.pt"
+    # )
 
     
     best_val_metric = -math.inf 
@@ -205,11 +205,11 @@ def train2():
       
       print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-      early_stopping(val_metrics[tune_metric], model)
+      # early_stopping(val_metrics[tune_metric], model)
 
-      if early_stopping.early_stop:
-          print(f"Early stopping triggered at epoch {epoch}")
-          break
+      # if early_stopping.early_stop:
+      #     print(f"Early stopping triggered at epoch {epoch}")
+      #     break
     print(f"best validation results: {best_val_metric}")
     print(f"best test results: {best_test_metric}")
 
