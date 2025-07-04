@@ -36,8 +36,6 @@ def map_bag_global_to_local(bag: List[int], global_to_local: Dict[int, int]) -> 
     return [global_to_local[v] for v in bag if v in global_to_local]
 
 
-
-###NEW:
 def train_theta_for_relation(
     bags: List[List[int]],
     labels: List[int],
@@ -84,8 +82,6 @@ def train_theta_for_relation(
         optimizer.step()
 
     return theta
-
-
 
 
 
@@ -210,17 +206,6 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
     return [rel for rel in metadata[1] if rel[0] == current_node_type]
 
 
-
-
-#The previous bag creation function had an important error: it always consider ad node_id
-#the first node, the target node. So this function does not provide a solid solution for 
-#all the relations in the metapath, after the first one (for which, we have instead 
-#a source node that is equal to the target node).
-#to solve this major mistake we now provide a different solution that aims to solve the 
-#mentioned error, but also to align more closely to section 4.2 of the aforementioned 
-#paper by implementing in an integral way the alfa scores values calculation for all
-#the node "u" present in the bag, using a recursive function that takes into account
-#the "v" nodes of the previous bags.
 def construct_bags_with_alpha(
     data,
     previous_bags: List[List[int]],
