@@ -203,7 +203,8 @@ if __name__ == '__main__':
 
 
     executed_configs = set()
-    with open("Partial_tuning_results_filtered_no_training", "r", encoding="utf-8") as f:
+    with open("tuning/Partial_tuning_results_filtered_no_training.txt", "r", encoding="utf-8") as f:
+
         for line in f:
             if "→" in line:
                 config_key = line.split("→")[0].strip()
