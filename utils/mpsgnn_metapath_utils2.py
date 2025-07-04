@@ -1,3 +1,9 @@
+"""
+Refinement of version one with the aim of trying to implement a version 
+very close to the original one.
+Possibly trying to mimic the result of the authors of the paper.
+"""
+
 import torch
 from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict
