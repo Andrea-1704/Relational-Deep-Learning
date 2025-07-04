@@ -106,13 +106,83 @@ def train_theta_for_relation(
 
 
 
+class ScoringFunctionReg(nn.Module):
+    """    
+    This function is one of possibly infinite different implementation for 
+    computing how "significative" is a bag.
+    In particular, this approach, which follows https://arxiv.org/abs/2412.00521,
+    uses a "mini" neural network taht takes an embedding and produces a score value.
+    Each bag is a list of embeddings of the reached nodes at a specific time step
+    (each of these nodes share the same node type) and we desire to return a score 
+    values to the bag.
+
+    We first apply the theta NN to each of the embeddings of the nodes of the bag, 
+    getting its score. 
+    Then, we normalize the scores through softmax function in order to obtain the 
+    attention weights, these score values corresponds to the "α(v, B)" computed
+    by https://arxiv.org/abs/2412.00521 in section 4.1, and formally indicates 
+    how much attention we should give to a node of the bag.
+
+    Then, followign the formulation indicated in section 4.1 of the aforementioned
+    paper, we simply compute a weighted mean of the embeddings of the nodes in the
+    bag.
+
+    Finally, we pass the embeddings of the bag to another NN which computes a
+    single prediction score for the bag.
+
+    We are using these two networks to "predict" whether the current bag is 
+    able to capture important signals about the predictive label.... DOES THIS MAKE
+    SENSE????
+
+    Here we work on a single bag.
+    """
+    def __init__(self, in_dim: int): #in_dim is the dimension of the embedding of nodes
+        super().__init__()
+        self.theta = nn.Sequential(
+            nn.Linear(in_dim, in_dim),
+            nn.ReLU(),
+            nn.Linear(in_dim, 1)  # from embeddings to scalar
+        )
+        self.out = nn.Sequential(
+          nn.Linear(in_dim, in_dim),
+          nn.ReLU(),
+          nn.Linear(in_dim, 1)
+        ) # final nn on embedding of bag
+
+    def forward(self, bags: List[torch.Tensor]) -> torch.Tensor:
+        """
+        Each bag is a tensor of shape [B_i, D]
+        This function return a scalar value, which represent the 
+        prediction of each bag.
+        """
+        preds = []
+        for bag in bags:
+            if bag.size(0) == 0:
+                print(f"this bag is empty")
+                preds.append(torch.tensor(0.0, device=bag.device))
+                continue
+            scores = self.theta(bag).squeeze(-1)  # [B_i] #alfa scores: one for each v in bag
+            weights = torch.softmax(scores, dim=0)  # [B_i] #normalize alfa
+            weighted_avg = torch.sum(weights.unsqueeze(-1) * bag, dim=0)  # [D] #mean
+            # pred = weighted_avg.mean()  #final scalar -> terrible solution!
+            pred = self.out(weighted_avg).squeeze(-1) #apply another nn to indicate the importance of bag
+            preds.append(pred)
+        return torch.stack(preds)
+
+    def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the MAE score between the two vectors.
+        """
+        return F.l1_loss(preds, targets)
+
+
 
 def evaluate_relation_learned(
     bags: List[List[int]],
     labels: List[float],
     node_embeddings: torch.Tensor,
     alpha_prev: Dict[int, float],
-    global_to_local: Dict[int, int],  # nuovo
+    global_to_local: Dict[int, int],  # mapping da global → local
     epochs: int = 100,
     lr: float = 1e-2,
 ) -> Tuple[float, nn.Module]:
@@ -120,30 +190,36 @@ def evaluate_relation_learned(
     device = node_embeddings.device
     binary_labels = torch.tensor(labels, device=device)
 
-    theta = train_theta_for_relation(
-        bags=bags,
-        labels=labels,
-        node_embeddings=node_embeddings,
-        alpha_prev=alpha_prev,
-        epochs=epochs,
-        lr=lr
-    )
+    in_dim = node_embeddings.size(-1)
+    model = ScoringFunctionReg(in_dim).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    preds = []
+    # Costruisci bag_embeddings con mapping
+    bag_embeddings = []
     for bag in bags:
-        if not bag:
-            preds.append(torch.tensor(0.0, device=device))
+        local_ids = [global_to_local[v] for v in bag if v in global_to_local]
+        if not local_ids:
             continue
-        emb = node_embeddings[torch.tensor(bag, device=device)]
-        scores = theta(emb).squeeze(-1)
-        weights = torch.softmax(scores, dim=0)
-        weighted_avg = torch.sum(weights.unsqueeze(-1) * emb, dim=0)
-        pred = weighted_avg.mean()
-        preds.append(pred)
+        emb = node_embeddings[torch.tensor(local_ids, device=device)]
+        bag_embeddings.append(emb)
 
-    preds_tensor = torch.stack(preds)
-    mae = F.l1_loss(preds_tensor, binary_labels).item()
-    return mae, theta
+    target_tensor = torch.tensor(labels, device=device)
+
+    for _ in range(epochs):
+        model.train()
+        optimizer.zero_grad()
+        preds = model(bag_embeddings)
+        loss = model.loss(preds, target_tensor)
+        loss.backward()
+        optimizer.step()
+
+    model.eval()
+    with torch.no_grad():
+        preds = model(bag_embeddings)
+        final_mae = model.loss(preds, target_tensor).item()
+
+    return final_mae, model.theta[0] if isinstance(model.theta, nn.Sequential) else model.theta
+
 
 
 
@@ -157,6 +233,7 @@ def construct_bags_with_alpha(
     node_embeddings: torch.Tensor,
     theta: nn.Module,
     src_embeddings: torch.Tensor,
+    global_to_local: Dict[int, int],  # nuovo
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
@@ -171,10 +248,13 @@ def construct_bags_with_alpha(
     for bag_v, label in zip(previous_bags, previous_labels):
         bag_u = []
         for v in bag_v:
+            if v not in global_to_local:
+                continue
+            local_v = global_to_local[v]
             neighbors_u = edge_dst[edge_src == v]
             if len(neighbors_u) == 0:
                 continue
-            x_v = src_embeddings[v]
+            x_v = src_embeddings[local_v]
             theta_xv = theta(x_v).item()
             alpha_v = alpha_prev.get(v, 1.0)
             for u in neighbors_u.tolist():
@@ -278,7 +358,9 @@ def beam_metapath_search_with_bags_learned(
                     labels=current_labels,
                     node_embeddings=src_emb,
                     alpha_prev=alpha,
+                    global_to_local=global_to_local[src],  # passa mapping per tipo src
                 )
+
                 print(f"Obtained score {score} for relation {rel}")
 
                 
@@ -291,7 +373,9 @@ def beam_metapath_search_with_bags_learned(
                     node_embeddings=dst_emb,
                     theta=theta,
                     src_embeddings=src_emb,
+                    global_to_local=global_to_local[src],  # mapping corretto
                 )
+
 
                 if len(bags) < 5:
                     continue
