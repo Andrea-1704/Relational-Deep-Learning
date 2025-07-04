@@ -1,13 +1,10 @@
-# mapping_utils.py
-
 from typing import Dict, List
 import torch
 from torch_geometric.data import HeteroData
 
 def get_global_to_local_id_map(data: HeteroData) -> Dict[str, Dict[int, int]]:
     """
-    Costruisce un mapping per ogni tipo di nodo da global ID → local ID.
-    Richiede che data[ntype].n_id sia presente (RelBench e NeighborLoader lo forniscono).
+    Maps every type of node from a global ID to a local one.
     """
     id_map = {}
     for ntype in data.node_types:
@@ -22,7 +19,7 @@ def get_global_to_local_id_map(data: HeteroData) -> Dict[str, Dict[int, int]]:
 
 def map_bag_global_to_local(bag: List[int], global_to_local: Dict[int, int]) -> List[int]:
     """
-    Converte una bag di global node IDs in local node IDs per un dato tipo di nodo.
-    Ignora automaticamente i nodi non presenti nel mapping.
+    Converts a bag of global node IDs in local node IDs for a given node type.
+    Automatically ignores nodes that are not present in mapping.
     """
     return [global_to_local[v] for v in bag if v in global_to_local]
