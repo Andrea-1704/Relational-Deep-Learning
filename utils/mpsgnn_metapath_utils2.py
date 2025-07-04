@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
+from mapping_utils import get_global_to_local_id_map
 
 
 
