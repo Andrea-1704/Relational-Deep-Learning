@@ -79,6 +79,7 @@ def construct_bags_with_alpha(
         bag_u = [] #new bag for the node (bag) "bag_v"
 
         for v in bag_v: #for each node in the previous bag 
+
             neighbors_u = edge_dst[edge_src == v]
             #we consider all the edge indexes of destination type that are linked to the 
             #src type through relation "rel", for which the source was exactly the node "v".
@@ -87,6 +88,7 @@ def construct_bags_with_alpha(
             # consideringall the prescription that "father" 
             #node of kind patient had.
             if len(neighbors_u) == 0:
+                print(f"did not found node embeddings")
                 continue
 
             #x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
