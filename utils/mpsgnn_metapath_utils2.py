@@ -13,6 +13,58 @@ from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
 
 
+###NEW:
+def train_theta_for_relation(
+    bags: List[List[int]],
+    labels: List[int],
+    node_embeddings: torch.Tensor,
+    alpha_prev: Dict[int, float],
+    epochs: int = 100,
+    lr: float = 0.01,
+) -> nn.Linear:
+    """
+    Allena un classificatore theta sulla relazione corrente usando ranking loss.
+    """
+    device = node_embeddings.device
+    theta = nn.Linear(node_embeddings.size(-1), 1, bias=False).to(device)
+    optimizer = torch.optim.Adam(theta.parameters(), lr=lr)
+
+    # Prepara embedding delle bag e pesi alpha
+    bag_embeddings = []
+    alpha_values = []
+    binary_labels = torch.tensor(labels, device=device)
+
+    for bag in bags:
+        if not bag:
+            continue
+        emb = node_embeddings[torch.tensor(bag, device=device)]
+        alpha = torch.tensor([alpha_prev.get(i, 1.0) for i in bag], device=device)
+        bag_embeddings.append(emb)
+        alpha_values.append(alpha)
+
+    for _ in range(epochs):
+        optimizer.zero_grad()
+        preds = []
+        for emb, alpha in zip(bag_embeddings, alpha_values):
+            scores = theta(emb).squeeze(-1)
+            weights = torch.softmax(scores * alpha, dim=0)
+            weighted_avg = torch.sum(weights.unsqueeze(-1) * emb, dim=0)
+            pred = weighted_avg.mean()  # oppure: passare a una rete finale se vuoi
+            preds.append(pred)
+        preds = torch.stack(preds)
+
+        # Ranking loss binaria (solo se binarize_targets)
+        pos = preds[binary_labels == 1]
+        neg = preds[binary_labels == 0]
+        if len(pos) == 0 or len(neg) == 0:
+            continue
+        loss = torch.sum(torch.sigmoid(neg.unsqueeze(0) - pos.unsqueeze(1)))
+        loss.backward()
+        optimizer.step()
+
+    return theta
+
+
 
 def binarize_targets(y: torch.Tensor, threshold: float = 11) -> torch.Tensor:
     """
