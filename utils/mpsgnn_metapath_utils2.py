@@ -91,6 +91,45 @@ def train_theta_for_relation(
 
 
 
+def evaluate_relation_learned(
+    bags: List[List[int]],
+    labels: List[float],
+    node_embeddings: torch.Tensor,
+    alpha_prev: Dict[int, float],
+    epochs: int = 100,
+    lr: float = 1e-2,
+) -> Tuple[float, nn.Module]:
+    device = node_embeddings.device
+    binary_labels = torch.tensor(labels, device=device)
+
+    theta = train_theta_for_relation(
+        bags=bags,
+        labels=labels,
+        node_embeddings=node_embeddings,
+        alpha_prev=alpha_prev,
+        epochs=epochs,
+        lr=lr
+    )
+
+    preds = []
+    for bag in bags:
+        if not bag:
+            preds.append(torch.tensor(0.0, device=device))
+            continue
+        emb = node_embeddings[torch.tensor(bag, device=device)]
+        scores = theta(emb).squeeze(-1)
+        weights = torch.softmax(scores, dim=0)
+        weighted_avg = torch.sum(weights.unsqueeze(-1) * emb, dim=0)
+        pred = weighted_avg.mean()
+        preds.append(pred)
+
+    preds_tensor = torch.stack(preds)
+    mae = F.l1_loss(preds_tensor, binary_labels).item()
+    return mae, theta
+
+
+
+
 def construct_bags_with_alpha(
     data,
     previous_bags: List[List[int]],
@@ -130,45 +169,6 @@ def construct_bags_with_alpha(
             labels.append(label)
 
     return bags, labels, alpha_next
-
-
-
-
-def evaluate_relation_learned(
-    bags: List[List[int]],
-    labels: List[float],
-    node_embeddings: torch.Tensor,
-    alpha_prev: Dict[int, float],
-    epochs: int = 100,
-    lr: float = 1e-2,
-) -> Tuple[float, nn.Module]:
-    device = node_embeddings.device
-    binary_labels = torch.tensor(labels, device=device)
-
-    theta = train_theta_for_relation(
-        bags=bags,
-        labels=labels,
-        node_embeddings=node_embeddings,
-        alpha_prev=alpha_prev,
-        epochs=epochs,
-        lr=lr
-    )
-
-    preds = []
-    for bag in bags:
-        if not bag:
-            preds.append(torch.tensor(0.0, device=device))
-            continue
-        emb = node_embeddings[torch.tensor(bag, device=device)]
-        scores = theta(emb).squeeze(-1)
-        weights = torch.softmax(scores, dim=0)
-        weighted_avg = torch.sum(weights.unsqueeze(-1) * emb, dim=0)
-        pred = weighted_avg.mean()
-        preds.append(pred)
-
-    preds_tensor = torch.stack(preds)
-    mae = F.l1_loss(preds_tensor, binary_labels).item()
-    return mae, theta
 
 
 
@@ -258,6 +258,7 @@ def beam_metapath_search_with_bags_learned(
                     node_embeddings=src_emb,
                     alpha_prev=alpha,
                 )
+                print(f"Obtained score {score} for relation {rel}")
 
                 
                 bags, labels, alpha_next = construct_bags_with_alpha(
