@@ -171,11 +171,11 @@ def train2():
         data=data_official,
         col_stats_dict=col_stats_dict_official,
         metadata=data_full.metadata(),
-        metapaths=metapaths_indices,
-        hidden_channels=hidden_channels,
-        out_channels=out_channels,
-        final_out_channels=1,
+        metapaths=metapaths_triples,
+        hidden_channels=128,
+        out_channels=128,
     ).to(device)
+
 
 
 
