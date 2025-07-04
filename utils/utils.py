@@ -40,7 +40,7 @@ def train(model, optimizer, loader_dict, device, task, loss_fn) -> float:
     model.train()
 
     loss_accum = count_accum = 0
-    for batch in tqdm(loader_dict["train"]):
+    for batch in loader_dict["train"]:
         batch = batch.to(device)
 
         optimizer.zero_grad()

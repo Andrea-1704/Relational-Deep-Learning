@@ -135,7 +135,7 @@ loader_dict = loader_dict_fn(
 
 
 def run_with_config(hidden_channels, out_channels, optimizer_name: str, lr: float, weight_decay: float = 0.0):
-    print(f"\nTraining with optimizer={optimizer_name}, lr={lr}, weight_decay={weight_decay}\n")
+    #print(f"\nTraining with optimizer={optimizer_name}, lr={lr}, weight_decay={weight_decay}\n")
     test_table = task.get_table("test", mask_input_cols=True)
 
     model = MPSGNN(
