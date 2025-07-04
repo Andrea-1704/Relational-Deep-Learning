@@ -116,7 +116,7 @@ def train2():
     hidden_channels = 128
     out_channels = 128
 
-    metapaths, metapath_counts = greedy_metapath_search_with_bags_learned(
+    metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_full,
         data=data_full,
         y=y_full, 

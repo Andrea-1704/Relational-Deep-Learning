@@ -390,6 +390,7 @@ class ScoringFunctionReg(nn.Module):
 
 
 
+#new
 def greedy_metapath_search_with_bags_learned(
     data,
     y: torch.Tensor,
@@ -398,20 +399,23 @@ def greedy_metapath_search_with_bags_learned(
     col_stats_dict: Dict[str, Dict[str, Dict]],
     L_max: int = 3,
     max_rels: int = 10,
-    top_k: int = 3,
     channels: int = 64,
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     device = y.device
-    metapath_scores = []
+    metapaths = []
     metapath_counts = defaultdict(int)
     current_paths = [[]]
+
     current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
 
     for level in range(L_max):
         print(f"level {level}")
-        next_path_info = []
+        new_paths = []
+        new_alpha_all = []
+        new_bags_all = []
+        new_labels_all = []
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
@@ -443,195 +447,72 @@ def greedy_metapath_search_with_bags_learned(
                 if src == last_ntype
             ][:max_rels]
 
+            best_rel = None
+            best_score = float("inf")
+            best_theta = None
+            best_alpha = None
+            best_bags = None
+            best_labels = None
+
             for rel in candidate_rels:
+                print(f"considering relation {rel}")
                 src, _, dst = rel
-                if dst in [step[0] for step in path] or dst == node_type:
+                if dst in [step[0] for step in path]:
+                    continue
+                if dst == node_type:
                     continue
 
-                node_embeddings_src = node_embeddings_dict.get(src)
-                node_embeddings_dst = node_embeddings_dict.get(dst)
-                if node_embeddings_src is None or node_embeddings_dst is None:
+                node_embeddings = node_embeddings_dict.get(dst)
+                if node_embeddings is None:
                     continue
 
-                # Allena theta con ranking loss
+                # Allena theta e ottieni score
                 score, theta = evaluate_relation_learned(
                     bags=current_bags,
                     labels=current_labels,
-                    node_embeddings=node_embeddings_src,
+                    node_embeddings=node_embeddings_dict[src],
                     alpha_prev=alpha,
                 )
 
-                # Costruisci nuove bag
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
                     previous_bags=current_bags,
                     previous_labels=current_labels,
                     alpha_prev=alpha,
                     rel=rel,
-                    node_embeddings=node_embeddings_dst,
+                    node_embeddings=node_embeddings,
                     theta=theta,
-                    src_embeddings=node_embeddings_src,
+                    src_embeddings=node_embeddings_dict[src],
                 )
 
                 if len(bags) < 5:
                     continue
 
-                new_path = path + [rel]
-                next_path_info.append((score, new_path, bags, labels, alpha_next))
+                print(f"relation {rel} score = {score}")
+                if score < best_score:
+                    best_score = score
+                    best_rel = rel
+                    best_theta = theta
+                    best_alpha = alpha_next
+                    best_bags = bags
+                    best_labels = labels
 
-        # Seleziona i top-K percorsi migliori
-        next_path_info.sort(key=lambda x: x[0])
-        selected = next_path_info[:top_k]
+            if best_rel:
+                new_path = path + [best_rel]
+                new_paths.append(new_path)
+                metapath_counts[tuple(new_path)] += 1
+                new_alpha_all.append(best_alpha)
+                new_bags_all.extend(best_bags)
+                new_labels_all.extend(best_labels)
 
-        current_paths = []
-        current_bags = []
-        current_labels = []
-        alpha = {}
+        current_paths = new_paths
+        alpha = {k: v for d in new_alpha_all for k, v in d.items()}
+        current_bags = new_bags_all
+        current_labels = new_labels_all
+        metapaths.extend(current_paths)
+        print(f"Final metapaths are {metapaths}")
 
-        for score, path, bags, labels, alpha_next in selected:
-            current_paths.append(path)
-            current_bags.extend(bags)
-            current_labels.extend(labels)
-            alpha.update(alpha_next)
-            metapath_scores.append((score, path))
-            metapath_counts[tuple(path)] += 1
-
-    # Estrai i metapath finali unici e ordinati per score crescente
-    metapath_scores.sort(key=lambda x: x[0])
-    final_metapaths = [path for _, path in metapath_scores[:top_k]]
-
-    print("Final top metapaths:")
-    for mp in final_metapaths:
-        print("  ", mp)
-
-    return final_metapaths, metapath_counts
-
-
-
-
-#new, working but only one metapath:
-# def greedy_metapath_search_with_bags_learned(
-#     data,
-#     y: torch.Tensor,
-#     train_mask: torch.Tensor,
-#     node_type: str,
-#     col_stats_dict: Dict[str, Dict[str, Dict]],
-#     L_max: int = 3,
-#     max_rels: int = 10,
-#     channels: int = 64,
-# ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
-#     device = y.device
-#     metapaths = []
-#     metapath_counts = defaultdict(int)
-#     current_paths = [[]]
-
-#     current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
-#     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
-#     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-
-#     for level in range(L_max):
-#         print(f"level {level}")
-#         new_paths = []
-#         new_alpha_all = []
-#         new_bags_all = []
-#         new_labels_all = []
-
-#         for path in current_paths:
-#             last_ntype = node_type if not path else path[-1][2]
-#             print(f"current source node is {last_ntype}")
-
-#             with torch.no_grad():
-#                 encoder = HeteroEncoder(
-#                     channels=channels,
-#                     node_to_col_names_dict={
-#                         ntype: data[ntype].tf.col_names_dict for ntype in data.node_types
-#                     },
-#                     node_to_col_stats=col_stats_dict,
-#                 ).to(device)
-#                 for module in encoder.modules():
-#                     for name, buf in module._buffers.items():
-#                         if buf is not None:
-#                             module._buffers[name] = buf.to(device)
-
-#                 tf_dict = {
-#                     ntype: data[ntype].tf.to(device)
-#                     for ntype in data.node_types
-#                     if 'tf' in data[ntype]
-#                 }
-#                 node_embeddings_dict = encoder(tf_dict)
-
-#             candidate_rels = [
-#                 (src, rel, dst)
-#                 for (src, rel, dst) in data.edge_index_dict.keys()
-#                 if src == last_ntype
-#             ][:max_rels]
-
-#             best_rel = None
-#             best_score = float("inf")
-#             best_theta = None
-#             best_alpha = None
-#             best_bags = None
-#             best_labels = None
-
-#             for rel in candidate_rels:
-#                 print(f"considering relation {rel}")
-#                 src, _, dst = rel
-#                 if dst in [step[0] for step in path]:
-#                     continue
-#                 if dst == node_type:
-#                     continue
-
-#                 node_embeddings = node_embeddings_dict.get(dst)
-#                 if node_embeddings is None:
-#                     continue
-
-#                 # Allena theta e ottieni score
-#                 score, theta = evaluate_relation_learned(
-#                     bags=current_bags,
-#                     labels=current_labels,
-#                     node_embeddings=node_embeddings_dict[src],
-#                     alpha_prev=alpha,
-#                 )
-
-#                 bags, labels, alpha_next = construct_bags_with_alpha(
-#                     data=data,
-#                     previous_bags=current_bags,
-#                     previous_labels=current_labels,
-#                     alpha_prev=alpha,
-#                     rel=rel,
-#                     node_embeddings=node_embeddings,
-#                     theta=theta,
-#                     src_embeddings=node_embeddings_dict[src],
-#                 )
-
-#                 if len(bags) < 5:
-#                     continue
-
-#                 print(f"relation {rel} score = {score}")
-#                 if score < best_score:
-#                     best_score = score
-#                     best_rel = rel
-#                     best_theta = theta
-#                     best_alpha = alpha_next
-#                     best_bags = bags
-#                     best_labels = labels
-
-#             if best_rel:
-#                 new_path = path + [best_rel]
-#                 new_paths.append(new_path)
-#                 metapath_counts[tuple(new_path)] += 1
-#                 new_alpha_all.append(best_alpha)
-#                 new_bags_all.extend(best_bags)
-#                 new_labels_all.extend(best_labels)
-
-#         current_paths = new_paths
-#         alpha = {k: v for d in new_alpha_all for k, v in d.items()}
-#         current_bags = new_bags_all
-#         current_labels = new_labels_all
-#         metapaths.extend(current_paths)
-#         print(f"Final metapaths are {metapaths}")
-
-#     return metapaths, metapath_counts
+    return metapaths, metapath_counts
 
 
 
@@ -805,132 +686,256 @@ def greedy_metapath_search_with_bags_learned(
 #     return metapaths, metapath_counts
 
 
-
+#new
 def beam_metapath_search_with_bags_learned(
     data,
     y: torch.Tensor,
     train_mask: torch.Tensor,
-    node_type: str, 
-    col_stats_dict: Dict[str, Dict[str, Dict]], 
+    node_type: str,
+    col_stats_dict: Dict[str, Dict[str, Dict]],
     L_max: int = 3,
     max_rels: int = 10,
-    channels : int = 64,
-    beam_width: int = 5,  #number of metapaths to look for
+    channels: int = 64,
+    beam_width: int = 5,
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
-    """
-    This function provides more than one metapaths by applying a beam search over the 
-    metapaths.
-    This implementation also do not require to use a hard cutoff value to stop the 
-    algorithm from creating sub-optimal and un-usefull long metapaths: 
-    it simply considers all the metapaths (also the intermediate ones and their score
-    value to be able to consider also intermediate metapaths).
-    We also added a statistics count that takes into account the counts of how many 
-    times each metapath has been use in the path (for example assuming to have the 
-    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
-    set of relations).    
-    """
     device = y.device
-    metapaths = []
-    metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
+    all_path_info = []  # (score, path, bags, labels, alpha)
+    metapath_counts = defaultdict(int)
+
+    # Init: path vuoto → ogni bag è 1 nodo (driver i-esimo)
     current_paths = [[]]
-    current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+    current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-    all_path_info = [] #memorize all the metapaths with scores, in order
-    #to select only the best beam_width at the end
 
     for level in range(L_max):
-        print(f"we are at level {level}")
-        #candidate_path_info = []
-        next_paths_info = []
+        print(f"LEVEL {level}")
+        next_path_info = []
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
-            print(f"current source node is {last_ntype}")
+            print(f"Expanding from node type: {last_ntype}")
 
             with torch.no_grad():
-              encoder = HeteroEncoder(
-                  channels=channels,
-                  node_to_col_names_dict={
-                      ntype: data[ntype].tf.col_names_dict
-                      for ntype in data.node_types
-                  },
-                  node_to_col_stats=col_stats_dict,
-              ).to(device)
-              for module in encoder.modules():
-                  for name, buf in module._buffers.items():
-                      if buf is not None:
-                          module._buffers[name] = buf.to(device)
-              tf_dict = {
-                  ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
-              }
-              node_embeddings_dict = encoder(tf_dict)
+                encoder = HeteroEncoder(
+                    channels=channels,
+                    node_to_col_names_dict={
+                        ntype: data[ntype].tf.col_names_dict for ntype in data.node_types
+                    },
+                    node_to_col_stats=col_stats_dict,
+                ).to(device)
+                for module in encoder.modules():
+                    for name, buf in module._buffers.items():
+                        if buf is not None:
+                            module._buffers[name] = buf.to(device)
+
+                tf_dict = {
+                    ntype: data[ntype].tf.to(device)
+                    for ntype in data.node_types if 'tf' in data[ntype]
+                }
+                node_embeddings_dict = encoder(tf_dict)
 
             candidate_rels = [
                 (src, rel, dst)
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
-            ][:max_rels] 
+            ][:max_rels]
 
-            for rel in candidate_rels: 
-                print(f"considering relation {rel}")
+            for rel in candidate_rels:
                 src, _, dst = rel
-                if dst in [step[0] for step in path]:  # avoid loops in met.
-                  continue
-                if dst == node_type:
-                  continue  # avoid to return to the source node
-                node_embeddings = node_embeddings_dict.get(dst) 
-
-                if node_embeddings is None:
-                    print(f"error: embedding of node {dst} not found")
+                if dst in [step[0] for step in path] or dst == node_type:
                     continue
 
-                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) 
-                
+                src_emb = node_embeddings_dict.get(src)
+                dst_emb = node_embeddings_dict.get(dst)
+                if src_emb is None or dst_emb is None:
+                    continue
+
+                # → Allena theta con ranking loss sulla relazione corrente
+                score, theta = evaluate_relation_learned(
+                    bags=current_bags,
+                    labels=current_labels,
+                    node_embeddings=src_emb,
+                    alpha_prev=alpha,
+                )
+
+                # → Costruisce nuove bag + α con theta allenato
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
                     previous_bags=current_bags,
                     previous_labels=current_labels,
-                    alpha_prev=alpha, 
+                    alpha_prev=alpha,
                     rel=rel,
-                    node_embeddings=node_embeddings,
+                    node_embeddings=dst_emb,
                     theta=theta,
-                    src_embeddings = node_embeddings_dict[src]
+                    src_embeddings=src_emb,
                 )
 
                 if len(bags) < 5:
                     continue
-                
-                score = evaluate_relation_learned(bags, labels, node_embeddings)
-                print(f"relation {rel} allow us to obtain score {score}")
 
                 new_path = path + [rel]
+                next_path_info.append((score, new_path, bags, labels, alpha_next))
 
-                next_paths_info.append((score, new_path, bags, labels, alpha_next))
+        # Beam: seleziona top beam_width path con score migliore
+        next_path_info.sort(key=lambda x: x[0])
+        selected = next_path_info[:beam_width]
 
+        # Prepara per prossimo livello
         current_paths = []
         current_bags = []
         current_labels = []
         alpha = {}
 
-        for info in next_paths_info:
-          _, path, bags, labels, alpha_next = info
-          current_paths.append(path)
-          current_bags.extend(bags)
-          current_labels.extend(labels)
-          alpha.update(alpha_next)
+        for score, path, bags, labels, alpha_next in selected:
+            current_paths.append(path)
+            current_bags.extend(bags)
+            current_labels.extend(labels)
+            alpha.update(alpha_next)
+            all_path_info.append((score, path, bags))
 
-        all_path_info.extend(next_paths_info)
+    # Seleziona i migliori beam_width finali tra TUTTI quelli visitati
+    all_path_info.sort(key=lambda x: x[0])
+    final_selected = all_path_info[:beam_width]
+    metapaths = []
 
-    #final selection of the best beamwodth paths:
-    all_path_info.sort(key=lambda x:x[0])
-    selected = all_path_info[:beam_width]
-    for _, path, bags, _, _ in selected:
-      metapaths.append(path)
-      metapath_counts[tuple(path)] = len(bags)
-    print(f"final metapaths are: {metapaths}")
-    print(f"metapath counts are: {metapath_counts}")
+    for _, path, bags in final_selected:
+        metapaths.append(path)
+        metapath_counts[tuple(path)] = len(bags)
+
+    print(f"FINAL METAPATHS (TOP {beam_width}):")
+    for path in metapaths:
+        print("  ", path)
+
     return metapaths, metapath_counts
+
+
+
+# def beam_metapath_search_with_bags_learned(
+#     data,
+#     y: torch.Tensor,
+#     train_mask: torch.Tensor,
+#     node_type: str, 
+#     col_stats_dict: Dict[str, Dict[str, Dict]], 
+#     L_max: int = 3,
+#     max_rels: int = 10,
+#     channels : int = 64,
+#     beam_width: int = 5,  #number of metapaths to look for
+# ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+#     """
+#     This function provides more than one metapaths by applying a beam search over the 
+#     metapaths.
+#     This implementation also do not require to use a hard cutoff value to stop the 
+#     algorithm from creating sub-optimal and un-usefull long metapaths: 
+#     it simply considers all the metapaths (also the intermediate ones and their score
+#     value to be able to consider also intermediate metapaths).
+#     We also added a statistics count that takes into account the counts of how many 
+#     times each metapath has been use in the path (for example assuming to have the 
+#     metapath A->B->C, we count how many A nodes are linked to C nodes throught this
+#     set of relations).    
+#     """
+#     device = y.device
+#     metapaths = []
+#     metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
+#     current_paths = [[]]
+#     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+#     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
+#     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+#     all_path_info = [] #memorize all the metapaths with scores, in order
+#     #to select only the best beam_width at the end
+
+#     for level in range(L_max):
+#         print(f"we are at level {level}")
+#         #candidate_path_info = []
+#         next_paths_info = []
+
+#         for path in current_paths:
+#             last_ntype = node_type if not path else path[-1][2]
+#             print(f"current source node is {last_ntype}")
+
+#             with torch.no_grad():
+#               encoder = HeteroEncoder(
+#                   channels=channels,
+#                   node_to_col_names_dict={
+#                       ntype: data[ntype].tf.col_names_dict
+#                       for ntype in data.node_types
+#                   },
+#                   node_to_col_stats=col_stats_dict,
+#               ).to(device)
+#               for module in encoder.modules():
+#                   for name, buf in module._buffers.items():
+#                       if buf is not None:
+#                           module._buffers[name] = buf.to(device)
+#               tf_dict = {
+#                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
+#               }
+#               node_embeddings_dict = encoder(tf_dict)
+
+#             candidate_rels = [
+#                 (src, rel, dst)
+#                 for (src, rel, dst) in data.edge_index_dict.keys()
+#                 if src == last_ntype
+#             ][:max_rels] 
+
+#             for rel in candidate_rels: 
+#                 print(f"considering relation {rel}")
+#                 src, _, dst = rel
+#                 if dst in [step[0] for step in path]:  # avoid loops in met.
+#                   continue
+#                 if dst == node_type:
+#                   continue  # avoid to return to the source node
+#                 node_embeddings = node_embeddings_dict.get(dst) 
+
+#                 if node_embeddings is None:
+#                     print(f"error: embedding of node {dst} not found")
+#                     continue
+
+#                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) 
+                
+#                 bags, labels, alpha_next = construct_bags_with_alpha(
+#                     data=data,
+#                     previous_bags=current_bags,
+#                     previous_labels=current_labels,
+#                     alpha_prev=alpha, 
+#                     rel=rel,
+#                     node_embeddings=node_embeddings,
+#                     theta=theta,
+#                     src_embeddings = node_embeddings_dict[src]
+#                 )
+
+#                 if len(bags) < 5:
+#                     continue
+                
+#                 score = evaluate_relation_learned(bags, labels, node_embeddings)
+#                 print(f"relation {rel} allow us to obtain score {score}")
+
+#                 new_path = path + [rel]
+
+#                 next_paths_info.append((score, new_path, bags, labels, alpha_next))
+
+#         current_paths = []
+#         current_bags = []
+#         current_labels = []
+#         alpha = {}
+
+#         for info in next_paths_info:
+#           _, path, bags, labels, alpha_next = info
+#           current_paths.append(path)
+#           current_bags.extend(bags)
+#           current_labels.extend(labels)
+#           alpha.update(alpha_next)
+
+#         all_path_info.extend(next_paths_info)
+
+#     #final selection of the best beamwodth paths:
+#     all_path_info.sort(key=lambda x:x[0])
+#     selected = all_path_info[:beam_width]
+#     for _, path, bags, _, _ in selected:
+#       metapaths.append(path)
+#       metapath_counts[tuple(path)] = len(bags)
+#     print(f"final metapaths are: {metapaths}")
+#     print(f"metapath counts are: {metapath_counts}")
+#     return metapaths, metapath_counts
         
 
 
