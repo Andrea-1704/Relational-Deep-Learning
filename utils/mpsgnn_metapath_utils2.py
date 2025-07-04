@@ -249,11 +249,6 @@ class ScoringFunctionReg(nn.Module):
         return F.l1_loss(preds, targets)
 
 
-
-
-
-
-
 def beam_metapath_search_with_bags_learned(
     data,
     y: torch.Tensor,
@@ -266,6 +261,8 @@ def beam_metapath_search_with_bags_learned(
     beam_width: int = 5,
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     device = y.device
+
+    print(f"data[ntype].n_id is {data['races'].n_id}")
 
     global_to_local_id_map = {
         ntype: {
