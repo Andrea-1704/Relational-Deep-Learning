@@ -78,10 +78,10 @@ def construct_bags_with_alpha(
             # consideringall the prescription that "father" 
             #node of kind patient had.
             if len(neighbors_u) == 0:
-                print(f"did not found node embeddings: this means that probably bag has local indices, while edge index global ones (as we already know)")
+                #test to understand if we are managing correctly the global and local mapping:
+                # print(f"did not found node embeddings: this means that probably bag has local indices, while edge index global ones (as we already know)")
                 continue
-
-            #x_v = node_embeddings[v] #take the node embedding of the "father" of the node"
+            
             x_v = src_embeddings[v]
 
             theta_xv = theta(x_v).item() # Θᵗ x_v scalar
@@ -315,6 +315,9 @@ def greedy_metapath_search_with_bags_learned(
               #a dictionary in which for each type of node (key of the dictionary) 
               #contains the embeddings for all the nodes of that type: 
               # [node_type]: Tensor[node_type, hidden_dim]
+            #   print("\n Capiamoci un po' di più su questa linea di codice: node_embeddings_dict = encoder(tf_dict)\n")
+            #   for node_type in node_embeddings_dict:
+            #       print(f"Il node type {node_type} ha questi risultati: {node_embeddings_dict[node_type]}\n")
 
             candidate_rels = [
                 (src, rel, dst)
@@ -465,7 +468,31 @@ def beam_metapath_search_with_bags_learned(
               tf_dict = {
                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
               }
+
+              print(f"Voglio stampare per ogni node type il suo data[ntype]\n")
+              for nType in data.node_types:
+                  print(f"Info of node type {nType} are: {data[nType].tf}")
               node_embeddings_dict = encoder(tf_dict)
+              """
+              Info of node type constructor_results are: TensorFrame(
+                num_cols=2,
+                num_rows=9408,
+                numerical (1): ['points'],
+                timestamp (1): ['date'],
+                has_target=False,
+                device='cpu',
+                )
+
+              The order of the rows is unknown!
+            
+              Attention: node_embeddings_dict just resutns a set of embeddings for the node , 
+              so we access to a node type and there we will find some embeddings with an 
+              unclear order: accesing to the first of those, we don't know at which specifici 
+              index of edge_index we are accessing. 
+
+              The order of nodes in this node embeddings implicitely depends on the way tf_dict
+              [node type] gets built.
+              """
 
             candidate_rels = [
                 (src, rel, dst)
@@ -494,7 +521,7 @@ def beam_metapath_search_with_bags_learned(
                     previous_labels=current_labels,
                     alpha_prev=alpha, 
                     rel=rel,
-                    node_embeddings=node_embeddings,
+                    #node_embeddings=node_embeddings,
                     theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
