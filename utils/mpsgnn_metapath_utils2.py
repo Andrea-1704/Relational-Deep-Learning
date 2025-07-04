@@ -14,6 +14,33 @@ from collections import defaultdict
 
 
 
+
+def binarize_targets(y: torch.Tensor, threshold: float = 11) -> torch.Tensor:
+    """
+    This function trasforms a regression task (like the one of driver position)
+    into a binary classification problem. 
+    To incorporate the original https://arxiv.org/abs/2412.00521 paper, which 
+    was only for binary classification we decided to trnasform our task into a 
+    binary classfication task, where the driver position gets converted into a 
+    binary label:
+    1 if position < threshold;
+    o otherwise.
+    """
+    return (y < threshold).long()
+
+
+
+
+def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
+    """
+    This function takes the "metadata" of the grafo (which are basicly all the 
+    relevant informations about the graph, such as edge types, node types, etc.)
+    and returns all the edges (in tuple format "(src_type, name of relation, 
+    dst_type)") that starts from "current_node_type" as "src_type".
+    """
+    return [rel for rel in metadata[1] if rel[0] == current_node_type]
+
+
 def train_theta_for_relation(
     bags: List[List[int]],
     labels: List[int],
@@ -143,36 +170,6 @@ def evaluate_relation_learned(
 
 
 
-
-
-def binarize_targets(y: torch.Tensor, threshold: float = 11) -> torch.Tensor:
-    """
-    This function trasforms a regression task (like the one of driver position)
-    into a binary classification problem. 
-    To incorporate the original https://arxiv.org/abs/2412.00521 paper, which 
-    was only for binary classification we decided to trnasform our task into a 
-    binary classfication task, where the driver position gets converted into a 
-    binary label:
-    1 if position < threshold;
-    o otherwise.
-    """
-    return (y < threshold).long()
-
-
-
-
-def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
-    """
-    This function takes the "metadata" of the grafo (which are basicly all the 
-    relevant informations about the graph, such as edge types, node types, etc.)
-    and returns all the edges (in tuple format "(src_type, name of relation, 
-    dst_type)") that starts from "current_node_type" as "src_type".
-    """
-    return [rel for rel in metadata[1] if rel[0] == current_node_type]
-
-
-
-
 class ScoringFunctionReg(nn.Module):
     def __init__(self, in_dim: int): #in_dim is the dimension of the embedding of nodes
         super().__init__()
@@ -214,6 +211,7 @@ class ScoringFunctionReg(nn.Module):
         return F.l1_loss(preds, targets)
 
 
+
 def beam_metapath_search_with_bags_learned(
     data: HeteroData,
     y: torch.Tensor,
@@ -225,11 +223,22 @@ def beam_metapath_search_with_bags_learned(
     channels: int = 64,
     beam_width: int = 5,
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+    """
+    This function provides more than one metapaths by applying a beam search over the 
+    metapaths.
+    This implementation also do not require to use a hard cutoff value to stop the 
+    algorithm from creating sub-optimal and un-usefull long metapaths: 
+    it simply considers all the metapaths (also the intermediate ones and their score
+    value to be able to consider also intermediate metapaths).
+    We also added a statistics count that takes into account the counts of how many 
+    times each metapath has been use in the path (for example assuming to have the 
+    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
+    set of relations).    
+    """
     device = y.device
     all_path_info = []  # (score, path, bags, labels, alpha)
     metapath_counts = defaultdict(int)
 
-    # Init: ogni bag è un singolo nodo target
     current_paths = [[]]
     current_bags = [[int(i)] for i in torch.where(train_mask)[0]]
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
@@ -270,16 +279,18 @@ def beam_metapath_search_with_bags_learned(
             ][:max_rels]
 
             for rel in candidate_rels:
+                print(f"considering relation {rel}")
                 src, _, dst = rel
                 if dst in [step[0] for step in path] or dst == node_type:
-                    continue
+                    continue# avoid loops in met, avoid to return to source node
 
                 src_emb = node_embeddings_dict.get(src)
                 dst_emb = node_embeddings_dict.get(dst)
                 if src_emb is None or dst_emb is None:
+                    print(f"error: embedding of node {dst} not found")
                     continue
 
-                # Allena θ con ranking loss
+                #train θ with ranking loss
                 score, theta = evaluate_relation_learned(
                     bags=current_bags,
                     labels=current_labels,
@@ -287,7 +298,7 @@ def beam_metapath_search_with_bags_learned(
                     alpha_prev=alpha,
                 )
 
-                # Propagazione delle bag e α con θ
+                
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
                     previous_bags=current_bags,
@@ -305,7 +316,7 @@ def beam_metapath_search_with_bags_learned(
                 new_path = path + [rel]
                 next_path_info.append((score, new_path, bags, labels, alpha_next))
 
-        # Seleziona i top beam_width metapath
+        
         next_path_info.sort(key=lambda x: x[0])
         selected = next_path_info[:beam_width]
 
