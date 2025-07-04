@@ -1,3 +1,9 @@
+"""
+This is a version of MPSGNN that tries to be as coherent 
+as possible to the code implementation provided into 
+https://arxiv.org/abs/2412.00521.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,49 +14,46 @@ from typing import List, Tuple, Dict, Any
 from torch_frame.data.stats import StatType
 
 class MetaPathGNNLayer(MessagePassing):
-    def __init__(self, in_channels: int, out_channels: int, relation_index: int):
-        super().__init__(aggr='add', flow='target_to_source')
-        self.relation_index = relation_index
-        self.w_l = nn.Linear(in_channels, out_channels)
+    def __init__(self, in_channels, out_channels):
+        super().__init__(aggr='add', flow="target_to_source")
         self.w_0 = nn.Linear(in_channels, out_channels)
+        self.w_l = nn.Linear(in_channels, out_channels)
         self.w_1 = nn.Linear(in_channels, out_channels)
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_type: torch.Tensor, h: torch.Tensor):
-        mask = edge_type == self.relation_index
-        print(f"edge_index {edge_index}")
-        print(f"edge type {edge_type}")
-        filtered_edge_index = edge_index[edge_type]
-        print(f"shape di filtered è {filtered_edge_index.shape}")
-        agg_messages = self.propagate(filtered_edge_index, x=h)
-        return self.w_l(agg_messages) + self.w_0(h) + self.w_1(x)
+    def forward(self, x, h, edge_index):
+        aggr_out = self.propagate(edge_index=edge_index, x=h)
+        return self.w_l(aggr_out) + self.w_0(h) + self.w_1(x)
 
-    def message(self, x_j: torch.Tensor):
+    def message(self, x_j):
         return x_j
 
+
+
 class MetaPathGNN(nn.Module):
-    def __init__(self,
-                 in_channels: int,
-                 hidden_channels: int,
-                 out_channels: int,
-                 metapath: List[int]):
+    def __init__(self, metapath, hidden_channels, out_channels):
         super().__init__()
         self.metapath = metapath
-        self.layers = nn.ModuleList()
+        self.convs = nn.ModuleList([
+            MetaPathGNNLayer(hidden_channels, hidden_channels)
+            for _ in metapath
+        ])
+        self.out_proj = nn.Linear(hidden_channels, out_channels)
 
-        for i, rel_idx in enumerate(metapath):
-            layer = MetaPathGNNLayer(
-                in_channels=hidden_channels if i > 0 else hidden_channels * 2,
-                out_channels=hidden_channels,
-                relation_index=rel_idx
+    def forward(self, x_dict, edge_index_dict):
+        h_dict = x_dict.copy()
+        for i, (src, rel, dst) in enumerate(reversed(self.metapath)):
+            conv_idx = len(self.metapath) - 1 - i
+            edge_index = edge_index_dict[(src, rel, dst)]
+            h_dst = self.convs[conv_idx](
+                x=h_dict[dst],
+                h=h_dict[dst],
+                edge_index=edge_index
             )
-            self.layers.append(layer)
+            h_dict[dst] = F.relu(h_dst)
+        start_type = self.metapath[0][0]
+        return self.out_proj(h_dict[start_type])
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_type: torch.Tensor):
-        h = x
-        for i, layer in enumerate(self.layers):
-            h = F.relu(layer(x if i == 0 else h, edge_index, edge_type, h))
-            h = F.dropout(h, p=0.5, training=self.training)
-        return h
+
 
 class MPSGNN_Original(nn.Module):
     def __init__(self,

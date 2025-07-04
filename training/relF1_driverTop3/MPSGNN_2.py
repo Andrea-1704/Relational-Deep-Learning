@@ -1,3 +1,9 @@
+"""
+This is a version of MPSGNN that tries to be as coherent 
+as possible to the code implementation provided into 
+https://arxiv.org/abs/2412.00521.
+"""
+
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
