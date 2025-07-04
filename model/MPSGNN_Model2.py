@@ -39,19 +39,17 @@ class MetaPathGNN(nn.Module):
         ])
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
-    def forward(self, x_dict, edge_index_dict):
-        h_dict = x_dict.copy()
+    def forward(self, x: torch.Tensor, edge_index_dict: Dict[Tuple[str, str, str], torch.Tensor]) -> torch.Tensor:
+        h = x
+        for k, edge_index in edge_index_dict.items():
+          print(f"{k} → edge_index max: {edge_index.max().item()}, shape: {edge_index.shape}")
+
         for i, (src, rel, dst) in enumerate(reversed(self.metapath)):
-            conv_idx = len(self.metapath) - 1 - i
             edge_index = edge_index_dict[(src, rel, dst)]
-            h_dst = self.convs[conv_idx](
-                x=h_dict[dst],
-                h=h_dict[dst],
-                edge_index=edge_index
-            )
-            h_dict[dst] = F.relu(h_dst)
-        start_type = self.metapath[0][0]
-        return self.out_proj(h_dict[start_type])
+            h = self.convs[i](x, h, edge_index)
+            h = F.relu(h)
+        return self.out_proj(h)
+
 
 
 
@@ -96,8 +94,8 @@ class MPSGNN_Original(nn.Module):
         # GNN su ciascun metapath
         self.metapath_models = nn.ModuleList([
             MetaPathGNN(
-                in_channels=hidden_channels * 2,
-                hidden_channels=hidden_channels,
+                #in_channels=hidden_channels * 2,
+                hidden_channels=hidden_channels * 2,
                 out_channels=out_channels,
                 metapath=mp
             ) for mp in metapaths
@@ -123,7 +121,7 @@ class MPSGNN_Original(nn.Module):
         edge_type = batch.edge_types
 
         embeddings = [
-            model(x, edge_index, edge_type) for model in self.metapath_models
+            model(x, edge_index) for model in self.metapath_models
         ]
         concat = torch.cat(embeddings, dim=-1)  # [N, hidden * M]
 

@@ -42,6 +42,11 @@ from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
 
 
+import os
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
+
+
 def train2():
     dataset = get_dataset("rel-f1", download=True)
     task = get_task("rel-f1", "driver-top3", download=True)
