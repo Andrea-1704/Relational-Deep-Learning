@@ -20,28 +20,30 @@ def train_theta_for_relation(
     labels: List[int],
     node_embeddings: torch.Tensor,
     alpha_prev: Dict[int, float],
+    global_to_local_map: Dict[int, int],  # nuovo parametro
     epochs: int = 100,
     lr: float = 0.01,
 ) -> nn.Linear:
-    """
-    Allena un classificatore theta sulla relazione corrente usando ranking loss.
-    """
     device = node_embeddings.device
     theta = nn.Linear(node_embeddings.size(-1), 1, bias=False).to(device)
     optimizer = torch.optim.Adam(theta.parameters(), lr=lr)
 
-    # Prepara embedding delle bag e pesi alpha
     bag_embeddings = []
     alpha_values = []
     binary_labels = torch.tensor(labels, device=device)
 
     for bag in bags:
-        if not bag:
+        # Mappa global → local
+        try:
+            local_ids = [global_to_local_map[v] for v in bag if v in global_to_local_map]
+            if not local_ids:
+                continue
+            emb = node_embeddings[torch.tensor(local_ids, device=device)]
+            alpha = torch.tensor([alpha_prev.get(v, 1.0) for v in bag if v in global_to_local_map], device=device)
+            bag_embeddings.append(emb)
+            alpha_values.append(alpha)
+        except KeyError:
             continue
-        emb = node_embeddings[torch.tensor(bag, device=device)]
-        alpha = torch.tensor([alpha_prev.get(i, 1.0) for i in bag], device=device)
-        bag_embeddings.append(emb)
-        alpha_values.append(alpha)
 
     for _ in range(epochs):
         optimizer.zero_grad()
@@ -50,11 +52,10 @@ def train_theta_for_relation(
             scores = theta(emb).squeeze(-1)
             weights = torch.softmax(scores * alpha, dim=0)
             weighted_avg = torch.sum(weights.unsqueeze(-1) * emb, dim=0)
-            pred = weighted_avg.mean()  # oppure: passare a una rete finale se vuoi
+            pred = weighted_avg.mean()
             preds.append(pred)
         preds = torch.stack(preds)
 
-        # Ranking loss binaria (solo se binarize_targets)
         pos = preds[binary_labels == 1]
         neg = preds[binary_labels == 0]
         if len(pos) == 0 or len(neg) == 0:
@@ -64,6 +65,7 @@ def train_theta_for_relation(
         optimizer.step()
 
     return theta
+
 
 
 
@@ -699,6 +701,16 @@ def beam_metapath_search_with_bags_learned(
     beam_width: int = 5,
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     device = y.device
+    global_to_local_id_map = {
+        ntype: {
+            global_id.item(): local_idx
+            for local_idx, global_id in enumerate(data[ntype].n_id)
+        }
+        for ntype in data.node_types
+        if 'n_id' in data[ntype]
+    }
+
+    print(f"global_to_local_id_map: {enumerate(data['drivers'].n_id)}")
     all_path_info = []  # (score, path, bags, labels, alpha)
     metapath_counts = defaultdict(int)
 
@@ -752,12 +764,20 @@ def beam_metapath_search_with_bags_learned(
                     continue
 
                 # → Allena theta con ranking loss sulla relazione corrente
+                # score, theta = evaluate_relation_learned(
+                #     bags=current_bags,
+                #     labels=current_labels,
+                #     node_embeddings=src_emb,
+                #     alpha_prev=alpha,
+                # )
                 score, theta = evaluate_relation_learned(
                     bags=current_bags,
                     labels=current_labels,
-                    node_embeddings=src_emb,
+                    node_embeddings=node_embeddings_dict[src],
                     alpha_prev=alpha,
+                    global_to_local_map=global_to_local_id_map[src]  # passa solo per tipo `src`
                 )
+
 
                 # → Costruisce nuove bag + α con theta allenato
                 bags, labels, alpha_next = construct_bags_with_alpha(
