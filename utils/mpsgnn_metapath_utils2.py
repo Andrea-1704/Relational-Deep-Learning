@@ -247,10 +247,9 @@ def beam_metapath_search_with_bags_learned(
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
-            if it == 0:
+            if it == 0: 
                 it = 1
                 src_emb = node_embeddings_dict.get(last_ntype)
-
                 if src_emb is None:
                     print(f"error: embedding of node not found")
                     continue
@@ -268,8 +267,6 @@ def beam_metapath_search_with_bags_learned(
                 src, _, dst = rel
                 if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met and avoid to return to the source node
                   continue
-
-                
                 
                 #node_embeddings = node_embeddings_dict.get(dst) #Tensor[num_node_of_kind_dst, embedding_dim]
 
@@ -278,7 +275,7 @@ def beam_metapath_search_with_bags_learned(
                     bags=current_bags,
                     labels=current_labels,
                     #node_embeddings=src_emb,
-                    node_embeddings = node_embeddings_dict[src],
+                    node_embeddings = src_emb,
                     alpha_prev=alpha,
                     #global_to_local=global_to_local[src],  # passa mapping per tipo src
                 )
