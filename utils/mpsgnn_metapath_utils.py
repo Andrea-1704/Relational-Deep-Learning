@@ -264,13 +264,23 @@ def beam_metapath_search_with_bags_learned(
     metapaths = []
     metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
     current_paths = [[]]
-    #current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
     driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
-    current_bags =  [[int(i)] for i in driver_ids_df] 
-    y = data[node_type].y.float() #ordered as current bags
-    print(f"len of current bags: {len(current_bags)}")
-    print(f"len of y: {len(y)}")
-    current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
+    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]] 
+    old_y = data[node_type].y.int().tolist() #ordered as current bags
+    print(f"initial y: {old_y}")
+    current_labels = []
+    for i in range(0, len(old_y)):
+        if train_mask[i]:
+            current_labels.append(old_y[i])
+    print(len(current_bags))
+    print(current_bags)
+
+    print(len(current_labels))
+    print(current_labels)
+    
+
+    assert len(current_bags) == len(current_labels)
+    #current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
     all_path_info = [] #memorize all the metapaths with scores, in order
     #to select only the best beam_width at the end
