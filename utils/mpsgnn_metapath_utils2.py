@@ -56,16 +56,18 @@ def train_theta_for_relation(
     theta = nn.Linear(node_embeddings.size(-1), 1, bias=False).to(device)
     optimizer = torch.optim.Adam(theta.parameters(), lr=lr)
 
-    bag_embeddings = []
+    bag_embeddings = [
+        node_embeddings[torch.tensor(bag, device=device)] for bag in bags
+    ]
+
+    #bag_embeddings = []
     alpha_values = []
     binary_labels = torch.tensor(labels, device=device)
 
     for bag in bags:
-        if not bag:
-            continue
-        emb = node_embeddings[torch.tensor(bag, device=device)]
+        #emb = node_embeddings[torch.tensor(bag, device=device)]#####################################
         alpha = torch.tensor([alpha_prev.get(v, 1.0) for v in bag], device=device)
-        bag_embeddings.append(emb)
+        #bag_embeddings.append(emb)
         alpha_values.append(alpha)
 
     for _ in range(epochs):
