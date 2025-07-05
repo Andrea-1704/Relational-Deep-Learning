@@ -67,23 +67,7 @@ def make_pkey_fkey_graph(
     text_embedder_cfg: Optional[TextEmbedderConfig] = None,
     cache_dir: Optional[str] = None,
 ) -> Tuple[HeteroData, Dict[str, Dict[str, Dict[StatType, Any]]]]:
-    r"""Given a :class:`Database` object, construct a heterogeneous graph with primary-
-    foreign key relationships, together with the column stats of each table.
-
-    Args:
-        db: A database object containing a set of tables.
-        col_to_stype_dict: Column to stype for
-            each table.
-        text_embedder_cfg: Text embedder config.
-        cache_dir: A directory for storing materialized tensor
-            frames. If specified, we will either cache the file or use the
-            cached file. If not specified, we will not use cached file and
-            re-process everything from scratch without saving the cache.
-
-    Returns:
-        HeteroData: The heterogeneous :class:`PyG` object with
-            :class:`TensorFrame` feature.
-    """
+    
     data = HeteroData()
     col_stats_dict = dict()
     if cache_dir is not None:
@@ -185,6 +169,9 @@ data_official, col_stats_dict_official = make_pkey_fkey_graph(
     text_embedder_cfg = None,
     cache_dir=None
 )
+res_edges = data_official[('drivers', 'rev_f2p_driverId', 'results')].edge_index
+#print(sorted(res_edges[1])) #till 20322:: OK!
+#print(sorted(res_edges[0])  #till 806:: OK!
 
 graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
@@ -215,18 +202,18 @@ tf_dict = {
 
 
 #Experiments
-driver_id_global= 0
-print(f"drivers id: {db_nuovo.table_dict['drivers'].df['driverId'].to_numpy()[driver_id_global]}")
+#driver_id_global= 0
+#print(f"drivers id: {db_nuovo.table_dict['drivers'].df['driverId'].to_numpy()}")#til 956
 
-local_idx = global_to_local[driver_id_global]
-print(f"for node with global {driver_id_global} local is {local_idx}")
+# local_idx = global_to_local[driver_id_global]
+# print(f"for node with global {driver_id_global} local is {local_idx}")
 
-surname_first = db_nuovo.table_dict['drivers'].df['merged_text_id'].to_numpy()[local_idx]
+# surname_first = db_nuovo.table_dict['drivers'].df['merged_text_id'].to_numpy()[local_idx]
 
-print(f"features primo driver: {surname_first}")
-#print(f"data official primo driver: {data_official['drivers']}")
-embeddings = encoder(tf_dict)['drivers'][local_idx]
-print(f"embeddings ricavate nodo 0: {embeddings}")
+# print(f"features primo driver: {surname_first}")
+# #print(f"data official primo driver: {data_official['drivers']}")
+# embeddings = encoder(tf_dict)['drivers'][local_idx]
+# print(f"embeddings ricavate nodo 0: {embeddings}")
 
 
-print(f"for driver id {global_to_local}") #Mapping corresponds for all the tables
+#print(f"results id: {db_nuovo.table_dict['results'].df['resultId'].to_numpy()}") #till 20322
