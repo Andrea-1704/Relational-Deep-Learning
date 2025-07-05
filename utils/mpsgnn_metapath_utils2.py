@@ -139,7 +139,6 @@ def construct_bags_with_alpha(
     node_embeddings: torch.Tensor,
     theta: nn.Module,
     src_embeddings: torch.Tensor,
-    global_to_local: Dict[int, int],  # nuovo
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
@@ -154,13 +153,10 @@ def construct_bags_with_alpha(
     for bag_v, label in zip(previous_bags, previous_labels):
         bag_u = []
         for v in bag_v:
-            if v not in global_to_local:
-                continue
-            local_v = global_to_local[v]
             neighbors_u = edge_dst[edge_src == v]
             if len(neighbors_u) == 0:
                 continue
-            x_v = src_embeddings[local_v]
+            x_v = src_embeddings[v]
             theta_xv = theta(x_v).item()
             alpha_v = alpha_prev.get(v, 1.0)
             for u in neighbors_u.tolist():

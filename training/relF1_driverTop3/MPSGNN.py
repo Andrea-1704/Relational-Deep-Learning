@@ -33,7 +33,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import beam_metapath_search_with_bags_learned
+from utils.mpsgnn_metapath_utils2 import beam_metapath_search_with_bags_learned
 #from utils.mapping_utils import get_global_to_local_id_map
 
 
