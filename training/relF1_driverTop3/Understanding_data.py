@@ -154,6 +154,15 @@ def make_pkey_fkey_graph(
 
     return data, col_stats_dict
 
+"""
+data (returned by make_pkey_fkey_graph )[node_type].edge_index_dict
+contains the same indeces of the raws in db.table_dict[table_name].df
+where db is the parameter in input to edge_index_dict.
+
+SO IN EDGE INDEX DICT WE HAVE THE SAME LOCAL INDEX OF
+db.table_dict[table_name].df
+"""
+
 
 
 dataset = get_dataset("rel-f1", download=True)
