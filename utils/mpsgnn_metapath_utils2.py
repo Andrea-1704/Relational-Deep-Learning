@@ -238,7 +238,7 @@ def beam_metapath_search_with_bags_learned(
             ntype: data[ntype].tf.to(device) for ntype in data.node_types
         } #each node type as a tf.
         node_embeddings_dict = encoder(tf_dict)
-
+    it = 0
 
     for level in range(L_max):
         print(f"we are at level {level}")
@@ -247,6 +247,14 @@ def beam_metapath_search_with_bags_learned(
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
+            if it == 0:
+                it = 1
+                src_emb = node_embeddings_dict.get(last_ntype)
+
+                if src_emb is None:
+                    print(f"error: embedding of node not found")
+                    continue
+
             print(f"current source node is {last_ntype}")
 
             candidate_rels = [
@@ -261,12 +269,7 @@ def beam_metapath_search_with_bags_learned(
                 if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met and avoid to return to the source node
                   continue
 
-                src_emb = node_embeddings_dict.get(src)
-                dst_emb = node_embeddings_dict.get(dst)
-
-                if src_emb is None or dst_emb is None:
-                    print(f"error: embedding of node {dst} not found")
-                    continue
+                
                 
                 #node_embeddings = node_embeddings_dict.get(dst) #Tensor[num_node_of_kind_dst, embedding_dim]
 
@@ -282,7 +285,13 @@ def beam_metapath_search_with_bags_learned(
                 
                 print(f"Obtained score {score} for relation {rel}")
 
-                
+                src_emb = node_embeddings_dict.get(src)
+                dst_emb = node_embeddings_dict.get(dst)
+
+                if src_emb is None or dst_emb is None:
+                    print(f"error: embedding of node {dst} not found")
+                    continue
+
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
                     previous_bags=current_bags,
