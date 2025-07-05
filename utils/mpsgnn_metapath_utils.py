@@ -238,7 +238,8 @@ def construct_bags_with_alpha(
 
 def beam_metapath_search_with_bags_learned(
     data: HeteroData, #the result of make_pkey_fkey_graph
-    y: torch.Tensor,
+    db,   #Object that was passed to make_pkey_fkey_graph to build data
+    node_id: str, #ex driverId
     train_mask: torch.Tensor,
     node_type: str, 
     col_stats_dict: Dict[str, Dict[str, Dict]], 
@@ -259,65 +260,48 @@ def beam_metapath_search_with_bags_learned(
     metapath A->B->C, we count how many A nodes are linked to C nodes throught this
     set of relations).    
     """
-    device = y.device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     metapaths = []
     metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
     current_paths = [[]]
-    current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+    #current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
+    current_bags =  [[int(i)] for i in driver_ids_df] 
+    y = data[node_type].y.float() #ordered as current bags
+    print(f"len of current bags: {len(current_bags)}")
+    print(f"len of y: {len(y)}")
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
     all_path_info = [] #memorize all the metapaths with scores, in order
     #to select only the best beam_width at the end
 
+    with torch.no_grad():
+        encoder = HeteroEncoder(
+            channels=channels,
+            node_to_col_names_dict={
+                ntype: data[ntype].tf.col_names_dict
+                for ntype in data.node_types
+            },
+            node_to_col_stats=col_stats_dict,
+        ).to(device)
+        for module in encoder.modules():
+            for name, buf in module._buffers.items():
+                if buf is not None:
+                    module._buffers[name] = buf.to(device)
+        tf_dict = {
+            ntype: data[ntype].tf.to(device) for ntype in data.node_types
+        } #each node type as a tf.
+        node_embeddings_dict = encoder(tf_dict)
+
+
     for level in range(L_max):
         print(f"we are at level {level}")
-        #candidate_path_info = []
+        
         next_paths_info = []
 
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
             print(f"current source node is {last_ntype}")
-
-            with torch.no_grad():
-              encoder = HeteroEncoder(
-                  channels=channels,
-                  node_to_col_names_dict={
-                      ntype: data[ntype].tf.col_names_dict
-                      for ntype in data.node_types
-                  },
-                  node_to_col_stats=col_stats_dict,
-              ).to(device)
-              for module in encoder.modules():
-                  for name, buf in module._buffers.items():
-                      if buf is not None:
-                          module._buffers[name] = buf.to(device)
-              tf_dict = {
-                  ntype: data[ntype].tf.to(device) for ntype in data.node_types
-              } #each node type as a tf.
-
-
-              node_embeddings_dict = encoder(tf_dict)
-              """
-              Info of node type constructor_results are: TensorFrame(
-                num_cols=2,
-                num_rows=9408,
-                numerical (1): ['points'],
-                timestamp (1): ['date'],
-                has_target=False,
-                device='cpu',
-                )
-
-              The order of the rows is unknown!
-            
-              Attention: node_embeddings_dict just resutns a set of embeddings for the node , 
-              so we access to a node type and there we will find some embeddings with an 
-              unclear order: accesing to the first of those, we don't know at which specifici 
-              index of edge_index we are accessing. 
-
-              The order of nodes in this node embeddings implicitely depends on the way tf_dict
-              [node type] gets built.
-              """
-              
 
             candidate_rels = [
                 (src, rel, dst)
@@ -328,17 +312,16 @@ def beam_metapath_search_with_bags_learned(
             for rel in candidate_rels: 
                 print(f"considering relation {rel}")
                 src, _, dst = rel
-                if dst in [step[0] for step in path]:  # avoid loops in met.
+                if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met and avoid to return to the source node
                   continue
-                if dst == node_type:
-                  continue  # avoid to return to the source node
-                node_embeddings = node_embeddings_dict.get(dst) 
+                
+                node_embeddings = node_embeddings_dict.get(dst) #Tensor[num_node_of_kind_dst, embedding_dim]
 
                 if node_embeddings is None:
                     print(f"error: embedding of node {dst} not found")
                     continue
 
-                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) 
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #maybe it should be first learned as in version2
                 
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
@@ -387,6 +370,8 @@ def beam_metapath_search_with_bags_learned(
         
 
 
+
+#Previous version, return only a metaptah, with partial ones
 # def greedy_metapath_search_with_bags_learned(
 #     data,
 #     y: torch.Tensor,

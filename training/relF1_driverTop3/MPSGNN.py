@@ -106,7 +106,8 @@ def train2():
     metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_official,
         data=data_official,
-        y=y_full, 
+        db= db_nuovo,
+        node_id='driverId',
         train_mask=train_mask_full,
         node_type='drivers',
         L_max=2,
