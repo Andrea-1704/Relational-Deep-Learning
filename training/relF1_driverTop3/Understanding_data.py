@@ -217,3 +217,9 @@ tf_dict = {
 
 
 #print(f"results id: {db_nuovo.table_dict['results'].df['resultId'].to_numpy()}") #till 20322
+
+
+"""
+Also encoder returns the results ordered as data_official passed to tf_dict.
+And data_official pased to tf_dict is ordered as db.
+"""
