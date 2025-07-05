@@ -201,7 +201,7 @@ tf_dict = {
 
 
 
-#Experiments
+
 #driver_id_global= 0
 #print(f"drivers id: {db_nuovo.table_dict['drivers'].df['driverId'].to_numpy()}")#til 956
 
