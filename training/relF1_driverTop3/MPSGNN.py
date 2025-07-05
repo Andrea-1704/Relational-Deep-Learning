@@ -89,28 +89,14 @@ def train2():
 
     data_official['drivers'].y = target_vector_official.float()
     data_official['drivers'].train_mask = ~torch.isnan(target_vector_official)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-    data_full, col_stats_dict_full = make_pkey_fkey_graph(
-        db_nuovo,
-        col_to_stype_dict=col_to_stype_dict_nuovo,
-        text_embedder_cfg=None,
-        cache_dir=None
-    )
-    data_full = data_full.to(device)
-
-
-    data_full['drivers'].y = target_vector_official.float()
-    data_full['drivers'].train_mask = ~torch.isnan(target_vector_official)
-
-
-    y_full = data_full['drivers'].y.float()
-    train_mask_full = data_full['drivers'].train_mask
+    y_full = data_official['drivers'].y.float()
+    train_mask_full = data_official['drivers'].train_mask
     num_pos = (y_full[train_mask_full] == 1).sum()
     num_neg = (y_full[train_mask_full] == 0).sum()
     pos_weight = torch.tensor([num_neg / num_pos], device=device)
+
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
@@ -118,8 +104,8 @@ def train2():
     out_channels = 128
 
     metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
-        col_stats_dict = col_stats_dict_full,
-        data=data_full,
+        col_stats_dict = col_stats_dict_official,
+        data=data_official,
         y=y_full, 
         train_mask=train_mask_full,
         node_type='drivers',
@@ -127,12 +113,6 @@ def train2():
         channels = hidden_channels,
         max_rels=10
     )
-
-
-    
-    y = data_official['drivers'].y
-    train_mask = data_official['drivers'].train_mask
-
 
 
     loader_dict = loader_dict_fn(
