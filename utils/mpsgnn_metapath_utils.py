@@ -466,12 +466,10 @@ def beam_metapath_search_with_bags_learned(
                       if buf is not None:
                           module._buffers[name] = buf.to(device)
               tf_dict = {
-                  ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
-              }
+                  ntype: data[ntype].tf.to(device) for ntype in data.node_types
+              } #each node type as a tf.
 
-              print(f"Voglio stampare per ogni node type il suo data[ntype]\n")
-              for nType in data.node_types:
-                  print(f"Info of node type {nType} are: {data[nType].tf}")
+
               node_embeddings_dict = encoder(tf_dict)
               """
               Info of node type constructor_results are: TensorFrame(
@@ -493,6 +491,7 @@ def beam_metapath_search_with_bags_learned(
               The order of nodes in this node embeddings implicitely depends on the way tf_dict
               [node type] gets built.
               """
+              
 
             candidate_rels = [
                 (src, rel, dst)
@@ -561,4 +560,154 @@ def beam_metapath_search_with_bags_learned(
     return metapaths, metapath_counts
         
 
+# # TRIAL VERSION:
+
+# from torch_frame import TensorFrame
+# import pandas as pd
+# from typing import Dict, List, Tuple
+# from collections import defaultdict
+
+# def build_global_to_local_from_edge_index(data: HeteroData) -> Tuple[Dict[str, Dict[int, int]], Dict[str, List[int]]]:
+#     mapping = {}
+#     reverse = {}
+#     for ntype in data.node_types:
+#         node_ids = set()
+#         for (src, _, dst), edge_index in data.edge_index_dict.items():
+#             if src == ntype:
+#                 node_ids.update(edge_index[0].tolist())
+#             if dst == ntype:
+#                 node_ids.update(edge_index[1].tolist())
+#         sorted_ids = sorted(node_ids)
+#         mapping[ntype] = {global_id: i for i, global_id in enumerate(sorted_ids)}
+#         reverse[ntype] = sorted_ids
+#     return mapping, reverse
+
+
+# def beam_metapath_search_with_bags_learned(
+#     data,
+#     y: torch.Tensor,
+#     train_mask: torch.Tensor,
+#     node_type: str, 
+#     col_stats_dict: Dict[str, Dict[str, Dict]], 
+#     L_max: int = 3,
+#     max_rels: int = 10,
+#     channels : int = 64,
+#     beam_width: int = 5,  #number of metapaths to look for
+# ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+
+#     device = y.device
+#     metapaths = []
+#     metapath_counts = {}
+#     current_paths = [[]]
+#     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+#     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
+#     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+#     all_path_info = []
+
+#     # ✅ Step 1: mapping globale → locale
+#     global_to_local, id_lists = build_global_to_local_from_edge_index(data)
+
+#     for level in range(L_max):
+#         print(f"we are at level {level}")
+#         next_paths_info = []
+
+#         for path in current_paths:
+#             last_ntype = node_type if not path else path[-1][2]
+#             print(f"current source node is {last_ntype}")
+
+#             # ✅ Step 2: costruzione tf_dict ordinato
+#             tf_dict = {}
+#             for ntype in data.node_types:
+#                 # if 'tf' not in data[ntype]:
+#                 #     continue
+#                 df = data[ntype].tf.to_pandas()
+#                 valid_ids = id_lists.get(ntype, [])
+#                 if not valid_ids:
+#                     continue
+#                 sub_df = df.loc[valid_ids]
+#                 tf = TensorFrame.from_dataframe(sub_df)
+#                 tf_dict[ntype] = tf.to(device)
+
+#             # ✅ Step 3: computa gli embedding
+#             with torch.no_grad():
+#                 encoder = HeteroEncoder(
+#                     channels=channels,
+#                     node_to_col_names_dict={
+#                         ntype: data[ntype].tf.col_names_dict
+#                         for ntype in data.node_types
+#                     },
+#                     node_to_col_stats=col_stats_dict,
+#                 ).to(device)
+#                 for module in encoder.modules():
+#                     for name, buf in module._buffers.items():
+#                         if buf is not None:
+#                             module._buffers[name] = buf.to(device)
+#                 node_embeddings_dict = encoder(tf_dict)
+
+#             candidate_rels = [
+#                 (src, rel, dst)
+#                 for (src, rel, dst) in data.edge_index_dict.keys()
+#                 if src == last_ntype
+#             ][:max_rels]
+
+#             for rel in candidate_rels: 
+#                 print(f"considering relation {rel}")
+#                 src, _, dst = rel
+#                 if dst in [step[0] for step in path] or dst == node_type:
+#                     continue
+#                 src_emb = node_embeddings_dict.get(src)
+#                 dst_emb = node_embeddings_dict.get(dst)
+#                 if src_emb is None or dst_emb is None:
+#                     continue
+
+#                 # ✅ Score sulla relazione usando mapping globale → locale
+#                 score, theta = evaluate_relation_learned(
+#                     bags=current_bags,
+#                     labels=current_labels,
+#                     node_embeddings=src_emb,
+#                     alpha_prev=alpha,
+#                     global_to_local=global_to_local[src],
+#                 )
+#                 print(f"relation {rel} allow us to obtain score {score}")
+
+#                 bags, labels, alpha_next = construct_bags_with_alpha(
+#                     data=data,
+#                     previous_bags=current_bags,
+#                     previous_labels=current_labels,
+#                     alpha_prev=alpha,
+#                     rel=rel,
+#                     theta=theta,
+#                     src_embeddings=src_emb,
+#                     global_to_local=global_to_local[src],
+#                 )
+
+#                 if len(bags) < 5:
+#                     continue
+
+#                 new_path = path + [rel]
+#                 next_paths_info.append((score, new_path, bags, labels, alpha_next))
+
+#         current_paths = []
+#         current_bags = []
+#         current_labels = []
+#         alpha = {}
+
+#         for _, path, bags, labels, alpha_next in next_paths_info:
+#             current_paths.append(path)
+#             current_bags.extend(bags)
+#             current_labels.extend(labels)
+#             alpha.update(alpha_next)
+
+#         all_path_info.extend(next_paths_info)
+
+#     # ✅ Beam: seleziona i top-K metapath
+#     all_path_info.sort(key=lambda x: x[0])
+#     selected = all_path_info[:beam_width]
+#     for _, path, bags, _, _ in selected:
+#         metapaths.append(path)
+#         metapath_counts[tuple(path)] = len(bags)
+
+#     print(f"final metapaths are: {metapaths}")
+#     print(f"metapath counts are: {metapath_counts}")
+#     return metapaths, metapath_counts
 
