@@ -205,7 +205,7 @@ def construct_bags_with_alpha(
 
         for v in bag_v: #for each node in the previous bag 
 
-            neighbors_u = edge_dst[edge_src == v]
+            neighbors_u = edge_dst[edge_src == v] #correct for the first step
             #we consider all the edge indexes of destination type that are linked to the 
             #src type through relation "rel", for which the source was exactly the node "v".
             #  Pratically, here we are going through a 
@@ -213,8 +213,8 @@ def construct_bags_with_alpha(
             # consideringall the prescription that "father" 
             #node of kind patient had.
             if len(neighbors_u) == 0:
+                #could be zero even just because that node simply do not have any of such relations
                 #test to understand if we are managing correctly the global and local mapping:
-                #print(f"did not found node embeddings: this means that probably bag has local indices, while edge index global ones (as we already know)")
                 continue
             
             x_v = src_embeddings[v]
