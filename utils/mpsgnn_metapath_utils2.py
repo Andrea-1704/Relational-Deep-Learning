@@ -60,7 +60,6 @@ def train_theta_for_relation(
         node_embeddings[torch.tensor(bag, device=device)] for bag in bags
     ]
 
-    #bag_embeddings = []
     alpha_values = []
     binary_labels = torch.tensor(labels, device=device)
 
@@ -213,11 +212,8 @@ def beam_metapath_search_with_bags_learned(
     for i in range(0, len(old_y)):
         if train_mask[i]:
             current_labels.append(old_y[i])
-    # print(len(current_bags))
     print(current_bags)
 
-    # print(len(current_labels))
-    # print(current_labels)
     
     assert len(current_bags) == len(current_labels)
     
@@ -278,7 +274,8 @@ def beam_metapath_search_with_bags_learned(
                 score, theta = evaluate_relation_learned(
                     bags=current_bags,
                     labels=current_labels,
-                    node_embeddings=src_emb,
+                    #node_embeddings=src_emb,
+                    node_embeddings = node_embeddings_dict[src],
                     alpha_prev=alpha,
                     #global_to_local=global_to_local[src],  # passa mapping per tipo src
                 )
