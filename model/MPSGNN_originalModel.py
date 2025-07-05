@@ -2,6 +2,8 @@
 This is a version of MPSGNN that tries to be as coherent 
 as possible to the code implementation provided into 
 https://arxiv.org/abs/2412.00521.
+Version that was slightly changed shows sligtly better
+results.
 """
 
 import torch
