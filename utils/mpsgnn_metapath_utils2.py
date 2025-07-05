@@ -104,7 +104,7 @@ def evaluate_relation_learned(
     device = node_embeddings.device
     binary_labels = torch.tensor(labels, device=device)
 
-    # Allena theta come prima
+    #Train theta neural network
     theta = train_theta_for_relation(
         bags=bags,
         labels=labels,
@@ -116,8 +116,6 @@ def evaluate_relation_learned(
 
     preds = []
     for bag in bags:
-        
-
         emb = node_embeddings[torch.tensor(bag, device=device)]
         scores = theta(emb).squeeze(-1)
         weights = torch.softmax(scores, dim=0)
@@ -128,7 +126,6 @@ def evaluate_relation_learned(
     preds_tensor = torch.stack(preds)
     mae = F.l1_loss(preds_tensor, binary_labels).item()
     return mae, theta
-
 
 
 
@@ -304,9 +301,6 @@ def beam_metapath_search_with_bags_learned(
 
                 if len(bags) < 5:
                     continue
-                
-                score = evaluate_relation_learned(bags, labels, node_embeddings)
-                print(f"relation {rel} allow us to obtain score {score}")
 
                 new_path = path + [rel]
 
