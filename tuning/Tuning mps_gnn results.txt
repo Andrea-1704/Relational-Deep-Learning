@@ -258,3 +258,27 @@ SGD_lr5e-04_hidden_channels128_out_channels256 → Val f1: 0.4171, Test: 0.3727
 SGD_lr5e-04_hidden_channels256_out_channels64 → Val f1: 0.3366, Test: 0.2998
 SGD_lr5e-04_hidden_channels256_out_channels128 → Val f1: 0.3877, Test: 0.1368
 
+SGD_lr5e-04_hidden_channels256_out_channels256 → Val f1: 0.3449, Test: 0.3088
+SGD_lr1e-03_hidden_channels64_out_channels64 → Val f1: 0.3377, Test: 0.3088
+SGD_lr1e-03_hidden_channels64_out_channels128 → Val f1: 0.4491, Test: 0.3803
+SGD_lr1e-03_hidden_channels64_out_channels256 → Val f1: 0.4084, Test: 0.2109
+SGD_lr1e-03_hidden_channels128_out_channels64 → Val f1: 0.4083, Test: 0.2622
+SGD_lr1e-03_hidden_channels128_out_channels128 → Val f1: 0.4057, Test: 0.2646
+SGD_lr1e-03_hidden_channels128_out_channels256 → Val f1: 0.4332, Test: 0.3175
+SGD_lr1e-03_hidden_channels256_out_channels64 → Val f1: 0.3793, Test: 0.2143
+SGD_lr1e-03_hidden_channels256_out_channels128 → Val f1: 0.4330, Test: 0.4740
+SGD_lr1e-03_hidden_channels256_out_channels256 → Val f1: 0.3687, Test: 0.2038
+SGD_lr1e-02_hidden_channels64_out_channels64 → Val f1: 0.3798, Test: 0.5103
+SGD_lr1e-02_hidden_channels64_out_channels128 → Val f1: 0.3988, Test: 0.2246
+SGD_lr1e-02_hidden_channels64_out_channels256 → Val f1: 0.3663, Test: 0.3030
+SGD_lr1e-02_hidden_channels128_out_channels64 → Val f1: 0.4016, Test: 0.3562
+SGD_lr1e-02_hidden_channels128_out_channels128 → Val f1: 0.4049, Test: 0.2191
+SGD_lr1e-02_hidden_channels128_out_channels256 → Val f1: 0.4262, Test: 0.3033
+SGD_lr1e-02_hidden_channels256_out_channels64 → Val f1: 0.3675, Test: 0.2974
+SGD_lr1e-02_hidden_channels256_out_channels128 → Val f1: 0.4292, Test: 0.2687
+SGD_lr1e-02_hidden_channels256_out_channels256 → Val f1: 0.3866, Test: 0.3580
+
+Best config: SGD_lr1e-03_hidden_channels64_out_channels128 with Val f1: 0.4491, Test: 0.3803
+SGD_lr1e-02_hidden_channels64_out_channels64 → Val f1: 0.3798, Test: 0.5103
+
+
