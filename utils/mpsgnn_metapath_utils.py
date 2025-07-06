@@ -1,11 +1,13 @@
 import torch
+import math
 from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict
 import torch.nn as nn
 import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-
+from model.MPSGNN_Model import MPSGNN
+from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
 def binarize_targets(y: torch.Tensor, threshold: float = 11) -> torch.Tensor:
@@ -398,12 +400,22 @@ def greedy_metapath_search_with_bags_learned(
     data: HeteroData, #the result of make_pkey_fkey_graph
     db,   #Object that was passed to make_pkey_fkey_graph to build data
     node_id: str, #ex driverId
+    loader_dict,
+    task, 
+    loss_fn,
+    tune_metric : str,
     train_mask: torch.Tensor,
     node_type: str, 
     col_stats_dict: Dict[str, Dict[str, Dict]], 
     L_max: int = 3,
     channels : int = 64,
     beam_width: int = 5,  #number of metapaths to look for
+    out_channels: int = 128,
+    hidden_channels: int = 128,
+    lr : float = 0.0001,
+    wd: float = 0,
+    epochs: int = 100,
+    
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     
     """
@@ -424,6 +436,9 @@ def greedy_metapath_search_with_bags_learned(
     times each metapath has been use in the path (for example assuming to have the 
     metapath A->B->C, we count how many A nodes are linked to C nodes throught this
     set of relations).  
+
+    The score that we consider for each of the metapath is not simply the one
+    of the compute score, but is the result of a training of the mps gnn!
     """
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -518,12 +533,12 @@ def greedy_metapath_search_with_bags_learned(
                     best_alpha = alpha_next
                     best_bags = bags
                     best_labels = labels
+                
                 local_path2 = local_path.copy()
-
-                #even if it is not the best one we memorize it because maybe will
-                #be selected from beam search:
-                local_path2.append(rel)
-                all_path_info.append((score, local_path2.copy()))
+                # #even if it is not the best one we memorize it because maybe will
+                # #be selected from beam search:
+                # local_path2.append(rel)
+                # all_path_info.append((score, local_path2.copy()))
             
             #set best_rel:
             if best_rel:
@@ -535,7 +550,39 @@ def greedy_metapath_search_with_bags_learned(
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
                 #WARNING: SCORE IS COMPUTED ONLY FOR LAST RELATION BUT WE ARE LINKING IT TO THE COMPLETE LOCAL PATH!!!
                 metapath_counts[tuple(local_path)] += 1
-                all_path_info.append((best_score, local_path.copy()))
+                
+
+                #FOR THIS ONE WE SHOULD TRAIN A COMPLETE MPS GNN MODEL AND STORE THE SCORE RECEIVED IN TERMS OF 
+                #F1, SO HIGHER IS BETTER!
+                loc = [local_path.copy()]
+                print(f"local path to path is {loc}")
+                model = MPSGNN(
+                    data=data,
+                    col_stats_dict=col_stats_dict,
+                    metadata=data.metadata(),
+                    metapath_counts = metapath_counts,
+                    metapaths=loc,
+                    hidden_channels=hidden_channels,
+                    out_channels=out_channels,
+                    final_out_channels=1,
+                ).to(device)
+
+                optimizer = torch.optim.Adam(
+                  model.parameters(),
+                  lr=lr,
+                  weight_decay=wd
+                )
+                #EPOCHS:
+                test_table = task.get_table("test", mask_input_cols=False)
+                best_test_metrics = -math.inf 
+                for epoch in range(0, epochs):
+                    train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+                    test_pred = test(model, loader_dict["test"], device=device, task=task)
+                    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+                    if test_metrics[tune_metric] > best_test_metrics:
+                        best_test_metrics = test_metrics[tune_metric]
+                
+                all_path_info.append((best_test_metrics, local_path.copy()))
         
         current_paths = [best_rel] 
         print(f"current path now is equal to {current_paths}\n")
@@ -545,9 +592,9 @@ def greedy_metapath_search_with_bags_learned(
     best_score_per_path = {}
     for score, path in all_path_info:
         path_tuple = tuple(path)
-        if path_tuple not in best_score_per_path or score < best_score_per_path[path_tuple]:
+        if path_tuple not in best_score_per_path:
             best_score_per_path[path_tuple] = score
-    sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1])
+    sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
     selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:beam_width]]
     print(f"\nfinal metapaths are {selected_metapaths}\n")
 

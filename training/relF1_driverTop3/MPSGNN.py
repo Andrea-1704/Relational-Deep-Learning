@@ -103,6 +103,18 @@ def train2():
     hidden_channels = 128
     out_channels = 128
 
+    loader_dict = loader_dict_fn(
+        batch_size=1024,
+        num_neighbours=512,
+        data=data_official,
+        task=task,
+        train_table=train_table,
+        val_table=val_table,
+        test_table=test_table
+    )
+    lr=0.0001
+    wd=0
+
     metapaths, metapath_counts = greedy_metapath_search_with_bags_learned(
         col_stats_dict = col_stats_dict_official,
         data=data_official,
@@ -112,22 +124,20 @@ def train2():
         node_type='drivers',
         L_max=3,
         channels = hidden_channels,
-        beam_width = 5
+        beam_width = 5,
+        out_channels = out_channels,
+        hidden_channels = hidden_channels, 
+        loader_dict = loader_dict,
+        lr = lr,
+        wd = wd,
+        task = task,
+        loss_fn= loss_fn, 
+        epochs = 100, 
+        tune_metric = tune_metric 
     )
 
     # print(f"Metaoaths are {metapaths}")
     # print(f"Metapath counts is {metapath_counts}")
-
-
-    # loader_dict = loader_dict_fn(
-    #     batch_size=1024,
-    #     num_neighbours=512,
-    #     data=data_official,
-    #     task=task,
-    #     train_table=train_table,
-    #     val_table=val_table,
-    #     test_table=test_table
-    # )
 
     # model = MPSGNN(
     #     data=data_official,
@@ -142,8 +152,8 @@ def train2():
 
     # optimizer = torch.optim.Adam(
     #   model.parameters(),
-    #   lr=0.0001,
-    #   weight_decay=0
+    #   lr=lr,
+    #   weight_decay=wd
     # )
 
     # scheduler = CosineAnnealingLR(optimizer, T_max=25)
