@@ -62,7 +62,9 @@ from torch_geometric.data import HeteroData
 from collections import defaultdict
 
 def get_atomic_routes(edge_type_list):
-    
+    """
+    This is the Relbench official code.
+    """
     src_to_tuples = defaultdict(list)
     for src, rel, dst in edge_type_list:
         if rel.startswith('f2p'):
