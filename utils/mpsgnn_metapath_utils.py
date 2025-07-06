@@ -575,7 +575,7 @@ def greedy_metapath_search_with_bags_learned(
                 #EPOCHS:
                 test_table = task.get_table("test", mask_input_cols=False)
                 best_test_metrics = -math.inf 
-                for epoch in range(0, epochs):
+                for _ in range(0, epochs):
                     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
                     test_pred = test(model, loader_dict["test"], device=device, task=task)
                     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
