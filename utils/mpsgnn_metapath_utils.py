@@ -538,24 +538,14 @@ def greedy_metapath_search_with_bags_learned(
         print(f"current path now is equal to {current_paths}\n")
         #current_paths = [(DRIVERS, _, RESULTS)]
         #current_paths = [(RESULTS, _, RACES)]
-        
-    
-    # select best beam_width paths between all the explored ones
-    # all_path_info.sort(key=lambda x: x[0])  # score crescente
-    # selected_metapaths = [path for _, path in all_path_info[:beam_width]]
-    # print(f"\nfinal metapaths are {selected_metapaths}\n")
-    # print(f"\nfinal metapaths counts are {metapath_counts}\n")
     
     best_score_per_path = {}
     for score, path in all_path_info:
         path_tuple = tuple(path)
         if path_tuple not in best_score_per_path or score < best_score_per_path[path_tuple]:
             best_score_per_path[path_tuple] = score
-    #print(f"\n all path info {all_path_info}")        
-    #print(f"\n best_score {best_score_per_path}")
     sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1])
     selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:beam_width]]
     print(f"\nfinal metapaths are {selected_metapaths}\n")
-    #print(f"\nfinal metapaths counts are {metapath_counts}\n")
 
     return selected_metapaths, metapath_counts
