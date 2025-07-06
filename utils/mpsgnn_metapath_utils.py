@@ -864,8 +864,9 @@ def greedy_metapath_search_with_bags_learned_3(
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
             ][:max_rels]
+
             best_rel = None
-            best_score = -math.inf  #higher is better
+            best_score = -math.inf if higher_is_better else math.inf  
             best_alpha = None
             best_bags = None
             best_labels = None
