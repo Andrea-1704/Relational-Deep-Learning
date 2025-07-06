@@ -810,7 +810,7 @@ def greedy_metapath_search_with_bags_learned_3(
     lr : float = 0.0001,
     wd: float = 0,
     epochs: int = 100,
-    
+    max_rels: int = 10
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     
     """
@@ -867,7 +867,7 @@ def greedy_metapath_search_with_bags_learned_3(
             current_labels.append(old_y[i])
     assert len(current_bags) == len(current_labels)
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-    all_path_info = [] #memorize all the metapaths with scores, in order to select only the best beam_width at the end
+    all_path_info = [] 
     local_path = []
     
     current_paths = [[]] 
@@ -875,25 +875,16 @@ def greedy_metapath_search_with_bags_learned_3(
         print(f"level {level}")
         
         next_paths_info = []
-        #current_paths = []
-        #current_paths = [(DRIVERS, _, RESULTS)]
-        #current_paths = [(RESULTS, _, RACES)]
 
         for path in current_paths: 
-            #path = []
-            #path = (DRIVERS, _, RESULTS)
-            #path = (RESULTS, _, RACES)
             last_ntype = node_type if not path else path[2]
-            #DRIVERS#RESULTS #RACES
             print(f"current source node is {last_ntype}")
            
-            candidate_rels = [ #take all the rel that begins from last_ntype
+            candidate_rels = [ 
                 (src, rel, dst)
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
-            ]
-
-            #choose the best relation beginning from last_ntype:
+            ][:max_rels]
             best_rel = None
             best_score = -math.inf  #higher is better
             best_alpha = None
@@ -918,9 +909,9 @@ def greedy_metapath_search_with_bags_learned_3(
                     src_embeddings = node_embeddings_dict[src]
                 )
                 if len(bags) < 5:
-                    continue#this avoid to consider few bags to avoid overfitting
+                    continue
                 # score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
-                # print(f"relation {rel} allow us to obtain score {score}")
+                
                 
                 # if score < best_score:
                 #     best_rel = rel
@@ -946,14 +937,13 @@ def greedy_metapath_search_with_bags_learned_3(
                     final_out_channels=1,
                 ).to(device)
 
-                # optimizer = torch.optim.Adam(
-                #   model.parameters(),
-                #   lr=lr,
-                #   weight_decay=wd
-                # )
-                optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+                optimizer = torch.optim.Adam(
+                  model.parameters(),
+                  lr=lr,
+                  weight_decay=wd
+                )
+                #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
-                #EPOCHS:
                 test_table = task.get_table("test", mask_input_cols=False)
                 best_test_metrics = -math.inf 
                 for _ in range(0, epochs):
@@ -966,7 +956,6 @@ def greedy_metapath_search_with_bags_learned_3(
                 all_path_info.append((best_test_metrics, local_path2.copy()))
                 score = best_test_metrics
 
-                #now change the best, if is the cas:
                 if score > best_score: #higher is better
                     best_rel = rel
                     best_score = score
@@ -978,8 +967,6 @@ def greedy_metapath_search_with_bags_learned_3(
             if best_rel:
                 print(f"Best relation is {best_rel}")
                 local_path.append(best_rel)
-                #[(DRIVERS, _, RESULTS)]
-                #[(DRIVERS, _, RESULTS), (RESULTS, _, RACES)]
                 print(f"Now local path is {local_path}")
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
                 #WARNING: SCORE IS COMPUTED ONLY FOR LAST RELATION BUT WE ARE LINKING IT TO THE COMPLETE LOCAL PATH!!!
@@ -989,8 +976,6 @@ def greedy_metapath_search_with_bags_learned_3(
         
         current_paths = [best_rel] 
         print(f"current path now is equal to {current_paths}\n")
-        #current_paths = [(DRIVERS, _, RESULTS)]
-        #current_paths = [(RESULTS, _, RACES)]
     
     best_score_per_path = {}
     for score, path in all_path_info:
