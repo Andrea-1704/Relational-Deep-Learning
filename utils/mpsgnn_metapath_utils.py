@@ -523,9 +523,9 @@ def greedy_metapath_search_with_bags_learned(
                 next_paths_info.append((best_score, new_path, best_bags, best_labels, best_alpha))
                 metapath_counts[tuple(new_path)] += 1
                 all_path_info.append((best_score, new_path))
-                #path = new_path
-                current_paths.append(path)
-                print(f"Now the path is equal to {path}")
+                print(f"Now the path is equal to {new_path}")
+        current_paths.append(new_path)
+        print(f"current path now is equal to {current_paths}")
     
     # select best beam_width paths between all the explored ones
     all_path_info.sort(key=lambda x: x[0])  # score crescente
