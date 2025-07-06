@@ -133,7 +133,8 @@ def train2():
         task = task,
         loss_fn= loss_fn, 
         epochs = 100, 
-        tune_metric = tune_metric 
+        tune_metric = tune_metric,
+        higher_is_better= higher_is_better
     )
 
     print(f"\nfinal metapaths are {metapaths}\n")

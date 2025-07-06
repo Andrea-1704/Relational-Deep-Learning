@@ -404,6 +404,7 @@ def greedy_metapath_search_with_bags_learned(
     task, 
     loss_fn,
     tune_metric : str,
+    higher_is_better: str,
     train_mask: torch.Tensor,
     node_type: str, 
     col_stats_dict: Dict[str, Dict[str, Dict]], 
@@ -583,7 +584,9 @@ def greedy_metapath_search_with_bags_learned(
                     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
                     test_pred = test(model, loader_dict["test"], device=device, task=task)
                     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-                    if test_metrics[tune_metric] > best_test_metrics:
+                    if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
+                        best_test_metrics = test_metrics[tune_metric]
+                    if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
                         best_test_metrics = test_metrics[tune_metric]
                 print(f"For the partial metapath {local_path.copy()} we obtain F1 test loss equal to {best_test_metrics}")
                 all_path_info.append((best_test_metrics, local_path.copy()))
@@ -611,11 +614,12 @@ def greedy_metapath_search_with_bags_learned(
 def greedy_metapath_search_with_bags_learned_2(
     data: HeteroData, #the result of make_pkey_fkey_graph
     db,   #Object that was passed to make_pkey_fkey_graph to build data
-    node_id: str, #ex driverId
+    node_id: str, #ex. driverId
     loader_dict,
     task, 
     loss_fn,
     tune_metric : str,
+    higher_is_better: str,
     train_mask: torch.Tensor,
     node_type: str, 
     col_stats_dict: Dict[str, Dict[str, Dict]], 
@@ -741,11 +745,6 @@ def greedy_metapath_search_with_bags_learned_2(
                     final_out_channels=1,
                 ).to(device)
 
-                # optimizer = torch.optim.Adam(
-                #   model.parameters(),
-                #   lr=lr,
-                #   weight_decay=wd
-                # )
                 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
                 #EPOCHS:
@@ -755,7 +754,9 @@ def greedy_metapath_search_with_bags_learned_2(
                     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
                     test_pred = test(model, loader_dict["test"], device=device, task=task)
                     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-                    if test_metrics[tune_metric] > best_test_metrics:
+                    if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
+                        best_test_metrics = test_metrics[tune_metric]
+                    if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
                         best_test_metrics = test_metrics[tune_metric]
                 print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
                 all_path_info.append((best_test_metrics, local_path2.copy()))
@@ -800,6 +801,7 @@ def greedy_metapath_search_with_bags_learned_3(
     task, 
     loss_fn,
     tune_metric : str,
+    higher_is_better: str,
     train_mask: torch.Tensor,
     node_type: str, 
     col_stats_dict: Dict[str, Dict[str, Dict]], 
@@ -927,7 +929,9 @@ def greedy_metapath_search_with_bags_learned_3(
                     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
                     test_pred = test(model, loader_dict["test"], device=device, task=task)
                     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-                    if test_metrics[tune_metric] > best_test_metrics:
+                    if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
+                        best_test_metrics = test_metrics[tune_metric]
+                    if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
                         best_test_metrics = test_metrics[tune_metric]
                 print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
                 all_path_info.append((best_test_metrics, local_path2.copy()))
