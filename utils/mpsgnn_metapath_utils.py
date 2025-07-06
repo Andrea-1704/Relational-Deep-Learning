@@ -694,6 +694,8 @@ def greedy_metapath_search_with_bags_learned_2(
                 src, _, dst = rel
                 if dst in [step[0] for step in path] or dst == node_type:  
                   continue
+                if rel == ('races', 'rev_f2p_raceId', 'standings'): # for some reasons it provokes side assertions
+                  continue
                 node_embeddings = node_embeddings_dict.get(dst) 
                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) 
                 bags, labels, alpha_next = construct_bags_with_alpha(
@@ -851,6 +853,8 @@ def greedy_metapath_search_with_bags_learned_3(
                 print(f"considering relation {rel}")
                 src, _, dst = rel
                 if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met, avoid to return to the source node
+                  continue
+                if rel == ('races', 'rev_f2p_raceId', 'standings'): # for some reasons it provokes side assertions
                   continue
 
                 node_embeddings = node_embeddings_dict.get(dst) #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
