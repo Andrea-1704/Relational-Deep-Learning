@@ -519,6 +519,9 @@ def greedy_metapath_search_with_bags_learned(
                     best_bags = bags
                     best_labels = labels
                 local_path2 = local_path.copy()
+
+                #even if it is not the best one we memorize it because maybe will
+                #be selected from beam search:
                 local_path2.append(rel)
                 all_path_info.append((score, local_path2.copy()))
             
