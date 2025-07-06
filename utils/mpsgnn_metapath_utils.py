@@ -747,19 +747,13 @@ def greedy_metapath_search_with_bags_learned_2(
             
             #set best_rel:
             if best_rel:
-                print(f"Best relation is {best_rel}")
                 local_path.append(best_rel)
-                print(f"Now local path is {local_path}")
+                print(f"Best relation is {best_rel} and now local path is {local_path}")
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
-                #WARNING: SCORE IS COMPUTED ONLY FOR LAST RELATION BUT WE ARE LINKING IT TO THE COMPLETE LOCAL PATH!!!
                 metapath_counts[tuple(local_path)] += 1
-                
-
         
         current_paths = [best_rel] 
-        print(f"current path now is equal to {current_paths}\n")
-        #current_paths = [(DRIVERS, _, RESULTS)]
-        #current_paths = [(RESULTS, _, RACES)]
+        #print(f"current path now is equal to {current_paths}\n")
     
     best_score_per_path = {}
     for score, path in all_path_info:
@@ -920,7 +914,7 @@ def greedy_metapath_search_with_bags_learned_3(
 
         
         current_paths = [best_rel] 
-        print(f"current path now is equal to {current_paths}\n")
+        #print(f"current path now is equal to {current_paths}\n")
     
     best_score_per_path = {}
     for score, path in all_path_info:
