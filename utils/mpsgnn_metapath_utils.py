@@ -601,3 +601,210 @@ def greedy_metapath_search_with_bags_learned(
     #print(f"\nfinal metapaths are {selected_metapaths}\n")
 
     return selected_metapaths, metapath_counts
+
+
+#SECOND IDEA: DIFFERENT FROM THE ONE OF THE AUTHORS
+#WHY DON'T WE TRAIN THE MODEL FOL ALL POSSIBLE COMBINATION, NOT
+#ONLY BEST REL AND SELECT THE BEST ONES IN ORDER TO HAVE DIVERSE RELATIONS?
+def greedy_metapath_search_with_bags_learned_2(
+    data: HeteroData, #the result of make_pkey_fkey_graph
+    db,   #Object that was passed to make_pkey_fkey_graph to build data
+    node_id: str, #ex driverId
+    loader_dict,
+    task, 
+    loss_fn,
+    tune_metric : str,
+    train_mask: torch.Tensor,
+    node_type: str, 
+    col_stats_dict: Dict[str, Dict[str, Dict]], 
+    L_max: int = 3,
+    channels : int = 64,
+    number_of_metapaths: int = 5,  #number of metapaths to look for
+    out_channels: int = 128,
+    hidden_channels: int = 128,
+    lr : float = 0.0001,
+    wd: float = 0,
+    epochs: int = 100,
+    
+) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+    
+    """
+    This is the main component of this set of functions and classes, is the 
+    complete algorithm used to implement the meta paths.
+
+    This function searches in a greedy fashion the best meta-paths 
+    starting from a node(the TARGET one, for example driver) till "L_max" 
+    depth.
+    At each step selects the best relation to add to the current path 
+    based on a surrogate task score (MAE).
+
+    In the current version of this algorithm we are deliberately avoiding 
+    to consider the second stopping criteria indicated in section 4.4 of the 
+    reference, in order to avoid to consider a strict threshold for the 
+    allowed minimal improvement.
+    We also added a statistics count that takes into account the counts of how many 
+    times each metapath has been use in the path (for example assuming to have the 
+    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
+    set of relations).  
+
+    The score that we consider for each of the metapath is not simply the one
+    of the compute score, but is the result of a training of the mps gnn!
+    """
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    with torch.no_grad():
+        encoder = HeteroEncoder(
+            channels=channels,
+            node_to_col_names_dict={
+                ntype: data[ntype].tf.col_names_dict
+                for ntype in data.node_types
+            },
+            node_to_col_stats=col_stats_dict,
+        ).to(device)
+        for module in encoder.modules():
+            for name, buf in module._buffers.items():
+                if buf is not None:
+                    module._buffers[name] = buf.to(device)
+        
+        tf_dict = {
+            ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
+        }
+        node_embeddings_dict = encoder(tf_dict)
+
+    
+    metapath_counts = defaultdict(int) 
+    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
+    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
+    old_y = data[node_type].y.int().tolist()
+    current_labels = []
+    for i in range(0, len(old_y)):
+        if train_mask[i]:
+            current_labels.append(old_y[i])
+    assert len(current_bags) == len(current_labels)
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+    all_path_info = [] #memorize all the metapaths with scores, in order to select only the best beam_width at the end
+    local_path = []
+    
+    current_paths = [[]] 
+    for level in range(L_max):
+        print(f"level {level}")
+        
+        next_paths_info = []
+        #current_paths = []
+        #current_paths = [(DRIVERS, _, RESULTS)]
+        #current_paths = [(RESULTS, _, RACES)]
+
+        for path in current_paths: 
+            #path = []
+            #path = (DRIVERS, _, RESULTS)
+            #path = (RESULTS, _, RACES)
+            last_ntype = node_type if not path else path[2]
+            #DRIVERS#RESULTS #RACES
+            print(f"current source node is {last_ntype}")
+           
+            candidate_rels = [ #take all the rel that begins from last_ntype
+                (src, rel, dst)
+                for (src, rel, dst) in data.edge_index_dict.keys()
+                if src == last_ntype
+            ]
+
+            #choose the best relation beginning from last_ntype:
+            best_rel = None
+            best_score = float('inf') #score = error, so less is better!
+            best_alpha = None
+            best_bags = None
+            best_labels = None
+
+            for rel in candidate_rels: 
+                print(f"considering relation {rel}")
+                src, _, dst = rel
+                if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met, avoid to return to the source node
+                  continue
+
+                node_embeddings = node_embeddings_dict.get(dst) #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
+                bags, labels, alpha_next = construct_bags_with_alpha(
+                    data=data,
+                    previous_bags=current_bags,
+                    previous_labels=current_labels,
+                    alpha_prev=alpha, #current alfa values for v nodes
+                    rel=rel,
+                    theta=theta,
+                    src_embeddings = node_embeddings_dict[src]
+                )
+                if len(bags) < 5:
+                    continue#this avoid to consider few bags to avoid overfitting
+                score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
+                print(f"relation {rel} allow us to obtain score {score}")
+                
+                if score < best_score:
+                    best_rel = rel
+                    best_score = score
+                    best_alpha = alpha_next
+                    best_bags = bags
+                    best_labels = labels
+                
+                local_path2 = local_path.copy()
+                # #even if it is not the best one we memorize it because maybe will
+                # #be selected from beam search:
+
+                local_path2.append(rel)
+                loc = [local_path2.copy()]
+                model = MPSGNN(
+                    data=data,
+                    col_stats_dict=col_stats_dict,
+                    metadata=data.metadata(),
+                    metapath_counts = metapath_counts,
+                    metapaths=loc,
+                    hidden_channels=hidden_channels,
+                    out_channels=out_channels,
+                    final_out_channels=1,
+                ).to(device)
+
+                # optimizer = torch.optim.Adam(
+                #   model.parameters(),
+                #   lr=lr,
+                #   weight_decay=wd
+                # )
+                optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+                #EPOCHS:
+                test_table = task.get_table("test", mask_input_cols=False)
+                best_test_metrics = -math.inf 
+                for _ in range(0, epochs):
+                    train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+                    test_pred = test(model, loader_dict["test"], device=device, task=task)
+                    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+                    if test_metrics[tune_metric] > best_test_metrics:
+                        best_test_metrics = test_metrics[tune_metric]
+                print(f"For the partial metapath {local_path.copy()} we obtain F1 test loss equal to {best_test_metrics}")
+                all_path_info.append((best_test_metrics, local_path2.copy()))
+            
+            #set best_rel:
+            if best_rel:
+                print(f"Best relation is {best_rel}")
+                local_path.append(best_rel)
+                #[(DRIVERS, _, RESULTS)]
+                #[(DRIVERS, _, RESULTS), (RESULTS, _, RACES)]
+                print(f"Now local path is {local_path}")
+                next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
+                #WARNING: SCORE IS COMPUTED ONLY FOR LAST RELATION BUT WE ARE LINKING IT TO THE COMPLETE LOCAL PATH!!!
+                metapath_counts[tuple(local_path)] += 1
+                
+
+        
+        current_paths = [best_rel] 
+        print(f"current path now is equal to {current_paths}\n")
+        #current_paths = [(DRIVERS, _, RESULTS)]
+        #current_paths = [(RESULTS, _, RACES)]
+    
+    best_score_per_path = {}
+    for score, path in all_path_info:
+        path_tuple = tuple(path)
+        if path_tuple not in best_score_per_path:
+            best_score_per_path[path_tuple] = score
+    sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
+    selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
+    #print(f"\nfinal metapaths are {selected_metapaths}\n")
+
+    return selected_metapaths, metapath_counts
