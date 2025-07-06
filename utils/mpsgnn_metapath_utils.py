@@ -409,7 +409,7 @@ def greedy_metapath_search_with_bags_learned(
     col_stats_dict: Dict[str, Dict[str, Dict]], 
     L_max: int = 3,
     channels : int = 64,
-    beam_width: int = 5,  #number of metapaths to look for
+    number_of_metapaths: int = 5,  #number of metapaths to look for
     out_channels: int = 128,
     hidden_channels: int = 128,
     lr : float = 0.0001,
@@ -567,11 +567,13 @@ def greedy_metapath_search_with_bags_learned(
                     final_out_channels=1,
                 ).to(device)
 
-                optimizer = torch.optim.Adam(
-                  model.parameters(),
-                  lr=lr,
-                  weight_decay=wd
-                )
+                # optimizer = torch.optim.Adam(
+                #   model.parameters(),
+                #   lr=lr,
+                #   weight_decay=wd
+                # )
+                optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
                 #EPOCHS:
                 test_table = task.get_table("test", mask_input_cols=False)
                 best_test_metrics = -math.inf 
@@ -595,7 +597,7 @@ def greedy_metapath_search_with_bags_learned(
         if path_tuple not in best_score_per_path:
             best_score_per_path[path_tuple] = score
     sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
-    selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:beam_width]]
-    print(f"\nfinal metapaths are {selected_metapaths}\n")
+    selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
+    #print(f"\nfinal metapaths are {selected_metapaths}\n")
 
     return selected_metapaths, metapath_counts
