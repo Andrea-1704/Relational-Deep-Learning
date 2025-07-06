@@ -138,6 +138,8 @@ def train2():
 
     print(f"\nfinal metapaths are {metapaths}\n")
 
+    print(f"\n metapaths counts are {metapath_counts}\n")
+
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
