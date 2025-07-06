@@ -377,178 +377,188 @@ def beam_metapath_search_with_bags_learned(
     print(f"final metapaths are: {metapaths}")
     print(f"metapath counts are: {metapath_counts}")
     return metapaths, metapath_counts
+"""
+Beam search is a very strong and powerfull version 
+and is much more complex than the original one 
+used in the paper, which is more like a greedy 
+search approch with less coverage.
+
+Despite this we may want to introduce a second 
+function with less coverage but more efficient 
+for high Lmax:
+"""
         
 
 
 
 #Previous version, return only a metaptah, with partial ones
-# def greedy_metapath_search_with_bags_learned(
-#     data,
-#     y: torch.Tensor,
-#     train_mask: torch.Tensor,
-#     node_type: str, #target node, "driver" for example
-#     col_stats_dict: Dict[str, Dict[str, Dict]],  # per HeteroEncoder
-#     L_max: int = 3,
-#     max_rels: int = 10,
-#     channels : int = 64,
-# ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
-#     """
-#     This is the main component of this set of functions and classes, is the 
-#     complete algorithm used to implement the meta paths.
+def greedy_metapath_search_with_bags_learned(
+    data,
+    y: torch.Tensor,
+    train_mask: torch.Tensor,
+    node_type: str, #target node, "driver" for example
+    col_stats_dict: Dict[str, Dict[str, Dict]],  # per HeteroEncoder
+    L_max: int = 3,
+    max_rels: int = 10,
+    channels : int = 64,
+) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+    """
+    This is the main component of this set of functions and classes, is the 
+    complete algorithm used to implement the meta paths.
 
-#     This function searches in a greedy fashion the best meta-paths 
-#     starting from a node(the TARGET one, for example driver) till "L_max" 
-#     depth.
-#     At each step selects the best relation to add to the current path 
-#     based on a surrogate task score (MAE).
+    This function searches in a greedy fashion the best meta-paths 
+    starting from a node(the TARGET one, for example driver) till "L_max" 
+    depth.
+    At each step selects the best relation to add to the current path 
+    based on a surrogate task score (MAE).
 
-#     In the current version of this algorithm we are deliberately avoiding 
-#     to consider the second stopping criteria indicated in section 4.4 of the 
-#     reference, in order to avoid to consider a strict threshold for the 
-#     allowed minimal improvement.
-#     We also added a statistics count that takes into account the counts of how many 
-#     times each metapath has been use in the path (for example assuming to have the 
-#     metapath A->B->C, we count how many A nodes are linked to C nodes throught this
-#     set of relations).  
-#     """
-#     device = y.device
-#     metapaths = [] #returned object
-#     metapath_counts = defaultdict(int)
-#     current_paths = [[]] #current partial paths that we are going to expand 
+    In the current version of this algorithm we are deliberately avoiding 
+    to consider the second stopping criteria indicated in section 4.4 of the 
+    reference, in order to avoid to consider a strict threshold for the 
+    allowed minimal improvement.
+    We also added a statistics count that takes into account the counts of how many 
+    times each metapath has been use in the path (for example assuming to have the 
+    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
+    set of relations).  
+    """
+    device = y.device
+    metapaths = [] #returned object
+    metapath_counts = defaultdict(int)
+    current_paths = [[]] #current partial paths that we are going to expand 
 
-#     current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
-#     #at the first step, the bags are simply a list of list values, where each list contained inside the 
-#     #list is the id the driver index node, if that driver is in the train_mask mask.
-#     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
-#     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+    current_bags = [[int(i)] for i in torch.where(train_mask)[0]] 
+    #at the first step, the bags are simply a list of list values, where each list contained inside the 
+    #list is the id the driver index node, if that driver is in the train_mask mask.
+    current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
 
-#     for level in range(L_max): #cycle in the level of metapath
-#         print(f"level {level}")
-#         new_paths = []
-#         new_alpha_all = [] 
-#         new_bags_all = []
-#         new_labels_all = []
+    for level in range(L_max): #cycle in the level of metapath
+        print(f"level {level}")
+        new_paths = []
+        new_alpha_all = [] 
+        new_bags_all = []
+        new_labels_all = []
 
-#         for path in current_paths:
-#             last_ntype = node_type if not path else path[-1][2]
-#             print(f"current source node is {last_ntype}")
-#             #if the current next node is empty, start from the target node ("driver")
+        for path in current_paths:
+            last_ntype = node_type if not path else path[-1][2]
+            print(f"current source node is {last_ntype}")
+            #if the current next node is empty, start from the target node ("driver")
 
-#             with torch.no_grad():
-#               encoder = HeteroEncoder(
-#                   channels=channels,
-#                   node_to_col_names_dict={
-#                       ntype: data[ntype].tf.col_names_dict
-#                       for ntype in data.node_types
-#                   },
-#                   node_to_col_stats=col_stats_dict,
-#               ).to(device)
-#               for module in encoder.modules():
-#                   for name, buf in module._buffers.items():
-#                       if buf is not None:
-#                           module._buffers[name] = buf.to(device)
+            with torch.no_grad():
+              encoder = HeteroEncoder(
+                  channels=channels,
+                  node_to_col_names_dict={
+                      ntype: data[ntype].tf.col_names_dict
+                      for ntype in data.node_types
+                  },
+                  node_to_col_stats=col_stats_dict,
+              ).to(device)
+              for module in encoder.modules():
+                  for name, buf in module._buffers.items():
+                      if buf is not None:
+                          module._buffers[name] = buf.to(device)
               
-#               tf_dict = {
-#                   ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
-#               }#get the features of nodes
-#               #tf_dict is a dictionary:
-#               # [node type]:Tensor Frame object containing the columns of such node
+              tf_dict = {
+                  ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
+              }#get the features of nodes
+              #tf_dict is a dictionary:
+              # [node type]:Tensor Frame object containing the columns of such node
               
               
-#               node_embeddings_dict = encoder(tf_dict)
-#               #HeteroEncoder takes as input the tf_dict object mentioned before and return 
-#               #a dictionary in which for each type of node (key of the dictionary) 
-#               #contains the embeddings for all the nodes of that type: 
-#               # [node_type]: Tensor[node_type, hidden_dim]
-#             #   print("\n Capiamoci un po' di più su questa linea di codice: node_embeddings_dict = encoder(tf_dict)\n")
-#             #   for node_type in node_embeddings_dict:
-#             #       print(f"Il node type {node_type} ha questi risultati: {node_embeddings_dict[node_type]}\n")
+              node_embeddings_dict = encoder(tf_dict)
+              #HeteroEncoder takes as input the tf_dict object mentioned before and return 
+              #a dictionary in which for each type of node (key of the dictionary) 
+              #contains the embeddings for all the nodes of that type: 
+              # [node_type]: Tensor[node_type, hidden_dim]
+            #   print("\n Capiamoci un po' di più su questa linea di codice: node_embeddings_dict = encoder(tf_dict)\n")
+            #   for node_type in node_embeddings_dict:
+            #       print(f"Il node type {node_type} ha questi risultati: {node_embeddings_dict[node_type]}\n")
 
-#             candidate_rels = [
-#                 (src, rel, dst)
-#                 for (src, rel, dst) in data.edge_index_dict.keys()
-#                 if src == last_ntype
-#             ][:max_rels] #get "max_rels" relations that start from current
-#             #node ("last_ntype").
+            candidate_rels = [
+                (src, rel, dst)
+                for (src, rel, dst) in data.edge_index_dict.keys()
+                if src == last_ntype
+            ][:max_rels] #get "max_rels" relations that start from current
+            #node ("last_ntype").
 
-#             best_rel = None
-#             best_score = float("inf")
-#             best_alpha = None
-#             best_bags = None
-#             best_labels = None
+            best_rel = None
+            best_score = float("inf")
+            best_alpha = None
+            best_bags = None
+            best_labels = None
 
-#             for rel in candidate_rels: 
-#                 print(f"considering relation {rel}")
-#                 src, _, dst = rel
-#                 if dst in [step[0] for step in path]:  # avoid loops in met.
-#                   continue
-#                 if dst == node_type:
-#                   continue  # avoid to return to the source node
+            for rel in candidate_rels: 
+                print(f"considering relation {rel}")
+                src, _, dst = rel
+                if dst in [step[0] for step in path]:  # avoid loops in met.
+                  continue
+                if dst == node_type:
+                  continue  # avoid to return to the source node
 
-#                 node_embeddings = node_embeddings_dict.get(dst) 
-#                 #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
+                node_embeddings = node_embeddings_dict.get(dst) 
+                #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
 
-#                 if node_embeddings is None:
-#                     print(f"error: embedding of node {dst} not found")
-#                     continue
+                if node_embeddings is None:
+                    print(f"error: embedding of node {dst} not found")
+                    continue
 
-#                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
 
-#                 bags, labels, alpha_next = construct_bags_with_alpha(
-#                     data=data,
-#                     previous_bags=current_bags,
-#                     previous_labels=current_labels,
-#                     alpha_prev=alpha, #current alfa values for v nodes
-#                     rel=rel,
-#                     theta=theta,
-#                     src_embeddings = node_embeddings_dict[src]
-#                 )
+                bags, labels, alpha_next = construct_bags_with_alpha(
+                    data=data,
+                    previous_bags=current_bags,
+                    previous_labels=current_labels,
+                    alpha_prev=alpha, #current alfa values for v nodes
+                    rel=rel,
+                    theta=theta,
+                    src_embeddings = node_embeddings_dict[src]
+                )
 
-#                 if len(bags) < 5:
-#                     continue#this avoid to consider few bags to avoid overfitting
+                if len(bags) < 5:
+                    continue#this avoid to consider few bags to avoid overfitting
 
-#                 score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the 
-#                 #score value to current split, similar to DECISION TREES
-#                 print(f"relation {rel} allow us to obtain score {score}")
+                score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the 
+                #score value to current split, similar to DECISION TREES
+                print(f"relation {rel} allow us to obtain score {score}")
 
-#                 if score < best_score:
-#                     best_score = score
-#                     best_rel = rel
-#                     best_alpha = alpha_next
-#                     #best_nodes = list(set([u for bag in bags for u in bag]))  --> severe error!!!
-#                     best_bags = bags
-#                     best_labels = labels
+                if score < best_score:
+                    best_score = score
+                    best_rel = rel
+                    best_alpha = alpha_next
+                    #best_nodes = list(set([u for bag in bags for u in bag]))  --> severe error!!!
+                    best_bags = bags
+                    best_labels = labels
 
 
-#             if best_rel:
-#                 new_paths.append(path + [best_rel]) #add the best_rel to path
-#                 metapath_counts[tuple(path+[best_rel])] += 1
-#                 print(f"The best relation found is {best_rel}")
-#                 new_alpha_all.append(best_alpha) 
-#                 #NB: the best_alpha are the alpha scores returned from the best current relation 
-#                 #"rel" that was found. It is a dictionary that has as keys all the values 
-#                 #of the u nodes and as values the alpha values of those nodes.
-#                 #new_alpha_all is then a list of these dictionaries, where each dictionary
-#                 #contains one key for each of the u nodes, and this is done for each relation
-#                 #in the metapath. In practice, we have a list of elements of the same length as
-#                 #the number of relations in the metapath, and for each of them we have a 
-#                 #dictionary containing for each source node "u" the alpha value.
-#                 #new_nodes_all.append(best_nodes) 
+            if best_rel:
+                new_paths.append(path + [best_rel]) #add the best_rel to path
+                metapath_counts[tuple(path+[best_rel])] += 1
+                print(f"The best relation found is {best_rel}")
+                new_alpha_all.append(best_alpha) 
+                #NB: the best_alpha are the alpha scores returned from the best current relation 
+                #"rel" that was found. It is a dictionary that has as keys all the values 
+                #of the u nodes and as values the alpha values of those nodes.
+                #new_alpha_all is then a list of these dictionaries, where each dictionary
+                #contains one key for each of the u nodes, and this is done for each relation
+                #in the metapath. In practice, we have a list of elements of the same length as
+                #the number of relations in the metapath, and for each of them we have a 
+                #dictionary containing for each source node "u" the alpha value.
+                #new_nodes_all.append(best_nodes) 
 
-#                 new_bags_all.extend(best_bags)
-#                 new_labels_all.extend(best_labels)
-#                 #plesase note that these list are inizialized for aeche level indipendently
+                new_bags_all.extend(best_bags)
+                new_labels_all.extend(best_labels)
+                #plesase note that these list are inizialized for aeche level indipendently
 
                  
 
-#         current_paths = new_paths
-#         alpha = {k: v for d in new_alpha_all for k, v in d.items()} #update the alfa values as
-#         #the last values
-#         # current_nodes = list(set([u for l in new_nodes_all for u in l])) #update the "u" nodes
-#         # metapaths.extend(current_paths)
-#         current_bags = new_bags_all
-#         current_labels = new_labels_all
-#         metapaths.extend(current_paths)
-#         print(f"final metapaths are {metapaths}")
+        current_paths = new_paths
+        alpha = {k: v for d in new_alpha_all for k, v in d.items()} #update the alfa values as
+        #the last values
+        # current_nodes = list(set([u for l in new_nodes_all for u in l])) #update the "u" nodes
+        # metapaths.extend(current_paths)
+        current_bags = new_bags_all
+        current_labels = new_labels_all
+        metapaths.extend(current_paths)
+        print(f"final metapaths are {metapaths}")
 
-#     return metapaths, metapath_counts
+    return metapaths, metapath_counts
