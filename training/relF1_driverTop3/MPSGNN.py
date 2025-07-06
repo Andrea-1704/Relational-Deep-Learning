@@ -110,13 +110,13 @@ def train2():
         node_id='driverId',
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=4,
+        L_max=3,
         channels = hidden_channels,
-        max_rels=5
+        beam_width = 5
     )
 
-    print(f"Metaoaths are {metapaths}")
-    print(f"Metapath counts is {metapath_counts}")
+    # print(f"Metaoaths are {metapaths}")
+    # print(f"Metapath counts is {metapath_counts}")
 
 
     # loader_dict = loader_dict_fn(

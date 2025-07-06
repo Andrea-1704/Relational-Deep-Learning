@@ -402,7 +402,6 @@ def greedy_metapath_search_with_bags_learned(
     node_type: str, 
     col_stats_dict: Dict[str, Dict[str, Dict]], 
     L_max: int = 3,
-    max_rels: int = 10,
     channels : int = 64,
     beam_width: int = 5,  #number of metapaths to look for
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
@@ -456,8 +455,6 @@ def greedy_metapath_search_with_bags_learned(
     for i in range(0, len(old_y)):
         if train_mask[i]:
             current_labels.append(old_y[i])
-    #at the first step, the bags are simply a list of list values, where each list contained inside the 
-    #list is the id the driver index node, if that driver is in the train_mask mask.
     assert len(current_bags) == len(current_labels)
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
     all_path_info = [] #memorize all the metapaths with scores, in order to select only the best beam_width at the end
@@ -468,12 +465,16 @@ def greedy_metapath_search_with_bags_learned(
         print(f"level {level}")
         
         next_paths_info = []
+        #current_paths = []
         #current_paths = [(DRIVERS, _, RESULTS)]
         #current_paths = [(RESULTS, _, RACES)]
 
-        for path in current_paths: #path = [DRIVERS, _, RESULTS]
+        for path in current_paths: 
+            #path = []
+            #path = (DRIVERS, _, RESULTS)
             #path = (RESULTS, _, RACES)
-            last_ntype = node_type if not path else path[2]#RESULTS #RACES
+            last_ntype = node_type if not path else path[2]
+            #DRIVERS#RESULTS #RACES
             print(f"current source node is {last_ntype}")
            
             candidate_rels = [ #take all the rel that begins from last_ntype
@@ -496,9 +497,7 @@ def greedy_metapath_search_with_bags_learned(
                   continue
 
                 node_embeddings = node_embeddings_dict.get(dst) #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
-
                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
-
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
                     previous_bags=current_bags,
@@ -508,12 +507,9 @@ def greedy_metapath_search_with_bags_learned(
                     theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
-
                 if len(bags) < 5:
                     continue#this avoid to consider few bags to avoid overfitting
-
                 score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
-                
                 print(f"relation {rel} allow us to obtain score {score}")
                 
                 if score < best_score:
@@ -522,28 +518,44 @@ def greedy_metapath_search_with_bags_learned(
                     best_alpha = alpha_next
                     best_bags = bags
                     best_labels = labels
+                local_path2 = local_path.copy()
+                local_path2.append(rel)
+                all_path_info.append((score, local_path2.copy()))
             
             #set best_rel:
             if best_rel:
-                local_path.append(best_rel)#[[(DRIVERS, _, RESULTS)], (RESULTS, _, RACES), (RACES, _, CONSTRUCTORS)]
                 print(f"Best relation is {best_rel}")
+                local_path.append(best_rel)
+                #[(DRIVERS, _, RESULTS)]
+                #[(DRIVERS, _, RESULTS), (RESULTS, _, RACES)]
                 print(f"Now local path is {local_path}")
-                #new_path = path + [best_rel] #NB: '+' IN PY IS CONCATENATION:
-                #[] + [(DRIVERS, _, RESULTS)] = [(DRIVERS, _, RESULTS)]
-                #[(DRIVERS, _, RESULTS)] + [(RESULTS, _, RACES)] = [(DRIVERS, _, RESULTS), (RESULTS, _, RACES)]
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
+                #WARNING: SCORE IS COMPUTED ONLY FOR LAST RELATION BUT WE ARE LINKING IT TO THE COMPLETE LOCAL PATH!!!
                 metapath_counts[tuple(local_path)] += 1
-                all_path_info.append((best_score, local_path))
+                all_path_info.append((best_score, local_path.copy()))
         
-        #current_paths = [[]]
         current_paths = [best_rel] 
+        print(f"current path now is equal to {current_paths}\n")
         #current_paths = [(DRIVERS, _, RESULTS)]
         #current_paths = [(RESULTS, _, RACES)]
-        print(f"current path now is equal to {current_paths}")
+        
     
     # select best beam_width paths between all the explored ones
-    all_path_info.sort(key=lambda x: x[0])  # score crescente
-    selected_metapaths = [path for _, path in all_path_info[:beam_width]]
-    print(f"final metapaths are {selected_metapaths}")
-    print(f"final metapaths counts are {metapath_counts}")
+    # all_path_info.sort(key=lambda x: x[0])  # score crescente
+    # selected_metapaths = [path for _, path in all_path_info[:beam_width]]
+    # print(f"\nfinal metapaths are {selected_metapaths}\n")
+    # print(f"\nfinal metapaths counts are {metapath_counts}\n")
+    
+    best_score_per_path = {}
+    for score, path in all_path_info:
+        path_tuple = tuple(path)
+        if path_tuple not in best_score_per_path or score < best_score_per_path[path_tuple]:
+            best_score_per_path[path_tuple] = score
+    #print(f"\n all path info {all_path_info}")        
+    #print(f"\n best_score {best_score_per_path}")
+    sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1])
+    selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:beam_width]]
+    print(f"\nfinal metapaths are {selected_metapaths}\n")
+    #print(f"\nfinal metapaths counts are {metapath_counts}\n")
+
     return selected_metapaths, metapath_counts
