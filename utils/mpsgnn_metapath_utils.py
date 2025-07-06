@@ -767,12 +767,12 @@ def greedy_metapath_search_with_bags_learned_2(
     return selected_metapaths, metapath_counts
 
 
-#Third version: (NOT WORKING YET)
-#Ignore surrogate task and update local path considering f1 score after training:
+#Third version: 
+#Ignore surrogate task and update local path considering f1 score after training
 def greedy_metapath_search_with_bags_learned_3(
     data: HeteroData, #the result of make_pkey_fkey_graph
     db,   #Object that was passed to make_pkey_fkey_graph to build data
-    node_id: str, #ex driverId
+    node_id: str, #ex. driverId
     loader_dict,
     task, 
     loss_fn,
