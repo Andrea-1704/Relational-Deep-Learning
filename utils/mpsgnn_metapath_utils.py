@@ -790,7 +790,7 @@ def greedy_metapath_search_with_bags_learned_2(
     return selected_metapaths, metapath_counts
 
 
-#Third version:
+#Third version: (NOT WORKING YET)
 #Ignore surrogate task and update local path considering f1 score after training:
 def greedy_metapath_search_with_bags_learned_3(
     data: HeteroData, #the result of make_pkey_fkey_graph
@@ -813,30 +813,6 @@ def greedy_metapath_search_with_bags_learned_3(
     epochs: int = 100,
     max_rels: int = 10
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
-    
-    """
-    This is the main component of this set of functions and classes, is the 
-    complete algorithm used to implement the meta paths.
-
-    This function searches in a greedy fashion the best meta-paths 
-    starting from a node(the TARGET one, for example driver) till "L_max" 
-    depth.
-    At each step selects the best relation to add to the current path 
-    based on a surrogate task score (MAE).
-
-    In the current version of this algorithm we are deliberately avoiding 
-    to consider the second stopping criteria indicated in section 4.4 of the 
-    reference, in order to avoid to consider a strict threshold for the 
-    allowed minimal improvement.
-    We also added a statistics count that takes into account the counts of how many 
-    times each metapath has been use in the path (for example assuming to have the 
-    metapath A->B->C, we count how many A nodes are linked to C nodes throught this
-    set of relations).  
-
-    The score that we consider for each of the metapath is not simply the one
-    of the compute score, but is the result of a training of the mps gnn!
-    """
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with torch.no_grad():
         encoder = HeteroEncoder(
