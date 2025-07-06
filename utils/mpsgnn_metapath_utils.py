@@ -539,6 +539,8 @@ def greedy_metapath_search_with_bags_learned(
                 # #be selected from beam search:
                 # local_path2.append(rel)
                 # all_path_info.append((score, local_path2.copy()))
+                #now is useless since we select through the F1 of the model and we
+                #are not going to test it here.
             
             #set best_rel:
             if best_rel:
@@ -625,10 +627,8 @@ def greedy_metapath_search_with_bags_learned_2(
     lr : float = 0.0001,
     wd: float = 0,
     epochs: int = 100,
-    
+    max_rel: int = 10
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
-    
-    
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with torch.no_grad():
@@ -661,7 +661,7 @@ def greedy_metapath_search_with_bags_learned_2(
             current_labels.append(old_y[i])
     assert len(current_bags) == len(current_labels)
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-    all_path_info = [] #memorize all the metapaths with scores, in order to select only the best beam_width at the end
+    all_path_info = [] 
     local_path = []
     
     current_paths = [[]] 
@@ -681,13 +681,13 @@ def greedy_metapath_search_with_bags_learned_2(
             #DRIVERS#RESULTS #RACES
             print(f"current source node is {last_ntype}")
            
-            candidate_rels = [ #take all the rel that begins from last_ntype
+            candidate_rels = [ #take "max_rel" relations that starts from last_ntype
                 (src, rel, dst)
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
-            ]
+            ][:max_rel]
 
-            #choose the best relation beginning from last_ntype:
+            #choose the best relation that starts from last_ntype:
             best_rel = None
             best_score = float('inf') #score = error, so less is better!
             best_alpha = None
@@ -727,8 +727,9 @@ def greedy_metapath_search_with_bags_learned_2(
                 # #even if it is not the best one we memorize it because maybe will
                 # #be selected from beam search:
 
-                local_path2.append(rel)
+                local_path2.append(rel.copy())
                 loc = [local_path2.copy()]
+                metapath_counts[tuple(local_path2)] += 1
                 model = MPSGNN(
                     data=data,
                     col_stats_dict=col_stats_dict,
@@ -756,7 +757,7 @@ def greedy_metapath_search_with_bags_learned_2(
                     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
                     if test_metrics[tune_metric] > best_test_metrics:
                         best_test_metrics = test_metrics[tune_metric]
-                print(f"For the partial metapath {local_path.copy()} we obtain F1 test loss equal to {best_test_metrics}")
+                print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
                 all_path_info.append((best_test_metrics, local_path2.copy()))
             
             #set best_rel:
@@ -952,7 +953,7 @@ def greedy_metapath_search_with_bags_learned_3(
                     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
                     if test_metrics[tune_metric] > best_test_metrics:
                         best_test_metrics = test_metrics[tune_metric]
-                print(f"For the partial metapath {local_path.copy()} we obtain F1 test loss equal to {best_test_metrics}")
+                print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
                 all_path_info.append((best_test_metrics, local_path2.copy()))
                 score = best_test_metrics
 
