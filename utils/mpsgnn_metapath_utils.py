@@ -727,7 +727,7 @@ def greedy_metapath_search_with_bags_learned_2(
                 # #even if it is not the best one we memorize it because maybe will
                 # #be selected from beam search:
 
-                local_path2.append(rel.copy())
+                local_path2.append(rel)
                 loc = [local_path2.copy()]
                 metapath_counts[tuple(local_path2)] += 1
                 model = MPSGNN(
