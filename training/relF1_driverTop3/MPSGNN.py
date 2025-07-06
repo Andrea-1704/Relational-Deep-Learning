@@ -110,9 +110,9 @@ def train2():
         node_id='driverId',
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=8,
+        L_max=4,
         channels = hidden_channels,
-        max_rels=12
+        max_rels=5
     )
 
     print(f"Metaoaths are {metapaths}")

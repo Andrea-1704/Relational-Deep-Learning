@@ -406,6 +406,7 @@ def greedy_metapath_search_with_bags_learned(
     channels : int = 64,
     beam_width: int = 5,  #number of metapaths to look for
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+    
     """
     This is the main component of this set of functions and classes, is the 
     complete algorithm used to implement the meta paths.
@@ -425,26 +426,8 @@ def greedy_metapath_search_with_bags_learned(
     metapath A->B->C, we count how many A nodes are linked to C nodes throught this
     set of relations).  
     """
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    metapaths = [] #returned object
-    metapath_counts = defaultdict(int)
-    current_paths = [[]] #current partial paths that we are going to expand 
-
-    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
-    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
-    old_y = data[node_type].y.int().tolist()
-    current_labels = []
-    for i in range(0, len(old_y)):
-        if train_mask[i]:
-            current_labels.append(old_y[i])
-    #at the first step, the bags are simply a list of list values, where each list contained inside the 
-    #list is the id the driver index node, if that driver is in the train_mask mask.
-    assert len(current_bags) == len(current_labels)
-    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-
-    all_path_info = [] #memorize all the metapaths with scores, in order
-    #to select only the best beam_width at the end
-
     with torch.no_grad():
         encoder = HeteroEncoder(
             channels=channels,
@@ -464,23 +447,44 @@ def greedy_metapath_search_with_bags_learned(
         }
         node_embeddings_dict = encoder(tf_dict)
 
+    
+    metapath_counts = defaultdict(int) 
+    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
+    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
+    old_y = data[node_type].y.int().tolist()
+    current_labels = []
+    for i in range(0, len(old_y)):
+        if train_mask[i]:
+            current_labels.append(old_y[i])
+    #at the first step, the bags are simply a list of list values, where each list contained inside the 
+    #list is the id the driver index node, if that driver is in the train_mask mask.
+    assert len(current_bags) == len(current_labels)
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+    all_path_info = [] #memorize all the metapaths with scores, in order to select only the best beam_width at the end
+    local_path = []
+    
+    current_paths = [[]] 
     for level in range(L_max):
         print(f"level {level}")
         
         next_paths_info = []
+        #current_paths = [(DRIVERS, _, RESULTS)]
+        #current_paths = [(RESULTS, _, RACES)]
 
-        for path in current_paths:
-            last_ntype = node_type if not path else path[-1][2]
+        for path in current_paths: #path = [DRIVERS, _, RESULTS]
+            #path = (RESULTS, _, RACES)
+            last_ntype = node_type if not path else path[2]#RESULTS #RACES
             print(f"current source node is {last_ntype}")
            
-            candidate_rels = [
+            candidate_rels = [ #take all the rel that begins from last_ntype
                 (src, rel, dst)
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
-            ][:max_rels]
+            ]
 
+            #choose the best relation beginning from last_ntype:
             best_rel = None
-            best_score = float('inf')
+            best_score = float('inf') #score = error, so less is better!
             best_alpha = None
             best_bags = None
             best_labels = None
@@ -509,7 +513,9 @@ def greedy_metapath_search_with_bags_learned(
                     continue#this avoid to consider few bags to avoid overfitting
 
                 score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
+                
                 print(f"relation {rel} allow us to obtain score {score}")
+                
                 if score < best_score:
                     best_rel = rel
                     best_score = score
@@ -517,14 +523,22 @@ def greedy_metapath_search_with_bags_learned(
                     best_bags = bags
                     best_labels = labels
             
+            #set best_rel:
             if best_rel:
+                local_path.append(best_rel)#[[(DRIVERS, _, RESULTS)], (RESULTS, _, RACES), (RACES, _, CONSTRUCTORS)]
                 print(f"Best relation is {best_rel}")
-                new_path = path + [best_rel]
-                next_paths_info.append((best_score, new_path, best_bags, best_labels, best_alpha))
-                metapath_counts[tuple(new_path)] += 1
-                all_path_info.append((best_score, new_path))
-                print(f"Now the path is equal to {new_path}")
-        current_paths.append(new_path)
+                print(f"Now local path is {local_path}")
+                #new_path = path + [best_rel] #NB: '+' IN PY IS CONCATENATION:
+                #[] + [(DRIVERS, _, RESULTS)] = [(DRIVERS, _, RESULTS)]
+                #[(DRIVERS, _, RESULTS)] + [(RESULTS, _, RACES)] = [(DRIVERS, _, RESULTS), (RESULTS, _, RACES)]
+                next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
+                metapath_counts[tuple(local_path)] += 1
+                all_path_info.append((best_score, local_path))
+        
+        #current_paths = [[]]
+        current_paths = [best_rel] 
+        #current_paths = [(DRIVERS, _, RESULTS)]
+        #current_paths = [(RESULTS, _, RACES)]
         print(f"current path now is equal to {current_paths}")
     
     # select best beam_width paths between all the explored ones
