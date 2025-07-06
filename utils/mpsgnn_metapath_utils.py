@@ -382,6 +382,129 @@ def beam_metapath_search_with_bags_learned(
     return metapaths, metapath_counts
 
 
+def beam_metapath_search_with_bags_learned_2(
+    data: HeteroData, #the result of make_pkey_fkey_graph
+    db,   #Object that was passed to make_pkey_fkey_graph to build data
+    node_id: str, #ex. driverId
+    loader_dict,
+    task, 
+    loss_fn,
+    tune_metric : str,
+    higher_is_better: str,
+    train_mask: torch.Tensor,
+    node_type: str, 
+    col_stats_dict: Dict[str, Dict[str, Dict]], 
+    L_max: int = 3,
+    channels : int = 64,
+    number_of_metapaths: int = 5,  #number of metapaths to look for
+    out_channels: int = 128,
+    hidden_channels: int = 128,
+    lr : float = 0.0001,
+    wd: float = 0,
+    epochs: int = 100,
+    max_rel: int = 10
+) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    with torch.no_grad():
+        encoder = HeteroEncoder(
+            channels=channels,
+            node_to_col_names_dict={
+                ntype: data[ntype].tf.col_names_dict
+                for ntype in data.node_types
+            },
+            node_to_col_stats=col_stats_dict,
+        ).to(device)
+        for module in encoder.modules():
+            for name, buf in module._buffers.items():
+                if buf is not None:
+                    module._buffers[name] = buf.to(device)
+        
+        tf_dict = {
+            ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
+        }
+        node_embeddings_dict = encoder(tf_dict)
+    
+    metapaths = []
+    metapath_counts = {} 
+    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
+    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
+    old_y = data[node_type].y.int().tolist() #ordered as current bags
+    print(f"initial y: {old_y}")
+    current_labels = []
+    for i in range(0, len(old_y)):
+        if train_mask[i]:
+            current_labels.append(old_y[i])
+    assert len(current_bags) == len(current_labels)
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+    all_path_info = [] 
+
+    current_paths = [[]]
+    for level in range(L_max):
+        print(f"we are at level {level}")
+        next_paths_info = []
+
+        for path in current_paths:
+            last_ntype = node_type if not path else path[-1][2]
+            print(f"current source node is {last_ntype}")
+
+            candidate_rels = [
+                (src, rel, dst)
+                for (src, rel, dst) in data.edge_index_dict.keys()
+                if src == last_ntype
+            ][:max_rel] 
+
+            for rel in candidate_rels: 
+                print(f"considering relation {rel}")
+                src, _, dst = rel
+                if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met and avoid to return to the source node
+                  continue
+                if rel == ('races', 'rev_f2p_raceId', 'standings'): # for some reasons it provokes side assertions
+                  continue
+                node_embeddings = node_embeddings_dict.get(dst) #Tensor[num_node_of_kind_dst, embedding_dim]
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #maybe it should be first learned as in version2
+                bags, labels, alpha_next = construct_bags_with_alpha(
+                    data=data,
+                    previous_bags=current_bags,
+                    previous_labels=current_labels,
+                    alpha_prev=alpha, 
+                    rel=rel,
+                    #node_embeddings=node_embeddings,
+                    theta=theta,
+                    src_embeddings = node_embeddings_dict[src]
+                )
+                if len(bags) < 5:
+                    continue
+                score = evaluate_relation_learned(bags, labels, node_embeddings)
+                print(f"relation {rel} allow us to obtain score {score}")
+                new_path = path + [rel]
+                next_paths_info.append((score, new_path, bags, labels, alpha_next))
+
+        current_paths = []
+        current_bags = []
+        current_labels = []
+        alpha = {}
+
+        for info in next_paths_info:
+          _, path, bags, labels, alpha_next = info
+          current_paths.append(path)
+          current_bags.extend(bags)
+          current_labels.extend(labels)
+          alpha.update(alpha_next)
+
+        all_path_info.extend(next_paths_info)
+
+    #final selection of the best beamwodth paths:
+    all_path_info.sort(key=lambda x:x[0])
+    selected = all_path_info[:number_of_metapaths]
+    for _, path, bags, _, _ in selected:
+      metapaths.append(path)
+      metapath_counts[tuple(path)] = len(bags)
+    print(f"final metapaths are: {metapaths}")
+    print(f"metapath counts are: {metapath_counts}")
+    return metapaths, metapath_counts
+
+
 
 """
 Beam search is a very strong and powerfull version 
