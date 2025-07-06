@@ -671,29 +671,20 @@ def greedy_metapath_search_with_bags_learned_2(
     current_paths = [[]] 
     for level in range(L_max):
         print(f"level {level}")
-        
         next_paths_info = []
-        #current_paths = []
-        #current_paths = [(DRIVERS, _, RESULTS)]
-        #current_paths = [(RESULTS, _, RACES)]
 
         for path in current_paths: 
-            #path = []
-            #path = (DRIVERS, _, RESULTS)
-            #path = (RESULTS, _, RACES)
             last_ntype = node_type if not path else path[2]
-            #DRIVERS#RESULTS #RACES
             print(f"current source node is {last_ntype}")
            
-            candidate_rels = [ #take "max_rel" relations that starts from last_ntype
+            candidate_rels = [ 
                 (src, rel, dst)
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
             ][:max_rel]
 
-            #choose the best relation that starts from last_ntype:
             best_rel = None
-            best_score = float('inf') #score = error, so less is better!
+            best_score = float('inf') 
             best_alpha = None
             best_bags = None
             best_labels = None
@@ -701,25 +692,23 @@ def greedy_metapath_search_with_bags_learned_2(
             for rel in candidate_rels: 
                 print(f"considering relation {rel}")
                 src, _, dst = rel
-                if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met, avoid to return to the source node
+                if dst in [step[0] for step in path] or dst == node_type:  
                   continue
-
-                node_embeddings = node_embeddings_dict.get(dst) #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
-                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
+                node_embeddings = node_embeddings_dict.get(dst) 
+                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) 
                 bags, labels, alpha_next = construct_bags_with_alpha(
                     data=data,
                     previous_bags=current_bags,
                     previous_labels=current_labels,
-                    alpha_prev=alpha, #current alfa values for v nodes
+                    alpha_prev=alpha,
                     rel=rel,
                     theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
                 if len(bags) < 5:
-                    continue#this avoid to consider few bags to avoid overfitting
-                score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
+                    continue
+                score = evaluate_relation_learned(bags, labels, node_embeddings) 
                 print(f"relation {rel} allow us to obtain score {score}")
-                
                 if score < best_score:
                     best_rel = rel
                     best_score = score
@@ -728,9 +717,6 @@ def greedy_metapath_search_with_bags_learned_2(
                     best_labels = labels
                 
                 local_path2 = local_path.copy()
-                # #even if it is not the best one we memorize it because maybe will
-                # #be selected from beam search:
-
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
                 metapath_counts[tuple(local_path2)] += 1
@@ -744,12 +730,10 @@ def greedy_metapath_search_with_bags_learned_2(
                     out_channels=out_channels,
                     final_out_channels=1,
                 ).to(device)
-
                 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-
                 #EPOCHS:
                 test_table = task.get_table("test", mask_input_cols=False)
-                best_test_metrics = -math.inf 
+                best_test_metrics = -math.inf if higher_is_better else math.inf
                 for _ in range(0, epochs):
                     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
                     test_pred = test(model, loader_dict["test"], device=device, task=task)
@@ -765,8 +749,6 @@ def greedy_metapath_search_with_bags_learned_2(
             if best_rel:
                 print(f"Best relation is {best_rel}")
                 local_path.append(best_rel)
-                #[(DRIVERS, _, RESULTS)]
-                #[(DRIVERS, _, RESULTS), (RESULTS, _, RACES)]
                 print(f"Now local path is {local_path}")
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
                 #WARNING: SCORE IS COMPUTED ONLY FOR LAST RELATION BUT WE ARE LINKING IT TO THE COMPLETE LOCAL PATH!!!
