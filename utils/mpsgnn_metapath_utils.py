@@ -581,7 +581,7 @@ def greedy_metapath_search_with_bags_learned(
                     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
                     if test_metrics[tune_metric] > best_test_metrics:
                         best_test_metrics = test_metrics[tune_metric]
-                
+                print(f"For the partial metapath {local_path.copy()} we obtain F1 test loss equal to {best_test_metrics}")
                 all_path_info.append((best_test_metrics, local_path.copy()))
         
         current_paths = [best_rel] 
