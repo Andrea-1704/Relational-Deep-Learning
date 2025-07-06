@@ -236,6 +236,7 @@ def construct_bags_with_alpha(
 
 
 
+
 def beam_metapath_search_with_bags_learned(
     data: HeteroData, #the result of make_pkey_fkey_graph
     db,   #Object that was passed to make_pkey_fkey_graph to build data
@@ -391,6 +392,7 @@ function with less coverage but more efficient
 for high Lmax:
 """
 
+
 #Previous version, return only a metaptah, with partial ones
 def greedy_metapath_search_with_bags_learned(
     data: HeteroData, #the result of make_pkey_fkey_graph
@@ -516,11 +518,14 @@ def greedy_metapath_search_with_bags_learned(
                     best_labels = labels
             
             if best_rel:
+                print(f"Best relation is {best_rel}")
                 new_path = path + [best_rel]
                 next_paths_info.append((best_score, new_path, best_bags, best_labels, best_alpha))
                 metapath_counts[tuple(new_path)] += 1
                 all_path_info.append((best_score, new_path))
-
+                #path = new_path
+                current_paths.append(path)
+                print(f"Now the path is equal to {path}")
     
     # select best beam_width paths between all the explored ones
     all_path_info.sort(key=lambda x: x[0])  # score crescente
