@@ -401,6 +401,7 @@ def greedy_metapath_search_with_bags_learned(
     L_max: int = 3,
     max_rels: int = 10,
     channels : int = 64,
+    beam_width: int = 5,  #number of metapaths to look for
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     """
     This is the main component of this set of functions and classes, is the 
@@ -432,7 +433,26 @@ def greedy_metapath_search_with_bags_learned(
     current_labels = [y[i].item() for i in torch.where(train_mask)[0]]
     alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
 
-    for level in range(L_max): #cycle in the level of metapath
+    with torch.no_grad():
+        encoder = HeteroEncoder(
+            channels=channels,
+            node_to_col_names_dict={
+                ntype: data[ntype].tf.col_names_dict
+                for ntype in data.node_types
+            },
+            node_to_col_stats=col_stats_dict,
+        ).to(device)
+        for module in encoder.modules():
+            for name, buf in module._buffers.items():
+                if buf is not None:
+                    module._buffers[name] = buf.to(device)
+        
+        tf_dict = {
+            ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
+        }
+        node_embeddings_dict = encoder(tf_dict)
+
+    for level in range(L_max):
         print(f"level {level}")
         new_paths = []
         new_alpha_all = [] 
@@ -442,44 +462,12 @@ def greedy_metapath_search_with_bags_learned(
         for path in current_paths:
             last_ntype = node_type if not path else path[-1][2]
             print(f"current source node is {last_ntype}")
-            #if the current next node is empty, start from the target node ("driver")
-
-            with torch.no_grad():
-              encoder = HeteroEncoder(
-                  channels=channels,
-                  node_to_col_names_dict={
-                      ntype: data[ntype].tf.col_names_dict
-                      for ntype in data.node_types
-                  },
-                  node_to_col_stats=col_stats_dict,
-              ).to(device)
-              for module in encoder.modules():
-                  for name, buf in module._buffers.items():
-                      if buf is not None:
-                          module._buffers[name] = buf.to(device)
-              
-              tf_dict = {
-                  ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
-              }#get the features of nodes
-              #tf_dict is a dictionary:
-              # [node type]:Tensor Frame object containing the columns of such node
-              
-              
-              node_embeddings_dict = encoder(tf_dict)
-              #HeteroEncoder takes as input the tf_dict object mentioned before and return 
-              #a dictionary in which for each type of node (key of the dictionary) 
-              #contains the embeddings for all the nodes of that type: 
-              # [node_type]: Tensor[node_type, hidden_dim]
-            #   print("\n Capiamoci un po' di più su questa linea di codice: node_embeddings_dict = encoder(tf_dict)\n")
-            #   for node_type in node_embeddings_dict:
-            #       print(f"Il node type {node_type} ha questi risultati: {node_embeddings_dict[node_type]}\n")
-
+           
             candidate_rels = [
                 (src, rel, dst)
                 for (src, rel, dst) in data.edge_index_dict.keys()
                 if src == last_ntype
-            ][:max_rels] #get "max_rels" relations that start from current
-            #node ("last_ntype").
+            ][:max_rels]
 
             best_rel = None
             best_score = float("inf")
