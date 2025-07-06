@@ -139,7 +139,10 @@ def train2():
     print(f"\nfinal metapaths are {metapaths}\n")
 
     print(f"\n metapaths counts are {metapath_counts}\n")
-
+    hidden_channels = 64
+    out_channels = 64
+    lr=0.0001
+    wd = 0
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
@@ -151,12 +154,12 @@ def train2():
         final_out_channels=1,
     ).to(device)
 
-    # optimizer = torch.optim.Adam(
-    #   model.parameters(),
-    #   lr=lr,
-    #   weight_decay=wd
-    # )
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+    optimizer = torch.optim.Adam(
+      model.parameters(),
+      lr=lr,
+      weight_decay=wd
+    )
+    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
     scheduler = CosineAnnealingLR(optimizer, T_max=25)
 
