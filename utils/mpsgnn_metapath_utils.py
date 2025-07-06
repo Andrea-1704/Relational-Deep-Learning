@@ -890,19 +890,9 @@ def greedy_metapath_search_with_bags_learned_3(
                 )
                 if len(bags) < 5:
                     continue
-                # score = evaluate_relation_learned(bags, labels, node_embeddings) #assign the score value to current split, similar to DECISION TREES
-                
-                
-                # if score < best_score:
-                #     best_rel = rel
-                #     best_score = score
-                #     best_alpha = alpha_next
-                #     best_bags = bags
-                #     best_labels = labels
-                
+
                 local_path2 = local_path.copy()
-                # #even if it is not the best one we memorize it because maybe will
-                # #be selected from beam search:
+                #even if it is not the best one we memorize it because maybe will be selected from beam search:
 
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
@@ -916,16 +906,9 @@ def greedy_metapath_search_with_bags_learned_3(
                     out_channels=out_channels,
                     final_out_channels=1,
                 ).to(device)
-
-                optimizer = torch.optim.Adam(
-                  model.parameters(),
-                  lr=lr,
-                  weight_decay=wd
-                )
-                #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-
+                optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
                 test_table = task.get_table("test", mask_input_cols=False)
-                best_test_metrics = -math.inf 
+                best_test_metrics = -math.inf if higher_is_better else math.inf
                 for _ in range(0, epochs):
                     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
                     test_pred = test(model, loader_dict["test"], device=device, task=task)
@@ -936,7 +919,7 @@ def greedy_metapath_search_with_bags_learned_3(
                         best_test_metrics = test_metrics[tune_metric]
                 print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
                 all_path_info.append((best_test_metrics, local_path2.copy()))
-                score = best_test_metrics
+                score = best_test_metrics #score now is directly the F1 score returneb by training the model on that metapath
 
                 if score > best_score: #higher is better
                     best_rel = rel
@@ -947,11 +930,9 @@ def greedy_metapath_search_with_bags_learned_3(
 
             #set best_rel:
             if best_rel:
-                print(f"Best relation is {best_rel}")
                 local_path.append(best_rel)
-                print(f"Now local path is {local_path}")
+                print(f"Best relation is {best_rel} and now local path is {local_path}")
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
-                #WARNING: SCORE IS COMPUTED ONLY FOR LAST RELATION BUT WE ARE LINKING IT TO THE COMPLETE LOCAL PATH!!!
                 metapath_counts[tuple(local_path)] += 1
                 
 
