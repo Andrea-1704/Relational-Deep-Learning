@@ -111,32 +111,32 @@ model = MyModel(
 
 
 
-loader_dict = loader_dict_fn(
-    batch_size=128, 
-    num_neighbours=64, 
-    data=data, 
-    task=task,
-    train_table=train_table, 
-    val_table=val_table, 
-    test_table=test_table
-)
+# loader_dict = loader_dict_fn(
+#     batch_size=128, 
+#     num_neighbours=64, 
+#     data=data, 
+#     task=task,
+#     train_table=train_table, 
+#     val_table=val_table, 
+#     test_table=test_table
+# )
 
-for batch in loader_dict["train"]:
-    edge_types=batch.edge_types
-    break
+# for batch in loader_dict["train"]:
+#     edge_types=batch.edge_types
+#     break
 
 
-model = train_vgae(
-    model=model,
-    loader_dict=loader_dict,
-    edge_types=edge_types,
-    encoder_out_dim=channels,
-    entity_table=task.entity_table,
-    latent_dim=32,
-    hidden_dim=64,
-    epochs=500,
-    device=device
-)
+# model = train_vgae(
+#     model=model,
+#     loader_dict=loader_dict,
+#     edge_types=edge_types,
+#     encoder_out_dim=channels,
+#     entity_table=task.entity_table,
+#     latent_dim=32,
+#     hidden_dim=64,
+#     epochs=500,
+#     device=device
+# )
 
 
 optimizer = torch.optim.Adam(
