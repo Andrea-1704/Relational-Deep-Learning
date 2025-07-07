@@ -213,23 +213,23 @@ class MyStypeWiseFeatureEncoder(FeatureEncoder):
 
 
 
-#definisco una funzione che estragga gli embeddings per ogni colonna:
+
 def extract_column_embeddings(encoder: MyStypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
     """
-    Ritorna un dizionario {col_name: Tensor[N, C]}.
+    Function that extract the embeddings for each column of a node.
+    Returns a dictionary {column_name: Tensor[N, C]}.
     """
     x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
     N = x.size(0)
     C = out_channels
     num_cols = len(all_col_names)
 
-    # Reshape per ottenere [N, num_cols, C]
-    x = x.view(N, num_cols, C)
+    x = x.view(N, num_cols, C) #[N, num_cols, C]
 
-    # Suddividi in dict: col_name → Tensor[N, C]
     col_emb_dict = {
         col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
-    }
+    } #col_name → Tensor[N, C]
+    
     return col_emb_dict
 
 
@@ -397,7 +397,7 @@ class MyHeteroEncoder(torch.nn.Module):
     apply the encoding to each column indipendently and then apply the self
     attention mechanism.
     """
-    
+
     def __init__(
         self,
         channels: int,
