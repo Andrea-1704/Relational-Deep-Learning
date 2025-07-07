@@ -480,7 +480,8 @@ def beam_metapath_search_with_bags_learned_2(
                     continue
                 #score = evaluate_relation_learned(bags, labels, node_embeddings)
                 #print(f"relation {rel} allow us to obtain score {score}")
-                new_path = path + [rel]
+                new_path = path.copy()
+                new_path = new_path.append(rel)
                 local_path2 = new_path.copy()
                 loc = [local_path2.copy()]
                 metapath_counts[tuple(local_path2)] += 1

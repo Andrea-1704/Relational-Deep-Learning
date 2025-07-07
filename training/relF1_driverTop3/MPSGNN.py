@@ -33,7 +33,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, greedy_metapath_search_with_bags_learned_2, greedy_metapath_search_with_bags_learned_3, beam_metapath_search_with_bags_learned
+from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, greedy_metapath_search_with_bags_learned_2, greedy_metapath_search_with_bags_learned_3, beam_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned_2
 #from utils.mapping_utils import get_global_to_local_id_map
 
 
@@ -100,8 +100,8 @@ def train2():
 
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    hidden_channels = 64
-    out_channels = 64
+    hidden_channels = 128
+    out_channels = 128
 
     loader_dict = loader_dict_fn(
         batch_size=1024,
@@ -115,16 +115,16 @@ def train2():
     lr=1e-02
     wd=0
 
-    metapaths, metapath_counts = greedy_metapath_search_with_bags_learned_3(
+    metapaths, metapath_counts = beam_metapath_search_with_bags_learned_2(
         col_stats_dict = col_stats_dict_official,
         data=data_official,
         db= db_nuovo,
         node_id='driverId',
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=7,
+        L_max=4,
         channels = hidden_channels,
-        number_of_metapaths = 4,     
+        number_of_metapaths = 3,     
         out_channels = out_channels,
         hidden_channels = hidden_channels, 
         loader_dict = loader_dict,
