@@ -116,20 +116,10 @@ def train2():
     hidden_channels = 128
     out_channels = 128
 
-    # metapaths, metapath_counts = beam_metapath_search_with_bags_learned(
-    #     col_stats_dict = col_stats_dict_full,
-    #     data=data_full,
-    #     y=y_full, 
-    #     train_mask=train_mask_full,
-    #     node_type='drivers',
-    #     L_max=3,
-    #     channels = hidden_channels,
-    #     beam_width = 3
-    # )
-
     metapaths = [[('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')]]
     metapath_counts = {(('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')): 92, (('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')): 92, (('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')): 867}
-
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
+    metapath_counts = {('drivers', 'rev_f2p_driverId', 'results'): 1}
     y = data_official['drivers'].y
     train_mask = data_official['drivers'].train_mask
 
