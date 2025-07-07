@@ -1,117 +1,63 @@
-import numpy as np
-import math
-from tqdm import tqdm
-
-import sys
-import os
-sys.path.append(os.path.abspath("."))
-
-
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
-from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-from torch_frame.config.text_embedder import TextEmbedderConfig
-from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
-from typing import Any, Dict, List
-from torch import Tensor
-from torch.nn import Embedding, ModuleDict
-from torch_frame.data.stats import StatType
-from torch_geometric.data import HeteroData
-from torch_geometric.nn import MLP
-from torch_geometric.typing import NodeType
-from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
-from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
-from torch_geometric.loader import NeighborLoader
-import pyg_lib
-from torch.nn import ModuleDict
-import torch.nn.functional as F
-from torch import nn
+import math
+import os
 import random
-from typing import Any, Dict, List, Optional
-
-import torch
-import torch_frame
-from torch import Tensor
-from torch_frame.nn.models import ResNet
-from torch_geometric.nn import HeteroConv, LayerNorm, PositionalEncoding, SAGEConv
-from torch_geometric.typing import EdgeType, NodeType
-
-import torch
-import torch.nn as nn
-from torch_geometric.nn import SAGEConv
-from typing import Dict, Optional
-
-
-#definiamo una funzione che estrae tutte le atomic routes:
-from typing import List, Tuple, Optional
-from torch_geometric.data import HeteroData
-
+import sys
+import warnings
 from collections import defaultdict
-
-import torch
-import torch.nn.functional as F
-import torch.nn as nn
-import os
-import relbench
-import numpy as np
-from relbench.datasets import get_dataset
-from relbench.tasks import get_task
-import math
-from tqdm import tqdm
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
-from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
 from io import StringIO
-from torch_frame.config.text_embedder import TextEmbedderConfig
-from relbench.modeling.graph import make_pkey_fkey_graph
-import copy
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import requests
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch.optim.lr_scheduler import CosineAnnealingLR
+
+import torch_frame
+from torch_frame.config.text_embedder import TextEmbedderConfig
 from torch_frame.data.stats import StatType
-import torch
-import math
+from torch_frame.nn.models import ResNet
+
+import torch_geometric
 from torch_geometric.data import HeteroData
-from typing import List, Tuple, Dict
-import torch.nn as nn
-import torch.nn.functional as F
-from relbench.modeling.nn import HeteroEncoder
-from collections import defaultdict
-
-
-import sys
-import os
-sys.path.append(os.path.abspath("."))
-
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from model.MPSGNN_Model import MPSGNN
-from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, greedy_metapath_search_with_bags_learned_2, greedy_metapath_search_with_bags_learned_3, beam_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned_2
-from model.MPSGNN_Model import MPSGNN
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from torch_geometric.loader import NeighborLoader
+from torch_geometric.nn import (
+    HeteroConv,
+    LayerNorm,
+    MLP,
+    PositionalEncoding,
+    SAGEConv,
+)
+from torch_geometric.nn.conv import TransformerConv
 from torch_geometric.nn.dense.linear import Linear
-from torch_geometric.nn.conv import TransformerConv, SAGEConv
-
-import warnings
-from typing import Dict, List, Optional
-
-import torch
-from torch import Tensor
-
-from torch_geometric.nn.module_dict import ModuleDict
-from torch_geometric.typing import NodeType
+from torch_geometric.seed import seed_everything
+from torch_geometric.typing import EdgeType, NodeType
 from torch_geometric.utils.hetero import check_add_self_loops
+
+import relbench
+from relbench.datasets import get_dataset
+from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
+from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
+from relbench.modeling.utils import get_stype_proposal
+from relbench.tasks import get_task
+
+from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
+from model.MPSGNN_Model import MPSGNN
+from utils.EarlyStopping import EarlyStopping
+from utils.mpsgnn_metapath_utils import (
+    beam_metapath_search_with_bags_learned,
+    beam_metapath_search_with_bags_learned_2,
+    binarize_targets,
+    greedy_metapath_search_with_bags_learned,
+    greedy_metapath_search_with_bags_learned_2,
+    greedy_metapath_search_with_bags_learned_3,
+)
+from utils.utils import evaluate_on_full_train, evaluate_performance, test, train
+
 
 
 
