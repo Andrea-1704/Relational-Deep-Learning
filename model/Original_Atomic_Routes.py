@@ -263,7 +263,7 @@ class RelGNNConv(TransformerConv):
         **kwargs,
     ):
         #print(f"passandogli {in_channels}, {out_channels}, {heads}")
-        super().__init__(in_channels, out_channels, heads, bias=bias, **kwargs)
+        super().__init__(in_channels=in_channels, out_channels=out_channels, heads=heads, bias=bias, **kwargs)
         self.attn_type = attn_type
         if attn_type == 'dim-fact-dim':
             self.aggr_conv = SAGEConv(in_channels, out_channels, aggr=aggr)
@@ -322,11 +322,11 @@ class RelGNN(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList()
         for _ in range(num_model_layers):
-            print(f"aggr {aggr}")
+            #print(f"num_heads {num_heads}")
             conv = RelGNN_HeteroConv(
                 
                 {
-                    edge_type: RelGNNConv(edge_type[0], (channels, channels), channels, aggr=aggr, heads= num_heads, simplified_MP=simplified_MP)
+                    edge_type: RelGNNConv(edge_type[0], in_channels=(channels, channels), out_channels=channels, aggr=aggr, heads= num_heads, simplified_MP=simplified_MP)
                     for edge_type in edge_types
                 },
                 aggr=aggr,
@@ -381,7 +381,7 @@ class RelGNN_Model(torch.nn.Module):
         # ID awareness
         id_awareness: bool = False,
         atomic_routes=None,
-        num_heads=None,
+        num_heads=1,
         simplified_MP=False,
     ):
         super().__init__()
