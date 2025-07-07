@@ -510,7 +510,7 @@ def beam_metapath_search_with_bags_learned_2(
                         best_test_metrics = test_metrics[tune_metric]
                     if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
                         best_test_metrics = test_metrics[tune_metric]
-                print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
+                print(f"For the partial metapath {local_path2.copy()} with metapath_counts: {metapath_counts} we obtain F1 test loss equal to {best_test_metrics}")
                 next_paths_info.append((best_test_metrics, local_path2.copy(), bags, labels, alpha_next))
 
         current_paths = []
