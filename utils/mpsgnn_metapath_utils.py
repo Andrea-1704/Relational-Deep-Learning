@@ -462,7 +462,7 @@ def beam_metapath_search_with_bags_learned_2(
                 src, _, dst = rel
                 if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met and avoid to return to the source node
                   continue
-                if rel == ('races', 'rev_f2p_raceId', 'standings'): # for some reasons it provokes side assertions
+                if rel == ('races', 'rev_f2p_raceId', 'standings') or rel == ('races', 'rev_f2p_raceId', 'qualifying'): # for some reasons it provokes side assertions
                   continue
                 node_embeddings = node_embeddings_dict.get(dst) #Tensor[num_node_of_kind_dst, embedding_dim]
                 theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #maybe it should be first learned as in version2
