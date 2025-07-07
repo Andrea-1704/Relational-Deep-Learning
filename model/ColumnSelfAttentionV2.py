@@ -212,27 +212,6 @@ class MyStypeWiseFeatureEncoder(FeatureEncoder):
         return x, all_col_names
 
 
-
-
-def extract_column_embeddings(encoder: MyStypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
-    """
-    Function that extract the embeddings for each column of a node.
-    Returns a dictionary {column_name: Tensor[N, C]}.
-    """
-    x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
-    N = x.size(0)
-    C = out_channels
-    num_cols = len(all_col_names)
-
-    x = x.view(N, num_cols, C) #[N, num_cols, C]
-
-    col_emb_dict = {
-        col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
-    } #col_name → Tensor[N, C]
-    
-    return col_emb_dict
-
-
 class FeatureSelfAttentionBlock(torch.nn.Module):
     def __init__(self, dim: int, num_heads: int, dropout: float):
         super().__init__()
@@ -282,6 +261,27 @@ class FeatureSelfAttentionNet(torch.nn.Module):
             return x  # [N, F, C]
 
 
+def extract_column_embeddings(encoder: MyStypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
+    """
+    Function that extract the embeddings for each column of a node.
+    Returns a dictionary {column_name: Tensor[N, C]}.
+    """
+    x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
+    N = x.size(0)
+    C = out_channels
+    num_cols = len(all_col_names)
+
+    x = x.view(N, num_cols, C) #[N, num_cols, C]
+
+    col_emb_dict = {
+        col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
+    } #col_name → Tensor[N, C]
+    
+    return col_emb_dict
+
+
+
+
 class ResNet2(Module):
     def __init__(
         self,
@@ -328,11 +328,6 @@ class ResNet2(Module):
             pooling='mean',  # oppure 'cls' o 'none'
         )
 
-
-
-        # num_cols = sum(
-        #     [len(col_names) for col_names in col_names_dict.values()])
-        # in_channels = channels * num_cols
         in_channels = channels 
         self.backbone = Sequential(*[
             FCResidualBlock(
@@ -368,25 +363,17 @@ class ResNet2(Module):
             torch.Tensor: Output of shape [batch_size, out_channels].
         """
         x, _ = self.encoder(tf)
-        #newww:
-        col_emb_dict = extract_column_embeddings(self.encoder, tf, out_channels=128)
-
-        #col_emb_dict = extract_column_embeddings(x, tf, out_channels=128)
-        #print(col_emb_dict.keys())  # es: torch.Size([N, 128])
         
-        col_order = self.col_names  # assicurati dell'ordine
+        #now we extract the embeddings of each of the columns:
+        col_emb_dict = extract_column_embeddings(self.encoder, tf, out_channels=128)
+        
+        col_order = self.col_names  
         x = torch.stack([col_emb_dict[col] for col in col_order], dim=1)  # [N, F, C]
-        x = self.feature_attn(x)  # passa per self-attention
-
-        #newww
-        #x = x.view(x.size(0), math.prod(x.shape[1:]))
+        x = self.feature_attn(x)  #pass the result to self attention module
 
         x = self.backbone(x)
         out = self.decoder(x)
         return out
-
-
-
 
 
 
