@@ -61,6 +61,7 @@ from torch_geometric.data import HeteroData
 
 from collections import defaultdict
 
+
 def get_atomic_routes(edge_type_list):
     """
     This is the Relbench official code.
@@ -328,13 +329,7 @@ class AtomicRouteModel(torch.nn.Module):
             channels=channels,
         )
 
-        # self.gnn = HeteroGraphSAGE(
-        #     node_types=data.node_types,
-        #     edge_types=data.edge_types,
-        #     channels=channels,
-        #     aggr=aggr,
-        #     num_layers=num_layers,
-        # )
+        
         atomic_routes = extract_atomic_routes(data)
         #print(f"le atomic routes sono le seguenti: {atomic_routes}")
         self.gnn = RelGNNEncoder(
