@@ -125,24 +125,24 @@ lr=1e-02
 wd=0
 
 
-col_stats_dict = col_stats_dict_official,
-data=data_official,
-db= db_nuovo,
-node_id='driverId',
-train_mask=train_mask_full,
-node_type='drivers',
-L_max=4,
-channels = hidden_channels,
-number_of_metapaths = 3,     
-out_channels = out_channels,
-hidden_channels = hidden_channels, 
-loader_dict = loader_dict,
-lr = lr,
-wd = wd,
-task = task,
-loss_fn= loss_fn, 
-epochs = 100, 
-tune_metric = tune_metric,
+col_stats_dict = col_stats_dict_official
+data=data_official
+db= db_nuovo
+node_id='driverId'
+train_mask=train_mask_full
+node_type='drivers'
+L_max=4
+channels = hidden_channels
+number_of_metapaths = 3  
+out_channels = out_channels
+hidden_channels = hidden_channels
+loader_dict = loader_dict
+lr = lr
+wd = wd
+task = task
+loss_fn= loss_fn
+epochs = 100
+tune_metric = tune_metric
 higher_is_better= higher_is_better
 
 
