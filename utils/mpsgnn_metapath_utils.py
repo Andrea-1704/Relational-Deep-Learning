@@ -511,7 +511,7 @@ def beam_metapath_search_with_bags_learned_2(
                     if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
                         best_test_metrics = test_metrics[tune_metric]
                 print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
-                next_paths_info.append((best_test_metrics, new_path, bags, labels, alpha_next))
+                next_paths_info.append((best_test_metrics, local_path2.copy(), bags, labels, alpha_next))
 
         current_paths = []
         current_bags = []
@@ -692,11 +692,9 @@ def greedy_metapath_search_with_bags_learned(
                     best_bags = bags
                     best_labels = labels
                 
-                local_path2 = local_path.copy()
+                #local_path2 = local_path.copy()
                 # #even if it is not the best one we memorize it because maybe will
-                # #be selected from beam search:
-                # local_path2.append(rel)
-                # all_path_info.append((score, local_path2.copy()))
+                # #be selected from beam search.
                 #now is useless since we select through the F1 of the model and we
                 #are not going to test it here.
             
@@ -726,12 +724,7 @@ def greedy_metapath_search_with_bags_learned(
                     out_channels=out_channels,
                     final_out_channels=1,
                 ).to(device)
-
-                # optimizer = torch.optim.Adam(
-                #   model.parameters(),
-                #   lr=lr,
-                #   weight_decay=wd
-                # )
+                
                 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
                 #EPOCHS:
@@ -1072,11 +1065,7 @@ def greedy_metapath_search_with_bags_learned_3(
                 print(f"Best relation is {best_rel} and now local path is {local_path}")
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
                 metapath_counts[tuple(local_path)] += 1
-                
-
-        
         current_paths = [best_rel] 
-        #print(f"current path now is equal to {current_paths}\n")
     
     best_score_per_path = {}
     for score, path in all_path_info:
