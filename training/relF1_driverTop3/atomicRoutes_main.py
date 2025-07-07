@@ -172,7 +172,7 @@ model = RelGNN_Model(
     norm="batch_norm",
     atomic_routes=res,
     aggr="max",
-    channels=,
+    channels= channels,
     num_model_layers=3,
 ).to(device)
 

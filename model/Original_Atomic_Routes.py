@@ -256,12 +256,13 @@ class RelGNNConv(TransformerConv):
         attn_type,
         in_channels,
         out_channels,
-        heads,
         aggr,
         simplified_MP=False,
+        heads: int = 1,
         bias=True,
         **kwargs,
     ):
+        #print(f"passandogli {in_channels}, {out_channels}, {heads}")
         super().__init__(in_channels, out_channels, heads, bias=bias, **kwargs)
         self.attn_type = attn_type
         if attn_type == 'dim-fact-dim':
@@ -321,7 +322,9 @@ class RelGNN(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList()
         for _ in range(num_model_layers):
+            #print(f"gli out channels sono {channels}")
             conv = RelGNN_HeteroConv(
+                
                 {
                     edge_type: RelGNNConv(edge_type[0], (channels, channels), channels, num_heads, aggr=aggr, simplified_MP=simplified_MP)
                     for edge_type in edge_types
