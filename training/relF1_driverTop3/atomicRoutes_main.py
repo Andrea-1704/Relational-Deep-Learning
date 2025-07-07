@@ -125,7 +125,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
 hidden_channels = 128
-out_channels = 128
 
 loader_dict = loader_dict_fn(
     batch_size=1024,
@@ -173,7 +172,7 @@ model = RelGNN_Model(
     norm="batch_norm",
     atomic_routes=res,
     aggr="max",
-    channels=128,
+    channels=,
     num_model_layers=3,
 ).to(device)
 

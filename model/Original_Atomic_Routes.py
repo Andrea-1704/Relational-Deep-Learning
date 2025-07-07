@@ -365,7 +365,7 @@ class RelGNN(torch.nn.Module):
         self,
         node_types: List[NodeType],
         edge_types: List[EdgeType],
-        channels: int,
+        channels: int=128,
         aggr: str = "sum",
         num_model_layers: int = 2,
         num_heads: int = 1,
@@ -422,10 +422,11 @@ class RelGNN_Model(torch.nn.Module):
         data: HeteroData,
         col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
         num_model_layers: int,
-        channels: int,
+        
         out_channels: int,
         aggr: str,
         norm: str,
+        channels: int = 128,
         # List of node types to add shallow embeddings to input
         shallow_list: List[NodeType] = [],
         # ID awareness
