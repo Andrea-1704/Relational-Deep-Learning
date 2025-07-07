@@ -429,7 +429,7 @@ def beam_metapath_search_with_bags_learned_2(
         node_embeddings_dict = encoder(tf_dict)
     
     metapaths = []
-    metapath_counts = {} 
+    metapath_counts = defaultdict(int)
     driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
     current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
     old_y = data[node_type].y.int().tolist() #ordered as current bags
@@ -480,11 +480,14 @@ def beam_metapath_search_with_bags_learned_2(
                     continue
                 #score = evaluate_relation_learned(bags, labels, node_embeddings)
                 #print(f"relation {rel} allow us to obtain score {score}")
-                new_path = path.copy()
-                new_path = new_path.append(rel)
-                local_path2 = new_path.copy()
+                
+
+                local_path2 = path.copy()
+                local_path2.append(rel)
                 loc = [local_path2.copy()]
+                #print(f"Quello che mettiamo dentro metapaths counts è {tuple(local_path2)}")
                 metapath_counts[tuple(local_path2)] += 1
+
                 model = MPSGNN(
                     data=data,
                     col_stats_dict=col_stats_dict,
@@ -875,6 +878,7 @@ def greedy_metapath_search_with_bags_learned_2(
                 local_path2 = local_path.copy()
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
+                print(f"Quello che mettiamo dentro metapaths counts è {tuple(local_path2)}")
                 metapath_counts[tuple(local_path2)] += 1
                 model = MPSGNN(
                     data=data,
