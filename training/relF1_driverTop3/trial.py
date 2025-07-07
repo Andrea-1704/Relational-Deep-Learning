@@ -147,26 +147,6 @@ higher_is_better= higher_is_better
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# with torch.no_grad():
-#     encoder = HeteroEncoder(
-#         channels=channels,
-#         node_to_col_names_dict={
-#             ntype: data[ntype].tf.col_names_dict
-#             for ntype in data.node_types
-#         },
-#         node_to_col_stats=col_stats_dict,
-#     ).to(device)
-#     for module in encoder.modules():
-#         for name, buf in module._buffers.items():
-#             if buf is not None:
-#                 module._buffers[name] = buf.to(device)
-    
-#     tf_dict = {
-#         ntype: data[ntype].tf.to(device) for ntype in data.node_types if 'tf' in data[ntype]
-#     }
-#     node_embeddings_dict = encoder(tf_dict)
-
-
 
 model = MPSGNN(
     data=data,

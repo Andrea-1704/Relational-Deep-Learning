@@ -107,7 +107,9 @@ from typing import Dict
 
 
 class FCResidualBlock(Module):
-    r"""Fully connected residual block.
+    r"""
+    (not changed)
+    Fully connected residual block.
 
     Args:
         in_channels (int): The number of input channels.
@@ -177,28 +179,7 @@ class FCResidualBlock(Module):
         return out
 
 class MyStypeWiseFeatureEncoder(FeatureEncoder):
-    r"""Feature encoder that transforms each stype tensor into embeddings and
-    performs the final concatenation.
-
-    Args:
-        out_channels (int): Output dimensionality.
-        col_stats
-            (dict[str, dict[:class:`torch_frame.data.stats.StatType`, Any]]):
-            A dictionary that maps column name into stats. Available as
-            :obj:`dataset.col_stats`.
-        col_names_dict (dict[:class:`torch_frame.stype`, list[str]]): A
-            dictionary that maps stype to a list of column names. The column
-            names are sorted based on the ordering that appear in
-            :obj:`tensor_frame.feat_dict`.
-            Available as :obj:`tensor_frame.col_names_dict`.
-        stype_encoder_dict
-            (dict[:class:`torch_frame.stype`,
-            :class:`torch_frame.nn.encoder.StypeEncoder`]):
-            A dictionary that maps :class:`torch_frame.stype` into
-            :class:`torch_frame.nn.encoder.StypeEncoder` class. Only
-            parent :class:`stypes <torch_frame.stype>` are supported
-            as keys.
-    """
+    
     def __init__(
         self,
         out_channels: int,
@@ -255,17 +236,19 @@ class MyStypeWiseFeatureEncoder(FeatureEncoder):
 #definisco una funzione che estragga gli embeddings per ogni colonna:
 def extract_column_embeddings(encoder: MyStypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
     """
-    Ritorna un dizionario {col_name: Tensor[N, C]}.
+    Retruns a dictionary {col_name: Tensor[N, C]}, containing 
+    the column name as key and as value the embeddings of 
+    that column.
     """
     x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
     N = x.size(0)
     C = out_channels
     num_cols = len(all_col_names)
 
-    # Reshape per ottenere [N, num_cols, C]
+    #[N, num_cols, C]
     x = x.view(N, num_cols, C)
 
-    # Suddividi in dict: col_name → Tensor[N, C]
+    
     col_emb_dict = {
         col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
     }
@@ -284,9 +267,18 @@ class FeatureSelfAttentionNet(torch.nn.Module):
         attn_out, _ = self.attn(x, x, x)  # Self-attention tra le feature
         x = self.norm(attn_out + x)       # Residual connection + LayerNorm
         return x.mean(dim=1)              # Aggrega le feature in un'unica embedding per nodo
-#new
+
 
 class ResNet2(Module):
+    """
+    Before Resnet returned a unique embedding for all the columns of a node,
+    now it returns 2 object2:
+    1. a tensor of shape [N, num_col*out_channels]. Basically the results
+       of the embeddings for all the columns.
+    2. a list of string elements with the names of the columns ordered
+       as the first tensor.
+    concatened.
+    """
     def __init__(
         self,
         channels: int,
@@ -307,14 +299,14 @@ class ResNet2(Module):
                 stype.numerical: LinearEncoder(),
             }
 
-        self.encoder = MyStypeWiseFeatureEncoder(
+        self.encoder = MyStypeWiseFeatureEncoder( ##################################à
             out_channels=channels,
             col_stats=col_stats,
             col_names_dict=col_names_dict,
             stype_encoder_dict=stype_encoder_dict,
         )
 
-        ###new:
+        ###new: second list returned:
         self.col_names = [
             col_name
             for stype, col_list in col_names_dict.items()
@@ -322,6 +314,13 @@ class ResNet2(Module):
         ]
         ###new:
 
+        """
+        This is the real novelty of this implementation:
+        We are passing the embeddings of all the
+        columns to a self attention module that apply
+        the self attention between the embeddings of the 
+        columns.
+        """
         self.feature_attn = FeatureSelfAttentionNet(dim=channels)
 
 
@@ -369,9 +368,9 @@ class ResNet2(Module):
         #col_emb_dict = extract_column_embeddings(x, tf, out_channels=128)
         #print(col_emb_dict.keys())  # es: torch.Size([N, 128])
         
-        col_order = self.col_names  # assicurati dell'ordine
+        col_order = self.col_names  #maintain the order of columns
         x = torch.stack([col_emb_dict[col] for col in col_order], dim=1)  # [N, F, C]
-        x = self.feature_attn(x)  # passa per self-attention
+        x = self.feature_attn(x)  # pass to self-attention
 
         #newww
         #x = x.view(x.size(0), math.prod(x.shape[1:]))
@@ -386,25 +385,7 @@ class ResNet2(Module):
 
 
 class MyHeteroEncoder(torch.nn.Module):
-    r"""HeteroEncoder based on PyTorch Frame.
-
-    Args:
-        channels (int): The output channels for each node type.
-        node_to_col_names_dict (Dict[NodeType, Dict[torch_frame.stype, List[str]]]):
-            A dictionary mapping from node type to column names dictionary
-            compatible to PyTorch Frame.
-        torch_frame_model_cls: Model class for PyTorch Frame. The class object
-            takes :class:`TensorFrame` object as input and outputs
-            :obj:`channels`-dimensional embeddings. Default to
-            :class:`torch_frame.nn.ResNet`.
-        torch_frame_model_kwargs (Dict[str, Any]): Keyword arguments for
-            :class:`torch_frame_model_cls` class. Default keyword argument is
-            set specific for :class:`torch_frame.nn.ResNet`. Expect it to
-            be changed for different :class:`torch_frame_model_cls`.
-        default_stype_encoder_cls_kwargs (Dict[torch_frame.stype, Any]):
-            A dictionary mapping from :obj:`torch_frame.stype` object into a
-            tuple specifying :class:`torch_frame.nn.StypeEncoder` class and its
-            keyword arguments :obj:`kwargs`.
+    r"""The same but now calls ResNet2
     """
 
     def __init__(
@@ -412,7 +393,7 @@ class MyHeteroEncoder(torch.nn.Module):
         channels: int,
         node_to_col_names_dict: Dict[NodeType, Dict[torch_frame.stype, List[str]]],
         node_to_col_stats: Dict[NodeType, Dict[str, Dict[StatType, Any]]],
-        torch_frame_model_cls=ResNet2,
+        torch_frame_model_cls=ResNet2,    ###################################################################################
         torch_frame_model_kwargs: Dict[str, Any] = {
             "channels": 128,
             "num_layers": 4,
@@ -481,7 +462,7 @@ class MyModel(torch.nn.Module):
     ):
         super().__init__()
 
-        self.encoder = MyHeteroEncoder(
+        self.encoder = MyHeteroEncoder(  ###########################################################################
             channels=channels,
             node_to_col_names_dict={
                 node_type: data[node_type].tf.col_names_dict
