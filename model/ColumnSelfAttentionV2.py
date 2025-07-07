@@ -66,219 +66,6 @@ from relbench.modeling.utils import get_stype_proposal
 from torch_frame.nn.encoder.stypewise_encoder import StypeWiseFeatureEncoder
 
 
-
-# class FCResidualBlock(Module):
-#     r"""Fully connected residual block.
-
-#     Args:
-#         in_channels (int): The number of input channels.
-#         out_channels (int): The number of output channels.
-#         normalization (str, optional): The type of normalization to use.
-#             :obj:`layer_norm`, :obj:`batch_norm`, or :obj:`None`.
-#             (default: :obj:`layer_norm`)
-#         dropout_prob (float): The dropout probability (default: `0.0`, i.e.,
-#             no dropout).
-#     """
-#     def __init__(
-#         self,
-#         in_channels: int,
-#         out_channels: int,
-#         normalization: str | None = "layer_norm",
-#         dropout_prob: float = 0.0,
-#     ) -> None:
-#         super().__init__()
-#         self.lin1 = Linear(in_channels, out_channels)
-#         self.lin2 = Linear(out_channels, out_channels)
-#         self.relu = ReLU()
-#         self.dropout = Dropout(dropout_prob)
-
-#         self.norm1: BatchNorm1d | LayerNorm | None
-#         self.norm2: BatchNorm1d | LayerNorm | None
-#         if normalization == "batch_norm":
-#             self.norm1 = BatchNorm1d(out_channels)
-#             self.norm2 = BatchNorm1d(out_channels)
-#         elif normalization == "layer_norm":
-#             self.norm1 = LayerNorm(out_channels)
-#             self.norm2 = LayerNorm(out_channels)
-#         else:
-#             self.norm1 = self.norm2 = None
-
-#         self.shortcut: Linear | None
-#         if in_channels != out_channels:
-#             self.shortcut = Linear(in_channels, out_channels)
-#         else:
-#             self.shortcut = None
-
-#     def reset_parameters(self) -> None:
-#         self.lin1.reset_parameters()
-#         self.lin2.reset_parameters()
-#         if self.norm1 is not None:
-#             self.norm1.reset_parameters()
-#         if self.norm2 is not None:
-#             self.norm2.reset_parameters()
-#         if self.shortcut is not None:
-#             self.shortcut.reset_parameters()
-
-#     def forward(self, x: Tensor) -> Tensor:
-#         out = self.lin1(x)
-#         out = self.norm1(out) if self.norm1 else out
-#         out = self.relu(out)
-#         out = self.dropout(out)
-
-#         out = self.lin2(out)
-#         out = self.norm2(out) if self.norm2 else out
-#         out = self.relu(out)
-#         out = self.dropout(out)
-
-#         if self.shortcut is not None:
-#             x = self.shortcut(x)
-
-#         out = out + x
-
-#         return out
-
-# class MyStypeWiseFeatureEncoder(FeatureEncoder):
-#     r"""Feature encoder that transforms each stype tensor into embeddings and
-#     performs the final concatenation.
-
-#     Args:
-#         out_channels (int): Output dimensionality.
-#         col_stats
-#             (dict[str, dict[:class:`torch_frame.data.stats.StatType`, Any]]):
-#             A dictionary that maps column name into stats. Available as
-#             :obj:`dataset.col_stats`.
-#         col_names_dict (dict[:class:`torch_frame.stype`, list[str]]): A
-#             dictionary that maps stype to a list of column names. The column
-#             names are sorted based on the ordering that appear in
-#             :obj:`tensor_frame.feat_dict`.
-#             Available as :obj:`tensor_frame.col_names_dict`.
-#         stype_encoder_dict
-#             (dict[:class:`torch_frame.stype`,
-#             :class:`torch_frame.nn.encoder.StypeEncoder`]):
-#             A dictionary that maps :class:`torch_frame.stype` into
-#             :class:`torch_frame.nn.encoder.StypeEncoder` class. Only
-#             parent :class:`stypes <torch_frame.stype>` are supported
-#             as keys.
-#     """
-#     def __init__(
-#         self,
-#         out_channels: int,
-#         col_stats: dict[str, dict[StatType, Any]],
-#         col_names_dict: dict[torch_frame.stype, list[str]],
-#         stype_encoder_dict: dict[torch_frame.stype, StypeEncoder],
-#     ) -> None:
-#         super().__init__()
-
-#         self.col_stats = col_stats
-#         self.col_names_dict = col_names_dict
-#         self.encoder_dict = ModuleDict()
-#         for stype, stype_encoder in stype_encoder_dict.items():
-#             if stype != stype.parent:
-#                 if stype.parent in stype_encoder_dict:
-#                     msg = (
-#                         f"You can delete this {stype} directly since encoder "
-#                         f"for parent stype {stype.parent} is already declared."
-#                     )
-#                 else:
-#                     msg = (f"To resolve the issue, you can change the key from"
-#                            f" {stype} to {stype.parent}.")
-#                 raise ValueError(f"{stype} is an invalid stype to use in the "
-#                                  f"stype_encoder_dcit. {msg}")
-#             if stype not in stype_encoder.supported_stypes:
-#                 raise ValueError(
-#                     f"{stype_encoder} does not support encoding {stype}.")
-
-#             if stype in col_names_dict:
-#                 stats_list = [
-#                     self.col_stats[col_name]
-#                     for col_name in self.col_names_dict[stype]
-#                 ]
-#                 # Set lazy attributes
-#                 stype_encoder.stype = stype
-#                 stype_encoder.out_channels = out_channels
-#                 stype_encoder.stats_list = stats_list
-#                 self.encoder_dict[stype.value] = stype_encoder
-
-#     def forward(self, tf: TensorFrame) -> tuple[Tensor, list[str]]:
-#         all_col_names = []
-#         xs = []
-#         for stype in tf.stypes:
-#             feat = tf.feat_dict[stype]
-#             col_names = self.col_names_dict[stype]
-#             x = self.encoder_dict[stype.value](feat, col_names)
-#             xs.append(x)
-#             all_col_names.extend(col_names)
-#         x = torch.cat(xs, dim=1)
-#         return x, all_col_names
-
-
-class FeatureSelfAttentionBlock(torch.nn.Module):
-    def __init__(self, dim: int, num_heads: int, dropout: float):
-        super().__init__()
-        self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
-        self.norm1 = torch.nn.LayerNorm(dim)
-        self.norm2 = torch.nn.LayerNorm(dim)
-
-        self.ffn = torch.nn.Sequential(
-            torch.nn.Linear(dim, dim * 4),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(dropout),
-            torch.nn.Linear(dim * 4, dim),
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        # Attention + residual + norm
-        attn_out, _ = self.attn(x, x, x)
-        x = self.norm1(x + attn_out)
-
-        # Feedforward + residual + norm
-        ffn_out = self.ffn(x)
-        x = self.norm2(x + ffn_out)
-
-        return x
-
-
-class FeatureSelfAttentionNet(torch.nn.Module):
-    def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1, num_layers: int = 2, pooling: str = 'mean'):
-        super().__init__()
-        self.layers = torch.nn.ModuleList([
-            FeatureSelfAttentionBlock(dim, num_heads, dropout)
-            for _ in range(num_layers)
-        ])
-        self.pooling = pooling
-        assert pooling in {'mean', 'cls', 'none'}
-
-    def forward(self, x: Tensor) -> Tensor:
-        # x: [N, F, C] = [batch, features, channels]
-        for layer in self.layers:
-            x = layer(x)  # ogni layer output [N, F, C]
-
-        if self.pooling == 'mean':
-            return x.mean(dim=1)  # [N, C]
-        elif self.pooling == 'cls':
-            return x[:, 0, :]     # usa la prima "colonna" come token speciale
-        else:  # 'none'
-            return x  # [N, F, C]
-
-
-def extract_column_embeddings(encoder: StypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
-    """
-    Function that extracts the embeddings for each column of a node.
-    Returns a dictionary {column_name: Tensor[N, C]}.
-    """
-    x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
-    N = x.size(0)
-    C = out_channels
-    num_cols = len(all_col_names)
-
-    x = x.view(N, num_cols, C) #[N, num_cols, C]
-
-    col_emb_dict = {
-        col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
-    } #col_name → Tensor[N, C]
-    
-    return col_emb_dict
-
 class FCResidualBlock(Module):
     r"""Fully connected residual block.
 
@@ -348,6 +135,76 @@ class FCResidualBlock(Module):
         out = out + x
 
         return out
+
+
+
+class FeatureSelfAttentionBlock(torch.nn.Module):
+    def __init__(self, dim: int, num_heads: int, dropout: float):
+        super().__init__()
+        self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+        self.norm1 = torch.nn.LayerNorm(dim)
+        self.norm2 = torch.nn.LayerNorm(dim)
+
+        self.ffn = torch.nn.Sequential(
+            torch.nn.Linear(dim, dim * 4),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(dim * 4, dim),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        # Attention + residual + norm
+        attn_out, _ = self.attn(x, x, x)
+        x = self.norm1(x + attn_out)
+
+        # Feedforward + residual + norm
+        ffn_out = self.ffn(x)
+        x = self.norm2(x + ffn_out)
+
+        return x
+
+
+class FeatureSelfAttentionNet(torch.nn.Module):
+    def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1, num_layers: int = 2, pooling: str = 'mean'):
+        super().__init__()
+        self.layers = torch.nn.ModuleList([
+            FeatureSelfAttentionBlock(dim, num_heads, dropout)
+            for _ in range(num_layers)
+        ])
+        self.pooling = pooling
+        assert pooling in {'mean', 'cls', 'none'}
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [N, F, C] = [batch, features, channels]
+        for layer in self.layers:
+            x = layer(x)  # ogni layer output [N, F, C]
+
+        if self.pooling == 'mean':
+            return x.mean(dim=1)  # [N, C]
+        elif self.pooling == 'cls':
+            return x[:, 0, :]     # usa la prima "colonna" come token speciale
+        else:  # 'none'
+            return x  # [N, F, C]
+
+
+def extract_column_embeddings(encoder: StypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
+    """
+    Function that extracts the embeddings for each column of a node.
+    Returns a dictionary {column_name: Tensor[N, C]}.
+    """
+    x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
+    N = x.size(0)
+    C = out_channels
+    num_cols = len(all_col_names)
+
+    x = x.view(N, num_cols, C) #[N, num_cols, C]
+
+    col_emb_dict = {
+        col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
+    } #col_name → Tensor[N, C]
+    
+    return col_emb_dict
+
 
 
 class ResNet2(Module):
