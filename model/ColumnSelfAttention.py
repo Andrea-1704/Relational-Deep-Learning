@@ -136,69 +136,149 @@ class FCResidualBlock(Module):
 
         return out
 
-
-
-class FeatureSelfAttentionBlock(torch.nn.Module):
-    def __init__(self, dim: int, num_heads: int, dropout: float):
+class FeatureSelfAttentionBlockWithFFN(nn.Module):
+    def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1):
         super().__init__()
-        self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
-        self.norm1 = torch.nn.LayerNorm(dim)
-        self.norm2 = torch.nn.LayerNorm(dim)
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+        self.dropout1 = nn.Dropout(dropout)
 
-        self.ffn = torch.nn.Sequential(
-            torch.nn.Linear(dim, dim * 4),
-            torch.nn.ReLU(),
-            torch.nn.Dropout(dropout),
-            torch.nn.Linear(dim * 4, dim),
+        self.norm2 = nn.LayerNorm(dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, dim * 4),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim * 4, dim),
+            nn.Dropout(dropout),
         )
 
-    def forward(self, x: Tensor) -> Tensor:
-        # Attention + residual + norm
-        attn_out, _ = self.attn(x, x, x)
-        x = self.norm1(x + attn_out)
+    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
+        # x: [N, F, C]
+        residual = x
+        x = self.norm1(x)
 
-        # Feedforward + residual + norm
-        ffn_out = self.ffn(x)
-        x = self.norm2(x + ffn_out)
+        # MultiheadAttention expects (query, key, value)
+        attn_output, _ = self.attn(x, x, x, key_padding_mask=mask)
+        x = residual + self.dropout1(attn_output)
+
+        # FFN with residual
+        residual = x
+        x = self.norm2(x)
+        x = residual + self.ffn(x)
 
         return x
 
 
-class FeatureSelfAttentionNetV2(torch.nn.Module):
-    def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1, num_layers: int = 2, pooling: str = 'mean'):
+class FeatureSelfAttentionNet(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+        num_layers: int = 2,
+        pooling: str = 'mean'
+    ):
         super().__init__()
-        self.layers = torch.nn.ModuleList([
-            FeatureSelfAttentionBlock(dim, num_heads, dropout)
+        assert pooling in {'mean', 'cls', 'none'}
+        self.pooling = pooling
+        self.dim = dim
+
+        # Token [CLS] se serve
+        if pooling == 'cls':
+            self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+
+        self.layers = nn.ModuleList([
+            FeatureSelfAttentionBlockWithFFN(dim, num_heads, dropout)
             for _ in range(num_layers)
         ])
-        self.pooling = pooling
-        assert pooling in {'mean', 'cls', 'none'}
 
-    def forward(self, x: Tensor) -> Tensor:
-        # x: [N, F, C] = [batch, features, channels]
+        self.norm = nn.LayerNorm(dim)
+
+    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
+        # x: [N, F, C]
+        N = x.size(0)
+
+        if self.pooling == 'cls':
+            cls_tokens = self.cls_token.expand(N, 1, self.dim)  # [N, 1, C]
+            x = torch.cat([cls_tokens, x], dim=1)  # [N, F+1, C]
+
         for layer in self.layers:
-            x = layer(x)  # ogni layer output [N, F, C]
+            x = layer(x, mask=mask)  # still [N, F, C] or [N, F+1, C]
+
+        x = self.norm(x)
 
         if self.pooling == 'mean':
             return x.mean(dim=1)  # [N, C]
         elif self.pooling == 'cls':
-            return x[:, 0, :]     # usa la prima "colonna" come token speciale
-        else:  # 'none'
+            return x[:, 0, :]  # [N, C]
+        else:
             return x  # [N, F, C]
+
+
+
+
+#version2:
+# class FeatureSelfAttentionBlock(torch.nn.Module):
+#     def __init__(self, dim: int, num_heads: int, dropout: float):
+#         super().__init__()
+#         self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+#         self.norm1 = torch.nn.LayerNorm(dim)
+#         self.norm2 = torch.nn.LayerNorm(dim)
+
+#         self.ffn = torch.nn.Sequential(
+#             torch.nn.Linear(dim, dim * 4),
+#             torch.nn.ReLU(),
+#             torch.nn.Dropout(dropout),
+#             torch.nn.Linear(dim * 4, dim),
+#         )
+
+#     def forward(self, x: Tensor) -> Tensor:
+#         # Attention + residual + norm
+#         attn_out, _ = self.attn(x, x, x)
+#         x = self.norm1(x + attn_out)
+
+#         # Feedforward + residual + norm
+#         ffn_out = self.ffn(x)
+#         x = self.norm2(x + ffn_out)
+
+#         return x
+
+
+# class FeatureSelfAttentionNet(torch.nn.Module):
+#     def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1, num_layers: int = 2, pooling: str = 'mean'):
+#         super().__init__()
+#         self.layers = torch.nn.ModuleList([
+#             FeatureSelfAttentionBlock(dim, num_heads, dropout)
+#             for _ in range(num_layers)
+#         ])
+#         self.pooling = pooling
+#         assert pooling in {'mean', 'cls', 'none'}
+
+#     def forward(self, x: Tensor) -> Tensor:
+#         # x: [N, F, C] = [batch, features, channels]
+#         for layer in self.layers:
+#             x = layer(x)  # ogni layer output [N, F, C]
+
+#         if self.pooling == 'mean':
+#             return x.mean(dim=1)  # [N, C]
+#         elif self.pooling == 'cls':
+#             return x[:, 0, :]     # usa la prima "colonna" come token speciale
+#         else:  # 'none'
+#             return x  # [N, F, C]
         
 
-        
-class FeatureSelfAttentionNet(torch.nn.Module):
-    def __init__(self, dim: int, num_heads: int = 4):
-        super().__init__()
-        self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
-        self.norm = torch.nn.LayerNorm(dim)
+#version 1:    
+# class FeatureSelfAttentionNet(torch.nn.Module):
+#     def __init__(self, dim: int, num_heads: int = 4):
+#         super().__init__()
+#         self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+#         self.norm = torch.nn.LayerNorm(dim)
 
-    def forward(self, x: Tensor) -> Tensor:
-        # x shape: [N, F, C]
-        attn_out, _ = self.attn(x, x, x)  # Self-attention tra le feature
-        x = self.norm(attn_out + x)       # Residual connection + LayerNorm
-        return x.mean(dim=1)              # Aggrega le feature in un'unica embedding per nodo
+#     def forward(self, x: Tensor) -> Tensor:
+#         # x shape: [N, F, C]
+#         attn_out, _ = self.attn(x, x, x)  # Self-attention tra le feature
+#         x = self.norm(attn_out + x)       # Residual connection + LayerNorm
+#         return x.mean(dim=1)              # Aggrega le feature in un'unica embedding per nodo
 
 
 
@@ -265,8 +345,11 @@ class ResNet2(Module):
             col_name
             for stype, col_list in col_names_dict.items()
             for col_name in col_list
-        ]
-        ###new:
+        ]###
+        #this "self.col_names" is used to mantain the order
+        #between the columns, since col_names_dict is a 
+        #dict, so there is no order.
+
 
         #self.feature_attn = FeatureSelfAttentionNet(dim=channels)
         embedding_dim = channels  
@@ -277,6 +360,11 @@ class ResNet2(Module):
             num_layers=2,
             pooling='mean',  # oppure 'cls' o 'none'
         )
+        #FeatureSelfAttentionNet will receive embeddings for 
+        #each columns of the node and will aggregate the embeddings
+        #of the different columns in a single embedding for that node
+        #but considering attention weights, which specifies how relevant
+        #is each single column for the final embeddings.
 
         in_channels = channels 
         self.backbone = Sequential(*[
@@ -304,14 +392,6 @@ class ResNet2(Module):
         self.decoder[-1].reset_parameters()
 
     def forward(self, tf: TensorFrame) -> Tensor:
-        r"""Transforming :class:`TensorFrame` object into output prediction.
-
-        Args:
-            tf (TensorFrame): Input :class:`TensorFrame` object.
-
-        Returns:
-            torch.Tensor: Output of shape [batch_size, out_channels].
-        """
         x, _ = self.encoder(tf)
         
         #now we extract the embeddings of each of the columns:
