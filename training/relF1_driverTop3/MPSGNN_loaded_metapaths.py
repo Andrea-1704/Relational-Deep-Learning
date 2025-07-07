@@ -88,29 +88,19 @@ def train2():
 
     data_official['drivers'].y = target_vector_official.float()
     data_official['drivers'].train_mask = ~torch.isnan(target_vector_official)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-    data_full, col_stats_dict_full = make_pkey_fkey_graph(
-        db_nuovo,
-        col_to_stype_dict=col_to_stype_dict_nuovo,
-        text_embedder_cfg=None,
-        cache_dir=None
-    )
-    data_full = data_full.to(device)
-
-
-    data_full['drivers'].y = target_vector_official.float()
-    data_full['drivers'].train_mask = ~torch.isnan(target_vector_official)
-
-
-    y_full = data_full['drivers'].y.float()
-    train_mask_full = data_full['drivers'].train_mask
+    y_full = data_official['drivers'].y.float()
+    train_mask_full = data_official['drivers'].train_mask
     num_pos = (y_full[train_mask_full] == 1).sum()
     num_neg = (y_full[train_mask_full] == 0).sum()
     pos_weight = torch.tensor([num_neg / num_pos], device=device)
+
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    hidden_channels = 128
+    out_channels = 128
 
     loader_dict = loader_dict_fn(
         batch_size=1024,
@@ -121,16 +111,12 @@ def train2():
         val_table=val_table,
         test_table=test_table
     )
-
-    # metapaths = [[('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')]]
-    # metapath_counts = {(('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors')): 92, (('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_raceId', 'races')): 92, (('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_raceId', 'races'), ('races', 'f2p_circuitId', 'circuits')): 867}
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
-    metapath_counts = {('drivers', 'rev_f2p_driverId', 'results'): 1}
-
-    hidden_channels = 128
-    out_channels = 128
     lr=1e-02
     wd=0
+    
+    
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
+    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
