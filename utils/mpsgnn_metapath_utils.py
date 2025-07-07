@@ -404,6 +404,9 @@ def beam_metapath_search_with_bags_learned_2(
     epochs: int = 100,
     max_rel: int = 10
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+    """
+    Avoid score computation, compute results only using mps gnn.
+    """
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with torch.no_grad():
@@ -475,10 +478,36 @@ def beam_metapath_search_with_bags_learned_2(
                 )
                 if len(bags) < 5:
                     continue
-                score = evaluate_relation_learned(bags, labels, node_embeddings)
-                print(f"relation {rel} allow us to obtain score {score}")
+                #score = evaluate_relation_learned(bags, labels, node_embeddings)
+                #print(f"relation {rel} allow us to obtain score {score}")
                 new_path = path + [rel]
-                next_paths_info.append((score, new_path, bags, labels, alpha_next))
+                local_path2 = new_path.copy()
+                loc = [local_path2.copy()]
+                metapath_counts[tuple(local_path2)] += 1
+                model = MPSGNN(
+                    data=data,
+                    col_stats_dict=col_stats_dict,
+                    metadata=data.metadata(),
+                    metapath_counts = metapath_counts,
+                    metapaths=loc,
+                    hidden_channels=hidden_channels,
+                    out_channels=out_channels,
+                    final_out_channels=1,
+                ).to(device)
+                optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+                #EPOCHS:
+                test_table = task.get_table("test", mask_input_cols=False)
+                best_test_metrics = -math.inf if higher_is_better else math.inf
+                for _ in range(0, epochs):
+                    train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+                    test_pred = test(model, loader_dict["test"], device=device, task=task)
+                    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+                    if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
+                        best_test_metrics = test_metrics[tune_metric]
+                    if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
+                        best_test_metrics = test_metrics[tune_metric]
+                print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
+                next_paths_info.append((best_test_metrics, new_path, bags, labels, alpha_next))
 
         current_paths = []
         current_bags = []
@@ -495,14 +524,15 @@ def beam_metapath_search_with_bags_learned_2(
         all_path_info.extend(next_paths_info)
 
     #final selection of the best beamwodth paths:
-    all_path_info.sort(key=lambda x:x[0])
-    selected = all_path_info[:number_of_metapaths]
-    for _, path, bags, _, _ in selected:
-      metapaths.append(path)
-      metapath_counts[tuple(path)] = len(bags)
-    print(f"final metapaths are: {metapaths}")
-    print(f"metapath counts are: {metapath_counts}")
-    return metapaths, metapath_counts
+    best_score_per_path = {}
+    for score, path in all_path_info:
+        path_tuple = tuple(path)
+        if path_tuple not in best_score_per_path:
+            best_score_per_path[path_tuple] = score
+    sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
+    selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
+    
+    return selected_metapaths, metapath_counts
 
 
 
