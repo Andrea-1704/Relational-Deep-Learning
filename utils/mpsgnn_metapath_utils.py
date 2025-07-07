@@ -487,7 +487,7 @@ def beam_metapath_search_with_bags_learned_2(
                 loc = [local_path2.copy()]
                 #print(f"Quello che mettiamo dentro metapaths counts è {tuple(local_path2)}")
                 metapath_counts[tuple(local_path2)] += 1
-                print(loc)
+                print(loc) #[[('drivers', 'rev_f2p_driverId', 'results')]]
                 model = MPSGNN(
                     data=data,
                     col_stats_dict=col_stats_dict,
