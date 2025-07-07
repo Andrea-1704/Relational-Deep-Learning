@@ -122,7 +122,7 @@ def train2():
         col_stats_dict=col_stats_dict_official,
         metadata=data_official.metadata(),
         metapath_counts = metapath_counts,
-        metapaths=[metapaths],
+        metapaths=metapaths,
         hidden_channels=hidden_channels,
         out_channels=out_channels,
         final_out_channels=1,
