@@ -136,6 +136,8 @@ class FCResidualBlock(Module):
 
         return out
 
+
+#version 3:
 class FeatureSelfAttentionBlockWithFFN(nn.Module):
     def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1):
         super().__init__()
@@ -169,50 +171,176 @@ class FeatureSelfAttentionBlockWithFFN(nn.Module):
         return x
 
 
+class FeatureSelfAttentionBlockHighPerf(nn.Module):
+    def __init__(self, dim: int, num_heads: int, dropout: float):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+        self.dropout1 = nn.Dropout(dropout)
+
+        self.norm2 = nn.LayerNorm(dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, dim * 4),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim * 4, dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        # Self-attention + residual
+        x_attn = self.attn(self.norm1(x), self.norm1(x), self.norm1(x))[0]
+        x = x + self.dropout1(x_attn)
+
+        # Feed-forward + residual
+        x = x + self.ffn(self.norm2(x))
+        return x
+
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import Tensor
+
 class FeatureSelfAttentionNet(nn.Module):
     def __init__(
         self,
         dim: int,
-        num_heads: int = 4,
+        num_heads: int = 8,
         dropout: float = 0.1,
-        num_layers: int = 2,
-        pooling: str = 'mean'
+        num_layers: int = 4,
+        pooling: str = 'cls',
+        max_num_columns: int = 64,
+        num_stypes: int = 5,
+        drop_feature_prob: float = 0.1,
     ):
         super().__init__()
         assert pooling in {'mean', 'cls', 'none'}
         self.pooling = pooling
         self.dim = dim
+        self.drop_feature_prob = drop_feature_prob
 
-        # Token [CLS] se serve
+        # Token [CLS] learnabile
         if pooling == 'cls':
             self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
 
+        # Positional embedding (colonna)
+        self.pos_embedding = nn.Parameter(torch.randn(1, max_num_columns + 1, dim))
+
+        # Stype embedding (categorical, numerical, ecc.)
+        self.stype_embedding = nn.Embedding(num_stypes, dim)
+
+        # Stack di blocchi Attention + FFN
         self.layers = nn.ModuleList([
-            FeatureSelfAttentionBlockWithFFN(dim, num_heads, dropout)
+            FeatureSelfAttentionBlockHighPerf(dim, num_heads, dropout)
             for _ in range(num_layers)
         ])
 
-        self.norm = nn.LayerNorm(dim)
+        self.final_norm = nn.LayerNorm(dim)
 
-    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
-        # x: [N, F, C]
-        N = x.size(0)
+    def forward(self, x: Tensor, stype_ids: Tensor) -> Tensor:
+        """
+        x: Tensor di forma [N, F, C] = [batch, colonne, embedding dim]
+        stype_ids: Tensor [F] con id numerici dei tipi semantici delle colonne (uguale per tutti i batch)
+        """
+        N, F, C = x.shape
+        device = x.device
 
+        # DropFeature (DropColumn) – regolarizzazione
+        if self.training and self.drop_feature_prob > 0:
+            mask = (torch.rand(N, F, device=device) > self.drop_feature_prob).float().unsqueeze(-1)
+            x = x * mask  # [N, F, C]
+
+        # Add stype embeddings
+        stype_emb = self.stype_embedding(stype_ids).unsqueeze(0).expand(N, F, C)
+        x = x + stype_emb
+
+        # Add positional embeddings
+        pos_emb = self.pos_embedding[:, 1:F + 1, :].expand(N, F, C)
+        x = x + pos_emb
+
+        # Add [CLS] token
         if self.pooling == 'cls':
-            cls_tokens = self.cls_token.expand(N, 1, self.dim)  # [N, 1, C]
-            x = torch.cat([cls_tokens, x], dim=1)  # [N, F+1, C]
+            cls_token = self.cls_token.expand(N, 1, C)
+            cls_pos = self.pos_embedding[:, :1, :].expand(N, 1, C)
+            x = torch.cat([cls_token + cls_pos, x], dim=1)  # [N, F+1, C]
 
+        # Self-attention + FFN blocks
         for layer in self.layers:
-            x = layer(x, mask=mask)  # still [N, F, C] or [N, F+1, C]
+            x = layer(x)
 
-        x = self.norm(x)
+        x = self.final_norm(x)
 
         if self.pooling == 'mean':
-            return x.mean(dim=1)  # [N, C]
+            return x.mean(dim=1)
         elif self.pooling == 'cls':
-            return x[:, 0, :]  # [N, C]
+            return x[:, 0, :]
         else:
             return x  # [N, F, C]
+
+
+
+
+#version 3:
+# class FeatureSelfAttentionNet(nn.Module):
+#     """ 
+#     Input: [N, F, C], where "N" is the number of nodes;
+#     F is the number of features and C the embedding size 
+#     for each of them.
+    
+#     Output: [N, C].
+#     """
+#     def __init__(
+#         self,
+#         dim: int,
+#         num_heads: int = 4,
+#         dropout: float = 0.1,
+#         num_layers: int = 2,
+#         pooling: str = 'mean'
+#     ):
+#         super().__init__()
+#         assert pooling in {'mean', 'cls', 'none'}
+#         self.pooling = pooling
+#         self.dim = dim
+
+#         # Token [CLS] se serve
+#         if pooling == 'cls':
+#             self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+
+#         self.layers = nn.ModuleList([
+#             FeatureSelfAttentionBlockWithFFN(dim, num_heads, dropout)
+#             for _ in range(num_layers)
+#         ])
+#         """
+#         Each layer follows: 
+#         1. Self attention between columns
+#         2. Feedforward for each column
+#         3. Residul connections
+#         4. Layer norm
+#         """
+
+#         self.norm = nn.LayerNorm(dim)
+
+#     def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
+#         # x: [N, F, C]
+#         N = x.size(0)
+
+#         if self.pooling == 'cls':
+#             cls_tokens = self.cls_token.expand(N, 1, self.dim)  # [N, 1, C]
+#             x = torch.cat([cls_tokens, x], dim=1)  # [N, F+1, C]
+
+#         for layer in self.layers:
+#             x = layer(x, mask=mask)  # still [N, F, C] or [N, F+1, C]
+
+#         x = self.norm(x)
+
+#         if self.pooling == 'mean':
+#             return x.mean(dim=1)  # [N, C]
+#         elif self.pooling == 'cls':
+#             return x[:, 0, :]  # [N, C]
+#         else:
+#             return x  # [N, F, C]
 
 
 
