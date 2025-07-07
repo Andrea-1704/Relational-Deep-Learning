@@ -149,11 +149,13 @@ def train2():
         final_out_channels=1,
     ).to(device)
 
-    optimizer = torch.optim.Adam(
-      model.parameters(),
-      lr=0.0001,
-      weight_decay=0
-    )
+    # optimizer = torch.optim.Adam(
+    #   model.parameters(),
+    #   lr=0.0001,
+    #   weight_decay=0
+    # )
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-02, momentum=0.9, weight_decay=0)
+                
 
     scheduler = CosineAnnealingLR(optimizer, T_max=25)
 
