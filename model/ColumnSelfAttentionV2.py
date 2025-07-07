@@ -164,7 +164,7 @@ class FeatureSelfAttentionBlock(torch.nn.Module):
         return x
 
 
-class FeatureSelfAttentionNet(torch.nn.Module):
+class FeatureSelfAttentionNetV2(torch.nn.Module):
     def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1, num_layers: int = 2, pooling: str = 'mean'):
         super().__init__()
         self.layers = torch.nn.ModuleList([
@@ -185,6 +185,21 @@ class FeatureSelfAttentionNet(torch.nn.Module):
             return x[:, 0, :]     # usa la prima "colonna" come token speciale
         else:  # 'none'
             return x  # [N, F, C]
+        
+
+        
+class FeatureSelfAttentionNet(torch.nn.Module):
+    def __init__(self, dim: int, num_heads: int = 4):
+        super().__init__()
+        self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+        self.norm = torch.nn.LayerNorm(dim)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x shape: [N, F, C]
+        attn_out, _ = self.attn(x, x, x)  # Self-attention tra le feature
+        x = self.norm(attn_out + x)       # Residual connection + LayerNorm
+        return x.mean(dim=1)              # Aggrega le feature in un'unica embedding per nodo
+
 
 
 def extract_column_embeddings(encoder: StypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
