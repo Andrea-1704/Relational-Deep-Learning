@@ -1,107 +1,68 @@
-import torch
-import numpy as np
-import math
-from tqdm import tqdm
-
-import sys
-import os
-sys.path.append(os.path.abspath("."))
-
-
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
-from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-from torch_frame.config.text_embedder import TextEmbedderConfig
-from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
-from typing import Any, Dict, List
-from torch import Tensor
-from torch.nn import Embedding, ModuleDict
-from torch_frame.data.stats import StatType
-from torch_geometric.data import HeteroData
-from torch_geometric.nn import MLP
-from torch_geometric.typing import NodeType
-from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
-from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
-from torch_geometric.loader import NeighborLoader
-import pyg_lib
-from torch.nn import ModuleDict
-import torch.nn.functional as F
-from torch import nn
-import random
-from typing import Any, Dict, List, Optional
-
-import torch
-import torch_frame
-from torch import Tensor
-from torch_frame.data.stats import StatType
-from torch_frame.nn.models import ResNet
-from torch_geometric.nn import HeteroConv, LayerNorm, PositionalEncoding, SAGEConv
-from torch_geometric.typing import EdgeType, NodeType
-
-
-import torch
-from torch import nn
-from torch.nn import ModuleDict
-from typing import Any, Dict, List
-from torch import Tensor
-from torch_frame import TensorFrame
-import pandas as pd
-
-
-
-
 import math
-from typing import Any
+import os
+import random
+import sys
+import requests
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+import pandas as pd
+import pyg_lib
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import (
     BatchNorm1d,
     Dropout,
+    Embedding,
     LayerNorm,
     Linear,
     Module,
+    ModuleDict,
     ReLU,
     Sequential,
 )
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 import torch_frame
 from torch_frame import TensorFrame, stype
+from torch_frame.config.text_embedder import TextEmbedderConfig
 from torch_frame.data.stats import StatType
-from torch_frame.nn.encoder.stype_encoder import (
+from torch_frame.nn.encoder import (
     EmbeddingEncoder,
+    FeatureEncoder,
     LinearEncoder,
     StypeEncoder,
 )
-#from torch_frame.nn.encoder.stypewise_encoder import StypeWiseFeatureEncoder
+from torch_frame.nn.models import ResNet
 
+import torch_geometric
+from torch_geometric.data import HeteroData
+from torch_geometric.loader import NeighborLoader
+from torch_geometric.nn import (
+    HeteroConv,
+    LayerNorm as GNNLayerNorm,
+    MLP,
+    PositionalEncoding,
+    SAGEConv,
+)
+from torch_geometric.nn.conv import TransformerConv
+from torch_geometric.seed import seed_everything
+from torch_geometric.typing import EdgeType, NodeType
 
-from torch.nn import Module, Sequential, ReLU, Linear, LayerNorm
-from torch_frame.nn.encoder import EmbeddingEncoder, LinearEncoder
-from torch_frame import stype, TensorFrame
-from torch_frame.data.stats import StatType
-from typing import Any, Dict
-import math
-import torch
-
-from typing import Any
-
-import torch
-from torch import Tensor
-from torch.nn import ModuleDict
-
-import torch_frame
-from torch_frame import TensorFrame
-from torch_frame.data.stats import StatType
-from torch_frame.nn.encoder import FeatureEncoder
-from torch_frame.nn.encoder.stype_encoder import StypeEncoder
-
-from typing import Dict
-
-
+from relbench.modeling.graph import (
+    get_node_train_table_input,
+    make_pkey_fkey_graph,
+)
+from relbench.modeling.nn import (
+    HeteroEncoder,
+    HeteroGraphSAGE,
+    HeteroTemporalEncoder,
+)
+from relbench.modeling.utils import get_stype_proposal
 
 
 
@@ -430,27 +391,13 @@ class ResNet2(Module):
 
 
 class MyHeteroEncoder(torch.nn.Module):
-    r"""HeteroEncoder based on PyTorch Frame.
-
-    Args:
-        channels (int): The output channels for each node type.
-        node_to_col_names_dict (Dict[NodeType, Dict[torch_frame.stype, List[str]]]):
-            A dictionary mapping from node type to column names dictionary
-            compatible to PyTorch Frame.
-        torch_frame_model_cls: Model class for PyTorch Frame. The class object
-            takes :class:`TensorFrame` object as input and outputs
-            :obj:`channels`-dimensional embeddings. Default to
-            :class:`torch_frame.nn.ResNet`.
-        torch_frame_model_kwargs (Dict[str, Any]): Keyword arguments for
-            :class:`torch_frame_model_cls` class. Default keyword argument is
-            set specific for :class:`torch_frame.nn.ResNet`. Expect it to
-            be changed for different :class:`torch_frame_model_cls`.
-        default_stype_encoder_cls_kwargs (Dict[torch_frame.stype, Any]):
-            A dictionary mapping from :obj:`torch_frame.stype` object into a
-            tuple specifying :class:`torch_frame.nn.StypeEncoder` class and its
-            keyword arguments :obj:`kwargs`.
     """
-
+    Is identical to the Relbench version of "HeteroEncoder", but here we are using 
+    a custom version of the "ResNet" which is the actual encoder, in order to 
+    apply the encoding to each column indipendently and then apply the self
+    attention mechanism.
+    """
+    
     def __init__(
         self,
         channels: int,
@@ -509,6 +456,11 @@ class MyHeteroEncoder(torch.nn.Module):
 
 
 class MyModel(torch.nn.Module):
+    """
+    Is identical to the orioginal version, with the only difference that we are now 
+    using a custom version of HeteroEncoder to apply a self attention mechanism 
+    between the embeddings of the columns.
+    """
 
     def __init__(
         self,

@@ -324,9 +324,8 @@ class RelGNN(torch.nn.Module):
         for _ in range(num_model_layers):
             #print(f"num_heads {num_heads}")
             conv = RelGNN_HeteroConv(
-                
                 {
-                    edge_type: RelGNNConv(edge_type[0], in_channels=(channels, channels), out_channels=channels, aggr=aggr, heads= num_heads, simplified_MP=simplified_MP)
+                    edge_type: RelGNNConv(attn_type=edge_type[0], in_channels=(channels, channels), out_channels=channels, aggr=aggr, heads= num_heads, simplified_MP=simplified_MP)
                     for edge_type in edge_types
                 },
                 aggr=aggr,
