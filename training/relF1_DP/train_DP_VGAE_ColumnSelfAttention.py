@@ -58,7 +58,7 @@ from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
-from model.ColumnSelfAttentionV2 import MyModel
+from model.ColumnSelfAttention import MyModel
 
 
 

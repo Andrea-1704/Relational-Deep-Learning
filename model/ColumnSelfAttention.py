@@ -1,115 +1,73 @@
-import torch
-import numpy as np
-import math
-from tqdm import tqdm
-
-import sys
-import os
-sys.path.append(os.path.abspath("."))
-
-
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
-from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-from torch_frame.config.text_embedder import TextEmbedderConfig
-from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
-from typing import Any, Dict, List
-from torch import Tensor
-from torch.nn import Embedding, ModuleDict
-from torch_frame.data.stats import StatType
-from torch_geometric.data import HeteroData
-from torch_geometric.nn import MLP
-from torch_geometric.typing import NodeType
-from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
-from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
-from torch_geometric.loader import NeighborLoader
-import pyg_lib
-from torch.nn import ModuleDict
-import torch.nn.functional as F
-from torch import nn
-import random
-from typing import Any, Dict, List, Optional
-
-import torch
-import torch_frame
-from torch import Tensor
-from torch_frame.data.stats import StatType
-from torch_frame.nn.models import ResNet
-from torch_geometric.nn import HeteroConv, LayerNorm, PositionalEncoding, SAGEConv
-from torch_geometric.typing import EdgeType, NodeType
-
-
-import torch
-from torch import nn
-from torch.nn import ModuleDict
-from typing import Any, Dict, List
-from torch import Tensor
-from torch_frame import TensorFrame
-import pandas as pd
-
-
-
-
 import math
-from typing import Any
+import os
+import random
+import sys
+import requests
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+import pandas as pd
+import pyg_lib
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import (
     BatchNorm1d,
     Dropout,
+    Embedding,
     LayerNorm,
     Linear,
     Module,
+    ModuleDict,
     ReLU,
     Sequential,
 )
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 import torch_frame
 from torch_frame import TensorFrame, stype
+from torch_frame.config.text_embedder import TextEmbedderConfig
 from torch_frame.data.stats import StatType
-from torch_frame.nn.encoder.stype_encoder import (
+from torch_frame.nn.encoder import (
     EmbeddingEncoder,
+    FeatureEncoder,
     LinearEncoder,
     StypeEncoder,
 )
-#from torch_frame.nn.encoder.stypewise_encoder import StypeWiseFeatureEncoder
+from torch_frame.nn.models import ResNet
 
+import torch_geometric
+from torch_geometric.data import HeteroData
+from torch_geometric.loader import NeighborLoader
+from torch_geometric.nn import (
+    HeteroConv,
+    LayerNorm as GNNLayerNorm,
+    MLP,
+    PositionalEncoding,
+    SAGEConv,
+)
+from torch_geometric.nn.conv import TransformerConv
+from torch_geometric.seed import seed_everything
+from torch_geometric.typing import EdgeType, NodeType
 
-from torch.nn import Module, Sequential, ReLU, Linear, LayerNorm
-from torch_frame.nn.encoder import EmbeddingEncoder, LinearEncoder
-from torch_frame import stype, TensorFrame
-from torch_frame.data.stats import StatType
-from typing import Any, Dict
-import math
-import torch
-
-from typing import Any
-
-import torch
-from torch import Tensor
-from torch.nn import ModuleDict
-
-import torch_frame
-from torch_frame import TensorFrame
-from torch_frame.data.stats import StatType
-from torch_frame.nn.encoder import FeatureEncoder
-from torch_frame.nn.encoder.stype_encoder import StypeEncoder
-
-from typing import Dict
-
-
-
-
+from relbench.modeling.graph import (
+    get_node_train_table_input,
+    make_pkey_fkey_graph,
+)
+from relbench.modeling.nn import (
+    HeteroEncoder,
+    HeteroGraphSAGE,
+    HeteroTemporalEncoder,
+)
+from relbench.modeling.utils import get_stype_proposal
+from torch_frame.nn.encoder.stypewise_encoder import StypeWiseFeatureEncoder
 
 
 class FCResidualBlock(Module):
-    r"""
-    (not changed)
-    Fully connected residual block.
+    r"""Fully connected residual block.
 
     Args:
         in_channels (int): The number of input channels.
@@ -178,84 +136,58 @@ class FCResidualBlock(Module):
 
         return out
 
-class MyStypeWiseFeatureEncoder(FeatureEncoder):
-    
-    def __init__(
-        self,
-        out_channels: int,
-        col_stats: dict[str, dict[StatType, Any]],
-        col_names_dict: dict[torch_frame.stype, list[str]],
-        stype_encoder_dict: dict[torch_frame.stype, StypeEncoder],
-    ) -> None:
+
+
+class FeatureSelfAttentionBlock(torch.nn.Module):
+    def __init__(self, dim: int, num_heads: int, dropout: float):
         super().__init__()
+        self.attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+        self.norm1 = torch.nn.LayerNorm(dim)
+        self.norm2 = torch.nn.LayerNorm(dim)
 
-        self.col_stats = col_stats
-        self.col_names_dict = col_names_dict
-        self.encoder_dict = ModuleDict()
-        for stype, stype_encoder in stype_encoder_dict.items():
-            if stype != stype.parent:
-                if stype.parent in stype_encoder_dict:
-                    msg = (
-                        f"You can delete this {stype} directly since encoder "
-                        f"for parent stype {stype.parent} is already declared."
-                    )
-                else:
-                    msg = (f"To resolve the issue, you can change the key from"
-                           f" {stype} to {stype.parent}.")
-                raise ValueError(f"{stype} is an invalid stype to use in the "
-                                 f"stype_encoder_dcit. {msg}")
-            if stype not in stype_encoder.supported_stypes:
-                raise ValueError(
-                    f"{stype_encoder} does not support encoding {stype}.")
+        self.ffn = torch.nn.Sequential(
+            torch.nn.Linear(dim, dim * 4),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(dim * 4, dim),
+        )
 
-            if stype in col_names_dict:
-                stats_list = [
-                    self.col_stats[col_name]
-                    for col_name in self.col_names_dict[stype]
-                ]
-                # Set lazy attributes
-                stype_encoder.stype = stype
-                stype_encoder.out_channels = out_channels
-                stype_encoder.stats_list = stats_list
-                self.encoder_dict[stype.value] = stype_encoder
+    def forward(self, x: Tensor) -> Tensor:
+        # Attention + residual + norm
+        attn_out, _ = self.attn(x, x, x)
+        x = self.norm1(x + attn_out)
 
-    def forward(self, tf: TensorFrame) -> tuple[Tensor, list[str]]:
-        all_col_names = []
-        xs = []
-        for stype in tf.stypes:
-            feat = tf.feat_dict[stype]
-            col_names = self.col_names_dict[stype]
-            x = self.encoder_dict[stype.value](feat, col_names)
-            xs.append(x)
-            all_col_names.extend(col_names)
-        x = torch.cat(xs, dim=1)
-        return x, all_col_names
+        # Feedforward + residual + norm
+        ffn_out = self.ffn(x)
+        x = self.norm2(x + ffn_out)
+
+        return x
 
 
+class FeatureSelfAttentionNetV2(torch.nn.Module):
+    def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1, num_layers: int = 2, pooling: str = 'mean'):
+        super().__init__()
+        self.layers = torch.nn.ModuleList([
+            FeatureSelfAttentionBlock(dim, num_heads, dropout)
+            for _ in range(num_layers)
+        ])
+        self.pooling = pooling
+        assert pooling in {'mean', 'cls', 'none'}
 
-#definisco una funzione che estragga gli embeddings per ogni colonna:
-def extract_column_embeddings(encoder: MyStypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
-    """
-    Retruns a dictionary {col_name: Tensor[N, C]}, containing 
-    the column name as key and as value the embeddings of 
-    that column.
-    """
-    x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
-    N = x.size(0)
-    C = out_channels
-    num_cols = len(all_col_names)
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [N, F, C] = [batch, features, channels]
+        for layer in self.layers:
+            x = layer(x)  # ogni layer output [N, F, C]
 
-    #[N, num_cols, C]
-    x = x.view(N, num_cols, C)
+        if self.pooling == 'mean':
+            return x.mean(dim=1)  # [N, C]
+        elif self.pooling == 'cls':
+            return x[:, 0, :]     # usa la prima "colonna" come token speciale
+        else:  # 'none'
+            return x  # [N, F, C]
+        
 
-    
-    col_emb_dict = {
-        col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
-    }
-    return col_emb_dict
-
-
-#new:
+        
 class FeatureSelfAttentionNet(torch.nn.Module):
     def __init__(self, dim: int, num_heads: int = 4):
         super().__init__()
@@ -269,15 +201,37 @@ class FeatureSelfAttentionNet(torch.nn.Module):
         return x.mean(dim=1)              # Aggrega le feature in un'unica embedding per nodo
 
 
+
+def extract_column_embeddings(encoder: StypeWiseFeatureEncoder, tf: TensorFrame, out_channels: int) -> Dict[str, Tensor]:
+    """
+    Function that extracts the embeddings for each column of a node.
+    Returns a dictionary {column_name: Tensor[N, C]}.
+    """
+    x, all_col_names = encoder(tf)  # [N, num_cols * C], List[str]
+    N = x.size(0)
+    C = out_channels
+    num_cols = len(all_col_names)
+
+    x = x.view(N, num_cols, C) #[N, num_cols, C]
+
+    col_emb_dict = {
+        col_name: x[:, i, :] for i, col_name in enumerate(all_col_names)
+    } #col_name → Tensor[N, C]
+    
+    return col_emb_dict
+
+
+
 class ResNet2(Module):
     """
-    Before Resnet returned a unique embedding for all the columns of a node,
-    now it returns 2 object2:
-    1. a tensor of shape [N, num_col*out_channels]. Basically the results
-       of the embeddings for all the columns.
-    2. a list of string elements with the names of the columns ordered
-       as the first tensor.
-    concatened.
+    To introduce the Self attention mechanism this is the right and only 
+    class to change.
+
+    Originally this class was designed to provide the final embeddings
+    for the nodes. It used to provides the final embeddings, so we have 
+    to break this logic, to get the intermediate embeddings for each 
+    column, apply a self attention mechanims in order to weight them 
+    and then provide the final embeddings.
     """
     def __init__(
         self,
@@ -299,14 +253,14 @@ class ResNet2(Module):
                 stype.numerical: LinearEncoder(),
             }
 
-        self.encoder = MyStypeWiseFeatureEncoder( ##################################à
+        self.encoder = StypeWiseFeatureEncoder(
             out_channels=channels,
             col_stats=col_stats,
             col_names_dict=col_names_dict,
             stype_encoder_dict=stype_encoder_dict,
         )
 
-        ###new: second list returned:
+        ###new:
         self.col_names = [
             col_name
             for stype, col_list in col_names_dict.items()
@@ -314,19 +268,16 @@ class ResNet2(Module):
         ]
         ###new:
 
-        """
-        This is the real novelty of this implementation:
-        We are passing the embeddings of all the
-        columns to a self attention module that apply
-        the self attention between the embeddings of the 
-        columns.
-        """
-        self.feature_attn = FeatureSelfAttentionNet(dim=channels)
+        #self.feature_attn = FeatureSelfAttentionNet(dim=channels)
+        embedding_dim = channels  
+        self.feature_attn = FeatureSelfAttentionNet(
+            dim=embedding_dim,
+            num_heads=4,
+            dropout=0.1,
+            num_layers=2,
+            pooling='mean',  # oppure 'cls' o 'none'
+        )
 
-
-        # num_cols = sum(
-        #     [len(col_names) for col_names in col_names_dict.values()])
-        # in_channels = channels * num_cols
         in_channels = channels 
         self.backbone = Sequential(*[
             FCResidualBlock(
@@ -362,18 +313,13 @@ class ResNet2(Module):
             torch.Tensor: Output of shape [batch_size, out_channels].
         """
         x, _ = self.encoder(tf)
-        #newww:
-        col_emb_dict = extract_column_embeddings(self.encoder, tf, out_channels=128)
-
-        #col_emb_dict = extract_column_embeddings(x, tf, out_channels=128)
-        #print(col_emb_dict.keys())  # es: torch.Size([N, 128])
         
-        col_order = self.col_names  #maintain the order of columns
+        #now we extract the embeddings of each of the columns:
+        col_emb_dict = extract_column_embeddings(self.encoder, tf, out_channels=128)
+        
+        col_order = self.col_names  
         x = torch.stack([col_emb_dict[col] for col in col_order], dim=1)  # [N, F, C]
-        x = self.feature_attn(x)  # pass to self-attention
-
-        #newww
-        #x = x.view(x.size(0), math.prod(x.shape[1:]))
+        x = self.feature_attn(x)  #pass the result to self attention module
 
         x = self.backbone(x)
         out = self.decoder(x)
@@ -381,19 +327,23 @@ class ResNet2(Module):
 
 
 
-
-
-
 class MyHeteroEncoder(torch.nn.Module):
-    r"""The same but now calls ResNet2
+    """
+    Is identical to the Relbench version of "HeteroEncoder", but here we are using 
+    a custom version of the "ResNet" which is the actual encoder, in order to 
+    apply the encoding to each column indipendently and then apply the self
+    attention mechanism.
+
+    How does this works?
+    follow the description I provided below!
     """
 
     def __init__(
         self,
-        channels: int,
+        channels: int, #output dimension of the embeddings of the nodes
         node_to_col_names_dict: Dict[NodeType, Dict[torch_frame.stype, List[str]]],
         node_to_col_stats: Dict[NodeType, Dict[str, Dict[StatType, Any]]],
-        torch_frame_model_cls=ResNet2,    ###################################################################################
+        torch_frame_model_cls=ResNet2,
         torch_frame_model_kwargs: Dict[str, Any] = {
             "channels": 128,
             "num_layers": 4,
@@ -428,6 +378,12 @@ class MyHeteroEncoder(torch.nn.Module):
                 stype_encoder_dict=stype_encoder_dict,
             )
             self.encoders[node_type] = torch_frame_model
+        """
+        in these rows we are building an encoder for each node type.
+        In particular, for each node type, we pass the relevant informations
+        of the node to an encoder (in our case the ResNet2) and we store 
+        the encoder informations insider this "self.encoders" dict.
+        """
 
     def reset_parameters(self):
         for encoder in self.encoders.values():
@@ -437,15 +393,33 @@ class MyHeteroEncoder(torch.nn.Module):
         self,
         tf_dict: Dict[NodeType, torch_frame.TensorFrame],
     ) -> Dict[NodeType, Tensor]:
+        """
+        Here, in the forward method, for each node type we pass the node
+        to the right encoder (using the "self.encoders" dict) and 
+        we get as a result the embeddings for each node type.
+
+        So, this is a very key fucntion, because is the function that 
+        builds the "x_dict" dictionary.
+        """
         x_dict = {
             node_type: self.encoders[node_type](tf) for node_type, tf in tf_dict.items()
         }
-        return x_dict
+        return x_dict   # x_dict = {
+                        # "driver": Tensor[N_driver, channels],
+                        # "race": Tensor[N_race, channels],
+                        # }
+            
+        
     
 
 
 
 class MyModel(torch.nn.Module):
+    """
+    Is identical to the orioginal version, with the only difference that we are now 
+    using a custom version of HeteroEncoder to apply a self attention mechanism 
+    between the embeddings of the columns.
+    """
 
     def __init__(
         self,
@@ -462,7 +436,7 @@ class MyModel(torch.nn.Module):
     ):
         super().__init__()
 
-        self.encoder = MyHeteroEncoder(  ###########################################################################
+        self.encoder = MyHeteroEncoder(
             channels=channels,
             node_to_col_names_dict={
                 node_type: data[node_type].tf.col_names_dict
@@ -503,10 +477,6 @@ class MyModel(torch.nn.Module):
             self.id_awareness_emb = torch.nn.Embedding(1, channels)
         self.reset_parameters()
 
-    def encoder_parameters(self):
-        params = list(self.encoder.parameters()) + list(self.temporal_encoder.parameters()) + list(self.gnn.parameters())
-        return params
-
     def reset_parameters(self):
         self.encoder.reset_parameters()
         self.temporal_encoder.reset_parameters()
@@ -543,7 +513,11 @@ class MyModel(torch.nn.Module):
         )
 
         return self.head(x_dict[entity_table][: seed_time.size(0)])
-
+    
+    def encoder_parameters(self):
+        params = list(self.encoder.parameters()) + list(self.temporal_encoder.parameters()) + list(self.gnn.parameters())
+        return params
+    
     def encode_node_types(self, batch: HeteroData, node_types: List[str], entity_table) -> Dict[str, Tensor]:
         seed_time = batch[entity_table].seed_time
         x_dict = self.encoder(batch.tf_dict)
