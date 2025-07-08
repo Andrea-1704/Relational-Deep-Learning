@@ -1,128 +1,135 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing, MLP
+from torch_geometric.nn import MessagePassing
 from torch_geometric.data import HeteroData
+from torch_geometric.nn import SAGEConv
+from torch_geometric.nn import MLP
 from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 from torch_frame.data.stats import StatType
 from typing import Any, Dict, List, Tuple
 
-
+# --- GNN layer che include filtro edge_type ---
 class MetaPathGNNLayer(MessagePassing):
     def __init__(self, in_channels, out_channels, relation_index):
-        super().__init__(aggr='add', flow='target_to_source')
+        super().__init__(aggr='add', flow="target_to_source")
         self.relation_index = relation_index
         self.w_0 = nn.Linear(in_channels, out_channels)
-        self.w_1 = nn.Linear(in_channels, out_channels)
         self.w_l = nn.Linear(in_channels, out_channels)
+        self.w_1 = nn.Linear(in_channels, out_channels)
 
     def forward(self, x, edge_index, edge_type, h):
         #mask = (edge_type == self.relation_index)
-        edge_index_filtered = edge_index[self.relation_index]
-        #edge_index_filtered = edge_index[:, mask]
-
-        # Manual message passing
-        row, col = edge_index_filtered
-        agg = torch.zeros_like(h)
-        agg.index_add_(0, row, h[col])
-
+        edge_index = edge_index[self.relation_index]
+        agg = self.propagate(edge_index, x=h)
         return self.w_l(agg) + self.w_0(h) + self.w_1(x)
 
+    def message(self, x_j):
+        return x_j
 
+# --- MetaPath GNN per un singolo metapath ---
 class MetaPathGNN(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, metapath: List[int]):
+    def __init__(self, metapath: List[int], in_channels: int, hidden_channels: int, out_channels: int):
         super().__init__()
         self.metapath = metapath
-        self.input_mlp = MLP(in_channels=input_dim, hidden_channels=hidden_dim, out_channels=hidden_dim * 2, num_layers=3)
-
-        self.layers = nn.ModuleList([
-            MetaPathGNNLayer(
-                in_channels=hidden_dim * 2 if i == 0 else hidden_dim,
-                out_channels=hidden_dim,
-                relation_index=rel_idx#edge type
-            )
-            for i, rel_idx in enumerate(metapath)
-        ])
-        self.output_proj = nn.Identity()  # lasciamo identità, verrà gestita in MPSGNN
+        self.layers = nn.ModuleList()
+        for i, rel_idx in enumerate(metapath[::-1]):
+            if i == 0:
+                self.layers.append(MetaPathGNNLayer(in_channels, hidden_channels, rel_idx))
+            else:
+                self.layers.append(MetaPathGNNLayer(hidden_channels, hidden_channels, rel_idx))
+        self.out_proj = nn.Linear(hidden_channels, out_channels)
 
     def forward(self, x, edge_index, edge_type):
-        h = self.input_mlp(x)
-        for i, layer in enumerate(self.layers):
+        h = x
+        for layer in self.layers:
             h = F.relu(layer(x, edge_index, edge_type, h))
-            h = F.dropout(h, p=0.5, training=self.training)
-        return self.output_proj(h)
+        return self.out_proj(h)
 
-
-class MPSGNN(nn.Module):
-    def __init__(self,
-                 data: HeteroData,
-                 col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
-                 metadata: Tuple[List[str], List[Tuple[str, str, str]]],
-                 metapaths: List[List[int]],  # list of metapaths as list of relation indices
-                 metapath_counts: Dict[Tuple[int, ...], int],
-                 hidden_channels: int = 64,
-                 out_channels: int = 64,
-                 final_out_channels: int = 1):
+# --- Attention tra metapath ---
+class MetaPathSelfAttention(nn.Module):
+    def __init__(self, dim, num_heads=4):
         super().__init__()
+        encoder_layer = nn.TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
+        self.out_proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.ReLU(),
+            nn.Linear(dim, 1)
+        )
 
+    def forward(self, embeddings):  # [N, M, D]
+        attn = self.encoder(embeddings)  # [N, M, D]
+        pooled = attn.mean(dim=1)        # [N, D]
+        return self.out_proj(pooled).squeeze(-1)  # [N]
+
+# --- MPS-GNN completo ---
+class MPSGNN(nn.Module):
+    def __init__(
+        self,
+        data: HeteroData,
+        col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
+        metadata: Tuple[List[str], List[Tuple[str, str, str]]],
+        metapaths: List[List[int]],  # list of list of relation indices
+        metapath_counts: Dict[Tuple, int],
+        hidden_channels: int = 64,
+        out_channels: int = 64,
+        num_heads: int = 8,
+        final_out_channels: int = 1,
+    ):
+        super().__init__()
         self.encoder = HeteroEncoder(
-            channels=hidden_channels,
+            channels=hidden_channels * 2,
             node_to_col_names_dict={
                 node_type: data[node_type].tf.col_names_dict
                 for node_type in data.node_types
             },
-            node_to_col_stats=col_stats_dict
+            node_to_col_stats=col_stats_dict,
         )
 
         self.temporal_encoder = HeteroTemporalEncoder(
-            node_types=[
-                node_type for node_type in data.node_types if "time" in data[node_type]
-            ],
-            channels=hidden_channels,
+            node_types=[nt for nt in data.node_types if "time" in data[nt]],
+            channels=hidden_channels * 2,
         )
 
         self.metapath_models = nn.ModuleList([
             MetaPathGNN(
-                input_dim=hidden_channels,
-                hidden_dim=hidden_channels,
-                output_dim=out_channels,
-                metapath=mp
+                mp, in_channels=hidden_channels * 2,
+                hidden_channels=hidden_channels,
+                out_channels=out_channels
             )
             for mp in metapaths
         ])
-
-        self.regressor = nn.Sequential(
-            nn.Linear(len(metapaths) * out_channels, hidden_channels),
-            nn.ReLU(),
-            nn.Linear(hidden_channels, final_out_channels)
-        )
 
         weights = torch.tensor(
             [metapath_counts.get(tuple(mp), 1) for mp in metapaths],
             dtype=torch.float
         )
         weights = weights / weights.sum()
-        self.register_buffer("metapath_weights", weights.view(1, -1, 1))  # [1, M, 1]
+        self.register_buffer("metapath_weights_tensor", weights)
+
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads)
 
     def forward(self, batch: HeteroData, entity_table: str):
         seed_time = batch[entity_table].seed_time
-
-        # Encode features and temporal info
         x_dict = self.encoder(batch.tf_dict)
+
         rel_time_dict = self.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
-
         for node_type, rel_time in rel_time_dict.items():
-            x_dict[node_type] = x_dict[node_type] + rel_time
+            x_dict[node_type] += rel_time
 
-        x = x_dict[entity_table]
-        edge_index = batch.edge_index_dict
-        edge_type = batch.edge_types  #all the relations that are present in the graph
+        # Assumiamo che il nodo target sia quello da cui partono i metapath
+        target_type = entity_table
+        x_target = x_dict[target_type]
+        edge_index = batch.edge_index
+        edge_type = batch.edge_type
 
-        # Compute embeddings per metapath
-        metapath_embeddings = []
-        for model in self.metapath_models:
-            h = model(x, edge_index, edge_type)
-            metapath_embeddings.append(h)  # [N, D]
+        embeddings = [
+            model(x_target, edge_index, edge_type)
+            for model in self.metapath_models
+        ]
 
-        concat = torch.cat(metapath_embeddings, dim=1)  # [N, M * D]
-        return self.regressor(concat).squeeze(-1)       # [N] → regressione
+        all_embeds = torch.stack(embeddings, dim=1)                     # [N, M, D]
+        weighted_embeds = all_embeds * self.metapath_weights_tensor.view(1, -1, 1)
+        out = self.regressor(weighted_embeds)                           # [N]
+        return out  # logits (use sigmoid + BCEWithLogitsLoss if needed)
