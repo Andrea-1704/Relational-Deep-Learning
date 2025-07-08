@@ -141,7 +141,7 @@ lr = lr
 wd = wd
 task = task
 loss_fn= loss_fn
-epochs = 100
+epochs = 200
 tune_metric = tune_metric
 higher_is_better= higher_is_better
 
