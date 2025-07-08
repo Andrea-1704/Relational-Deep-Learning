@@ -626,7 +626,7 @@ class ResNet2(Module):
             num_heads=12,
             dropout=0.3,
             num_layers=6,
-            pooling='cls',  
+            pooling='mean',  
         )
         #FeatureSelfAttentionNet will receive embeddings for 
         #each columns of the node and will aggregate the embeddings
