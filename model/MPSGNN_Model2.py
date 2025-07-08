@@ -17,8 +17,9 @@ class MetaPathGNNLayer(MessagePassing):
         self.w_l = nn.Linear(in_channels, out_channels)
 
     def forward(self, x, edge_index, edge_type, h):
-        mask = (edge_type == self.relation_index)
-        edge_index_filtered = edge_index[:, mask]
+        #mask = (edge_type == self.relation_index)
+        edge_index_filtered = edge_index[edge_type]
+        #edge_index_filtered = edge_index[:, mask]
 
         # Manual message passing
         row, col = edge_index_filtered
