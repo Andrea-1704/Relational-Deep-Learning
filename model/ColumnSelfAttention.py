@@ -623,10 +623,10 @@ class ResNet2(Module):
         embedding_dim = channels  
         self.feature_attn = FeatureSelfAttentionNet(
             dim=embedding_dim,
-            num_heads=16,
+            num_heads=12,
             dropout=0.3,
             num_layers=6,
-            pooling='cls',  # oppure 'cls' o 'none'
+            pooling='cls',  
         )
         #FeatureSelfAttentionNet will receive embeddings for 
         #each columns of the node and will aggregate the embeddings
