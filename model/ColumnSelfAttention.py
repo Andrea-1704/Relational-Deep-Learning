@@ -137,12 +137,8 @@ class FCResidualBlock(Module):
         return out
 
 
-#version 4:
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch import Tensor
 
+#version 4:
 class FeatureSelfAttentionBlockHighPerf(nn.Module):
     def __init__(self, dim: int, num_heads: int, dropout: float):
         super().__init__()
