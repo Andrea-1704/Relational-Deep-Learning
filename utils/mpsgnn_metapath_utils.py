@@ -569,7 +569,7 @@ def beam_metapath_search_with_bags_learned_trial_attempt(
     metapath_counts = defaultdict(int)
     local_path2 = [('drivers', 'rev_f2p_driverId', 'standings')]
     metapath_counts[tuple(local_path2)] += 1
-    metapaths = [('drivers', 'rev_f2p_driverId', 'standings')]
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
     model = MPSGNN(
         data=data,
         col_stats_dict=col_stats_dict,
