@@ -147,6 +147,14 @@ class FeatureSelfAttentionBlockHighPerf(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
 
         self.norm2 = nn.LayerNorm(dim)
+        # self.ffn = nn.Sequential(
+        #     nn.Linear(dim, dim * 4),
+        #     nn.GELU(),
+        #     nn.Dropout(dropout),
+        #     nn.Linear(dim * 4, dim),
+        #     nn.Dropout(dropout),
+        # )
+
         self.ffn = nn.Sequential(
             nn.Linear(dim, dim * 4),
             nn.GELU(),
