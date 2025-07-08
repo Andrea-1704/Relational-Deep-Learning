@@ -114,8 +114,10 @@ def train2():
     )
     lr=1e-02
     wd=0
+    
+    from utils.mpsgnn_metapath_utils import beam_metapath_search_with_bags_learned_trial_attempt
 
-    metapaths, metapath_counts = beam_metapath_search_with_bags_learned_2(
+    metapaths, metapath_counts = beam_metapath_search_with_bags_learned_trial_attempt(
         col_stats_dict = col_stats_dict_official,
         data=data_official,
         db= db_nuovo,
