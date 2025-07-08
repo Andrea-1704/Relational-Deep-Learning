@@ -595,7 +595,7 @@ def beam_metapath_search_with_bags_learned_trial_attempt(
     print(f"For the partial metapath {local_path2.copy()} with metapath_counts: {metapath_counts} we obtain F1 test loss equal to {best_test_metrics}")
     #next_paths_info.append((best_test_metrics, local_path2.copy(), bags, labels, alpha_next))
 
-    return model
+    return ""
 
 """
 Beam search is a very strong and powerfull version 
