@@ -206,20 +206,13 @@ class FeatureSelfAttentionBlockHighPerfPlus(nn.Module):
         )
 
     def forward(self, x: Tensor, attn_bias: Tensor = None) -> Tensor:
-        # Self-attention
         qkv = self.norm1(x)
-        #attn_output, attn_weights = self.attn(qkv, qkv, qkv, need_weights=False)
-        attn_output = self.attn(qkv, attn_bias=attn_bias)
-        # Applichiamo bias (solo se fornito)
-        if attn_bias is not None:
-            B, T, C = x.shape
-            attn_output += attn_bias[:T, :T].unsqueeze(0)
+        attn_output = self.attn(qkv, attn_bias=attn_bias)  # ✅ qui passa il bias
 
         x = x + self.dropout1(attn_output)
-
-        # Feed-forward
         x = x + self.ffn(self.norm2(x))
         return x
+
     
 
 
