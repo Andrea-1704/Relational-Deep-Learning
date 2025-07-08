@@ -560,7 +560,7 @@ def beam_metapath_search_with_bags_learned_trial_attempt(
     wd: float = 0,
     epochs: int = 100,
     max_rel: int = 10
-) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
+) :
     """
     Avoid score computation, compute results only using mps gnn.
     """
