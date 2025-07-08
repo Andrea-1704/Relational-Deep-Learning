@@ -38,7 +38,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
-
+from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned_3
 
 
 
@@ -125,8 +125,8 @@ def train2():
 
     hidden_channels = 32
     out_channels = 32
-
-    metapaths, metapath_counts = greedy_metapath_search_with_bags_learned(
+    
+    metapaths, metapath_counts = greedy_metapath_search_with_bags_learned_3(
         col_stats_dict = col_stats_dict_full,
         data=data_full,
         y=y_full,
