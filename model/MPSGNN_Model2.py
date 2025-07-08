@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 
 class MetaPathGNNLayer(MessagePassing):
-    def __init__(self, in_channels, out_channels, relation_index: int):
+    def __init__(self, in_channels, out_channels, relation_index):
         super().__init__(aggr='add', flow='target_to_source')
         self.relation_index = relation_index
         self.w_0 = nn.Linear(in_channels, out_channels)
@@ -18,9 +18,7 @@ class MetaPathGNNLayer(MessagePassing):
 
     def forward(self, x, edge_index, edge_type, h):
         #mask = (edge_type == self.relation_index)
-        print(f"edge type è {edge_type}")
-        print(f"edge index è {edge_index}")
-        edge_index_filtered = edge_index[edge_type]
+        edge_index_filtered = edge_index[self.relation_index]
         #edge_index_filtered = edge_index[:, mask]
 
         # Manual message passing
@@ -41,7 +39,7 @@ class MetaPathGNN(nn.Module):
             MetaPathGNNLayer(
                 in_channels=hidden_dim * 2 if i == 0 else hidden_dim,
                 out_channels=hidden_dim,
-                relation_index=rel_idx
+                relation_index=rel_idx#edge type
             )
             for i, rel_idx in enumerate(metapath)
         ])
@@ -118,7 +116,7 @@ class MPSGNN(nn.Module):
 
         x = x_dict[entity_table]
         edge_index = batch.edge_index_dict
-        edge_type = batch.edge_types  # [num_edges], as numeric indices
+        edge_type = batch.edge_types  #all the relations that are present in the graph
 
         # Compute embeddings per metapath
         metapath_embeddings = []
