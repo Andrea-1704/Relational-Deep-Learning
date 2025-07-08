@@ -225,12 +225,15 @@ class MPSGNN(nn.Module):
                  metapath_counts: Dict[Tuple, int], #statistics of each metapath
                  hidden_channels: int = 64,
                  out_channels: int = 64,
+                 num_heads: int = 8,
                  final_out_channels: int = 1):
         super().__init__()
         
         self.metapath_models = nn.ModuleList([
-            MetaPathGNN(mp, hidden_channels, out_channels)
-            for mp in metapaths
+            MetaPathGNNLayer(mp, hidden_channels*2, out_channels)
+            if i == 0 else
+            MetaPathGNNLayer(mp, hidden_channels, out_channels)
+            for i, mp in enumerate(metapaths)
         ]) # we construct a MetaPathGNN for each metapath
 
         weights = torch.tensor(
@@ -239,7 +242,7 @@ class MPSGNN(nn.Module):
         weights = weights/weights.sum() #normalization of count
         self.register_buffer("metapath_weights_tensor", weights) 
 
-        self.regressor = MetaPathSelfAttention(out_channels, num_heads=4)
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
