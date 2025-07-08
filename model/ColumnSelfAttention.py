@@ -623,7 +623,7 @@ class ResNet2(Module):
         embedding_dim = channels  
         self.feature_attn = FeatureSelfAttentionNet(
             dim=embedding_dim,
-            num_heads=8,
+            num_heads=4,
             dropout=0.3,
             num_layers=4,
             pooling='mean',  
