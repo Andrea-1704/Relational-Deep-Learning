@@ -147,12 +147,13 @@ higher_is_better= higher_is_better
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+metapath_counts = defaultdict(int)
+metapath_counts[(('drivers', 'rev_f2p_driverId', 'standings'),)] += 1
 model = MPSGNN(
     data=data,
     col_stats_dict=col_stats_dict,
     metadata=data.metadata(),
-    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1},
+    metapath_counts = metapath_counts, #to be tested
     metapaths=[[('drivers', 'rev_f2p_driverId', 'standings')]],
     hidden_channels=hidden_channels,
     out_channels=out_channels,
