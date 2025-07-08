@@ -138,12 +138,61 @@ class FCResidualBlock(Module):
 
 
 
+#version 5
+class MultiheadAttentionWithBias(nn.Module):
+    def __init__(self, dim: int, num_heads: int, dropout: float = 0.0):
+        super().__init__()
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        assert self.head_dim * num_heads == dim, "dim must be divisible by num_heads"
+
+        self.qkv_proj = nn.Linear(dim, dim * 3)
+        self.out_proj = nn.Linear(dim, dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        x: Tensor,  # [B, T, C]
+        attn_bias: Tensor | None = None  # [T, T] or [B, H, T, T]
+    ) -> Tensor:
+        B, T, C = x.shape
+        H = self.num_heads
+        D = self.head_dim
+
+        qkv = self.qkv_proj(x)  # [B, T, 3 * C]
+        q, k, v = qkv.chunk(3, dim=-1)  # ciascuno: [B, T, C]
+
+        # Reshape per head
+        q = q.view(B, T, H, D).transpose(1, 2)  # [B, H, T, D]
+        k = k.view(B, T, H, D).transpose(1, 2)
+        v = v.view(B, T, H, D).transpose(1, 2)
+
+        # Attention scores: [B, H, T, T]
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (D ** 0.5)
+
+        # Aggiungi attn_bias (se fornito)
+        if attn_bias is not None:
+            if attn_bias.dim() == 2:
+                attn_bias = attn_bias.unsqueeze(0).unsqueeze(0)  # [1, 1, T, T]
+            elif attn_bias.dim() == 3:
+                attn_bias = attn_bias.unsqueeze(1)  # [B, 1, T, T]
+            attn_scores += attn_bias  # broadcast OK
+
+        # Softmax
+        attn_weights = F.softmax(attn_scores, dim=-1)
+        attn_weights = self.dropout(attn_weights)
+
+        # Weighted sum
+        attn_output = torch.matmul(attn_weights, v)  # [B, H, T, D]
+        attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, C)  # [B, T, C]
+        return self.out_proj(attn_output)
+    
 
 class FeatureSelfAttentionBlockHighPerfPlus(nn.Module):
     def __init__(self, dim: int, num_heads: int, dropout: float):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
-        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+        self.attn = MultiheadAttentionWithBias(dim, num_heads, dropout)
         self.dropout1 = nn.Dropout(dropout)
 
         self.norm2 = nn.LayerNorm(dim)
@@ -171,6 +220,11 @@ class FeatureSelfAttentionBlockHighPerfPlus(nn.Module):
         # Feed-forward
         x = x + self.ffn(self.norm2(x))
         return x
+    
+
+
+
+
 
 
 class FeatureSelfAttentionNet(nn.Module):
