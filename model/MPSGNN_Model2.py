@@ -18,6 +18,8 @@ class MetaPathGNNLayer(MessagePassing):
 
     def forward(self, x, edge_index, edge_type, h):
         #mask = (edge_type == self.relation_index)
+        print(f"edge type è {edge_type}")
+        print(f"edge index è {edge_index}")
         edge_index_filtered = edge_index[edge_type]
         #edge_index_filtered = edge_index[:, mask]
 
