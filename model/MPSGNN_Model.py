@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-class MetaPathGNNLayer(MessagePassing):
+class MetaPathGNNLayer(MessagePassing):  
     """
     MetaPathGNNLayer implements equation 7 from the MPS-GNN paper.
 
