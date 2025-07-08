@@ -138,349 +138,101 @@ class FCResidualBlock(Module):
 
 
 
-#version 5
-class MultiheadAttentionWithBias(nn.Module):
-    def __init__(self, dim: int, num_heads: int, dropout: float = 0.0):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        assert self.head_dim * num_heads == dim, "dim must be divisible by num_heads"
 
-        self.qkv_proj = nn.Linear(dim, dim * 3)
-        self.out_proj = nn.Linear(dim, dim)
-        self.dropout = nn.Dropout(dropout)
 
-    def forward(
-        self,
-        x: Tensor,  # [B, T, C]
-        attn_bias: Tensor | None = None  # [T, T] or [B, H, T, T]
-    ) -> Tensor:
-        B, T, C = x.shape
-        H = self.num_heads
-        D = self.head_dim
+#version 3:
 
-        qkv = self.qkv_proj(x)  # [B, T, 3 * C]
-        q, k, v = qkv.chunk(3, dim=-1)  # ciascuno: [B, T, C]
-
-        # Reshape per head
-        q = q.view(B, T, H, D).transpose(1, 2)  # [B, H, T, D]
-        k = k.view(B, T, H, D).transpose(1, 2)
-        v = v.view(B, T, H, D).transpose(1, 2)
-
-        # Attention scores: [B, H, T, T]
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (D ** 0.5)
-
-        # Aggiungi attn_bias (se fornito)
-        if attn_bias is not None:
-            if attn_bias.dim() == 2:
-                attn_bias = attn_bias.unsqueeze(0).unsqueeze(0)  # [1, 1, T, T]
-            elif attn_bias.dim() == 3:
-                attn_bias = attn_bias.unsqueeze(1)  # [B, 1, T, T]
-            attn_scores += attn_bias  # broadcast OK
-
-        # Softmax
-        attn_weights = F.softmax(attn_scores, dim=-1)
-        attn_weights = self.dropout(attn_weights)
-
-        # Weighted sum
-        attn_output = torch.matmul(attn_weights, v)  # [B, H, T, D]
-        attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, C)  # [B, T, C]
-        return self.out_proj(attn_output)
-    
-
-class FeatureSelfAttentionBlockHighPerfPlus(nn.Module):
-    def __init__(self, dim: int, num_heads: int, dropout: float):
+class FeatureSelfAttentionBlockWithFFN(nn.Module):
+    def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.1):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
-        self.attn = MultiheadAttentionWithBias(dim, num_heads, dropout)
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
         self.dropout1 = nn.Dropout(dropout)
 
         self.norm2 = nn.LayerNorm(dim)
         self.ffn = nn.Sequential(
             nn.Linear(dim, dim * 4),
-            nn.GELU(),
-            nn.Linear(dim * 4, dim * 2),
-            nn.GLU(),
+            nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(dim, dim),
+            nn.Linear(dim * 4, dim),
+            nn.Dropout(dropout),
         )
 
-    def forward(self, x: Tensor, attn_bias: Tensor = None) -> Tensor:
-        qkv = self.norm1(x)
-        attn_output = self.attn(qkv, attn_bias=attn_bias)  #qui passa il bias
+    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
+        # x: [N, F, C]
+        residual = x
+        x = self.norm1(x)
 
-        x = x + self.dropout1(attn_output)
-        x = x + self.ffn(self.norm2(x))
+        # MultiheadAttention expects (query, key, value)
+        attn_output, _ = self.attn(x, x, x, key_padding_mask=mask)
+        x = residual + self.dropout1(attn_output)
+
+        # FFN with residual
+        residual = x
+        x = self.norm2(x)
+        x = residual + self.ffn(x)
+
         return x
-
     
 
-
-
-
-
-
 class FeatureSelfAttentionNet(nn.Module):
+    """ 
+    Input: [N, F, C], where "N" is the number of nodes;
+    F is the number of features and C the embedding size 
+    for each of them.
+    
+    Output: [N, C].
+    """
     def __init__(
         self,
         dim: int,
-        num_heads: int = 8,
+        num_heads: int = 4,
         dropout: float = 0.1,
-        num_layers: int = 6,
-        pooling: str = 'cls',
-        max_num_columns: int = 64,
-        drop_feature_prob: float = 0.1,
+        num_layers: int = 2,
+        pooling: str = 'mean'
     ):
         super().__init__()
         assert pooling in {'mean', 'cls', 'none'}
         self.pooling = pooling
         self.dim = dim
-        self.max_num_columns = max_num_columns
-        self.drop_feature_prob = drop_feature_prob
 
-        # Column-specific learnable embeddings
-        self.column_token_embedding = nn.Parameter(torch.randn(1, max_num_columns, dim))
+        # Token [CLS] se serve
+        if pooling == 'cls':
+            self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
 
-        # Positional embedding
-        self.pos_embedding = nn.Parameter(torch.randn(1, max_num_columns + 1, dim))
-
-        # Bias colonna-colonna per attention score
-        self.col_bias = nn.Parameter(torch.randn(max_num_columns, max_num_columns))
-
-        # CLS token dinamico: MLP sulla media
-        self.cls_generator = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.GELU(),
-            nn.Linear(dim, dim),
-        )
-
-        # Stack di Self-Attention Block
         self.layers = nn.ModuleList([
-            FeatureSelfAttentionBlockHighPerfPlus(dim, num_heads, dropout)
+            FeatureSelfAttentionBlockWithFFN(dim, num_heads, dropout)
             for _ in range(num_layers)
         ])
-
-        self.final_norm = nn.LayerNorm(dim)
-
-    def forward(self, x: Tensor) -> Tensor:
         """
-        x: [N, F, C] = [batch, num_columns, embedding_dim]
+        Each layer follows: 
+        1. Self attention between columns
+        2. Feedforward for each column
+        3. Residul connections
+        4. Layer norm
         """
-        N, F, C = x.shape
-        assert F <= self.max_num_columns, f"F={F} > max={self.max_num_columns}"
 
-        # DropFeature (DropColumn)
-        if self.training and self.drop_feature_prob > 0:
-            mask = (torch.rand(N, F, device=x.device) > self.drop_feature_prob).float().unsqueeze(-1)
-            x = x * mask
+        self.norm = nn.LayerNorm(dim)
 
-        # Add column-specific token embedding
-        col_emb = self.column_token_embedding[:, :F, :].expand(N, F, C)
-        x = x + col_emb
+    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
+        # x: [N, F, C]
+        N = x.size(0)
 
-        # Add positional embedding
-        x = x + self.pos_embedding[:, 1:F + 1, :]
-
-        # CLS token dinamico dal contenuto
         if self.pooling == 'cls':
-            mean = x.mean(dim=1)  # [N, C]
-            cls_token = self.cls_generator(mean).unsqueeze(1)  # [N, 1, C]
-            cls_token += self.pos_embedding[:, :1, :]  # Add positional
-            x = torch.cat([cls_token, x], dim=1)  # [N, F+1, C]
-
-        # Applica colonna-colonna bias sui pesi attention
-        attn_bias = self.col_bias[:F, :F]  # [F, F]
+            cls_tokens = self.cls_token.expand(N, 1, self.dim)  # [N, 1, C]
+            x = torch.cat([cls_tokens, x], dim=1)  # [N, F+1, C]
 
         for layer in self.layers:
-            x = layer(x, attn_bias=attn_bias)
+            x = layer(x, mask=mask)  # still [N, F, C] or [N, F+1, C]
 
-        x = self.final_norm(x)
+        x = self.norm(x)
 
         if self.pooling == 'mean':
-            return x.mean(dim=1)
+            return x.mean(dim=1)  # [N, C]
         elif self.pooling == 'cls':
-            return x[:, 0, :]
+            return x[:, 0, :]  # [N, C]
         else:
-            return x
-
-
-
-
-#version 4:
-# class FeatureSelfAttentionBlockHighPerf(nn.Module):
-#     def __init__(self, dim: int, num_heads: int, dropout: float):
-#         super().__init__()
-#         self.norm1 = nn.LayerNorm(dim)
-#         self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
-#         self.dropout1 = nn.Dropout(dropout)
-
-#         self.norm2 = nn.LayerNorm(dim)
-#         # self.ffn = nn.Sequential(
-#         #     nn.Linear(dim, dim * 4),
-#         #     nn.GELU(),
-#         #     nn.Dropout(dropout),
-#         #     nn.Linear(dim * 4, dim),
-#         #     nn.Dropout(dropout),
-#         # )
-
-#         self.ffn = nn.Sequential(
-#             nn.Linear(dim, dim * 4),
-#             nn.GELU(),
-#             nn.Linear(dim * 4, dim * 2),
-#             nn.GLU(),  # Gated linear unit
-#             nn.Dropout(dropout),
-#             nn.Linear(dim, dim),
-#         )
-
-
-#     def forward(self, x: Tensor) -> Tensor:
-#         x_attn = self.attn(self.norm1(x), self.norm1(x), self.norm1(x))[0]
-#         x = x + self.dropout1(x_attn)
-#         x = x + self.ffn(self.norm2(x))
-#         return x
-
-# class FeatureSelfAttentionNet(nn.Module):
-#     def __init__(
-#         self,
-#         dim: int,
-#         num_heads: int = 8,
-#         dropout: float = 0.1,
-#         num_layers: int = 4,
-#         pooling: str = 'cls',
-#         max_num_columns: int = 64,
-#         drop_feature_prob: float = 0.1,
-#     ):
-#         super().__init__()
-#         assert pooling in {'mean', 'cls', 'none'}
-#         self.pooling = pooling
-#         self.dim = dim
-#         self.max_num_columns = max_num_columns
-#         self.drop_feature_prob = drop_feature_prob
-
-#         # Token CLS
-#         if pooling == 'cls':
-#             self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
-
-#         # Positional embedding per colonna
-#         self.pos_embedding = nn.Parameter(torch.randn(1, max_num_columns + 1, dim))
-
-#         # Column-specific learnable embeddings (bias semantico per colonna)
-#         self.column_token_embedding = nn.Parameter(torch.randn(1, max_num_columns, dim))
-
-#         # Stack di blocchi Attention + FFN
-#         self.layers = nn.ModuleList([
-#             FeatureSelfAttentionBlockHighPerf(dim, num_heads, dropout)
-#             for _ in range(num_layers)
-#         ])
-
-#         self.final_norm = nn.LayerNorm(dim)
-
-#     def forward(self, x: Tensor) -> Tensor:
-#         """
-#         x: [N, F, C] = [batch, num_columns, embedding_dim]
-#         """
-
-#         N, F, C = x.shape
-#         device = x.device
-#         assert F <= self.max_num_columns, f"Received F={F}, but max_num_columns={self.max_num_columns}"
-
-#         # DropFeature (DropColumn)
-#         if self.training and self.drop_feature_prob > 0:
-#             mask = (torch.rand(N, F, device=device) > self.drop_feature_prob).float().unsqueeze(-1)
-#             x = x * mask
-
-#         # Add column token embeddings
-#         col_tok_emb = self.column_token_embedding[:, :F, :].expand(N, F, C)
-#         x = x + col_tok_emb
-
-#         # Positional embedding
-#         pos_emb = self.pos_embedding[:, 1:F + 1, :].expand(N, F, C)
-#         x = x + pos_emb
-
-#         # CLS token
-#         if self.pooling == 'cls':
-#             cls_token = self.cls_token.expand(N, 1, C)
-#             cls_pos = self.pos_embedding[:, :1, :].expand(N, 1, C)
-#             x = torch.cat([cls_token + cls_pos, x], dim=1)  # [N, F+1, C]
-
-#         # Deep self-attention
-#         for layer in self.layers:
-#             x = layer(x)
-
-#         x = self.final_norm(x)
-
-#         if self.pooling == 'mean':
-#             return x.mean(dim=1)        # [N, C]
-#         elif self.pooling == 'cls':
-#             return x[:, 0, :]           # [N, C]
-#         else:
-#             return x                    # [N, F, C]
-
-
-
-
-
-
-
-#version 3:
-# class FeatureSelfAttentionNet(nn.Module):
-#     """ 
-#     Input: [N, F, C], where "N" is the number of nodes;
-#     F is the number of features and C the embedding size 
-#     for each of them.
-    
-#     Output: [N, C].
-#     """
-#     def __init__(
-#         self,
-#         dim: int,
-#         num_heads: int = 4,
-#         dropout: float = 0.1,
-#         num_layers: int = 2,
-#         pooling: str = 'mean'
-#     ):
-#         super().__init__()
-#         assert pooling in {'mean', 'cls', 'none'}
-#         self.pooling = pooling
-#         self.dim = dim
-
-#         # Token [CLS] se serve
-#         if pooling == 'cls':
-#             self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
-
-#         self.layers = nn.ModuleList([
-#             FeatureSelfAttentionBlockWithFFN(dim, num_heads, dropout)
-#             for _ in range(num_layers)
-#         ])
-#         """
-#         Each layer follows: 
-#         1. Self attention between columns
-#         2. Feedforward for each column
-#         3. Residul connections
-#         4. Layer norm
-#         """
-
-#         self.norm = nn.LayerNorm(dim)
-
-#     def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
-#         # x: [N, F, C]
-#         N = x.size(0)
-
-#         if self.pooling == 'cls':
-#             cls_tokens = self.cls_token.expand(N, 1, self.dim)  # [N, 1, C]
-#             x = torch.cat([cls_tokens, x], dim=1)  # [N, F+1, C]
-
-#         for layer in self.layers:
-#             x = layer(x, mask=mask)  # still [N, F, C] or [N, F+1, C]
-
-#         x = self.norm(x)
-
-#         if self.pooling == 'mean':
-#             return x.mean(dim=1)  # [N, C]
-#         elif self.pooling == 'cls':
-#             return x[:, 0, :]  # [N, C]
-#         else:
-#             return x  # [N, F, C]
+            return x  # [N, F, C]
 
 
 
@@ -625,7 +377,7 @@ class ResNet2(Module):
             dim=embedding_dim,
             num_heads=16,
             dropout=0.1,
-            num_layers=2,
+            num_layers=4,
             pooling='mean',  
         )
         #FeatureSelfAttentionNet will receive embeddings for 
