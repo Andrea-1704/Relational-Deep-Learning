@@ -121,8 +121,8 @@ class MPSGNN(nn.Module):
         # Assumiamo che il nodo target sia quello da cui partono i metapath
         target_type = entity_table
         x_target = x_dict[target_type]
-        edge_index = batch.edge_index
-        edge_type = batch.edge_type
+        edge_index = batch.edge_index_dict
+        edge_type = batch.edge_types
 
         embeddings = [
             model(x_target, edge_index, edge_type)
