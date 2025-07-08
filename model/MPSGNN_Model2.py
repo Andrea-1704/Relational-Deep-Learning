@@ -114,8 +114,8 @@ class MPSGNN(nn.Module):
             x_dict[node_type] = x_dict[node_type] + rel_time
 
         x = x_dict[entity_table]
-        edge_index = batch.edge_index
-        edge_type = batch.edge_type  # [num_edges], as numeric indices
+        edge_index = batch.edge_index_dict
+        edge_type = batch.edge_types  # [num_edges], as numeric indices
 
         # Compute embeddings per metapath
         metapath_embeddings = []
