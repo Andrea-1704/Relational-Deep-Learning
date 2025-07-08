@@ -625,7 +625,7 @@ class ResNet2(Module):
             dim=embedding_dim,
             num_heads=8,
             dropout=0.3,
-            num_layers=6,
+            num_layers=4,
             pooling='mean',  
         )
         #FeatureSelfAttentionNet will receive embeddings for 
