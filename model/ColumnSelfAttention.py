@@ -150,10 +150,12 @@ class FeatureSelfAttentionBlockHighPerf(nn.Module):
         self.ffn = nn.Sequential(
             nn.Linear(dim, dim * 4),
             nn.GELU(),
+            nn.Linear(dim * 4, dim * 2),
+            nn.GLU(),  # Gated linear unit
             nn.Dropout(dropout),
-            nn.Linear(dim * 4, dim),
-            nn.Dropout(dropout),
+            nn.Linear(dim, dim),
         )
+
 
     def forward(self, x: Tensor) -> Tensor:
         x_attn = self.attn(self.norm1(x), self.norm1(x), self.norm1(x))[0]
