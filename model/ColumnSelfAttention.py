@@ -207,7 +207,7 @@ class FeatureSelfAttentionBlockHighPerfPlus(nn.Module):
 
     def forward(self, x: Tensor, attn_bias: Tensor = None) -> Tensor:
         qkv = self.norm1(x)
-        attn_output = self.attn(qkv, attn_bias=attn_bias)  # ✅ qui passa il bias
+        attn_output = self.attn(qkv, attn_bias=attn_bias)  #qui passa il bias
 
         x = x + self.dropout1(attn_output)
         x = x + self.ffn(self.norm2(x))
@@ -623,10 +623,10 @@ class ResNet2(Module):
         embedding_dim = channels  
         self.feature_attn = FeatureSelfAttentionNet(
             dim=embedding_dim,
-            num_heads=4,
-            dropout=0.1,
-            num_layers=2,
-            pooling='mean',  # oppure 'cls' o 'none'
+            num_heads=16,
+            dropout=0.3,
+            num_layers=6,
+            pooling='cls',  # oppure 'cls' o 'none'
         )
         #FeatureSelfAttentionNet will receive embeddings for 
         #each columns of the node and will aggregate the embeddings
