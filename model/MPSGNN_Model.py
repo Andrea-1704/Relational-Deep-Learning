@@ -230,10 +230,8 @@ class MPSGNN(nn.Module):
         super().__init__()
         
         self.metapath_models = nn.ModuleList([
-            MetaPathGNNLayer(mp, hidden_channels*2, out_channels)
-            if i == 0 else
-            MetaPathGNNLayer(mp, hidden_channels, out_channels)
-            for i, mp in enumerate(metapaths)
+            MetaPathGNN(mp, hidden_channels, out_channels)
+            for mp in metapaths
         ]) # we construct a MetaPathGNN for each metapath
 
         weights = torch.tensor(
