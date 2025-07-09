@@ -145,9 +145,9 @@ def train2():
         node_id='driverId',
         train_mask=train_mask_full,
         node_type='drivers',
-        L_max=4,
+        L_max=3,
         channels = hidden_channels,
-        number_of_metapaths = 3,     
+        number_of_metapaths = 4,     
         out_channels = out_channels,
         hidden_channels = hidden_channels, 
         loader_dict = loader_dict,
@@ -160,6 +160,9 @@ def train2():
         higher_is_better= higher_is_better
     )
 
+    print(f"\nfinal metapaths are {metapaths}\n")
+    print(f"\nmetapaths counts are {metapath_counts}\n")
+
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
@@ -171,59 +174,34 @@ def train2():
         final_out_channels=1, 
     ).to(device)
 
+    lr=1e-02
+    wd=0
 
-    optimizer = torch.optim.Adam(   #----> tune
-      model.parameters(),
-      lr=0.001,
-      weight_decay=0
-    )
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+    
 
     scheduler = CosineAnnealingLR(optimizer, T_max=25)  #---> tune
 
 
     early_stopping = EarlyStopping(
-        patience=30,
+        patience=60,
         delta=0.0,
         verbose=True,
         path="best_basic_model.pt"
     )
 
     test_table = task.get_table("test", mask_input_cols=False)
-    best_val_metric = -math.inf if higher_is_better else math.inf
-    best_test_metric = -math.inf if higher_is_better else math.inf
-    epochs = 150
-    for epoch in range(0, epochs):
-      train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-      train_pred = test(model, loader_dict["train"], device=device, task=task)
-      train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
-      val_pred = test(model, loader_dict["val"], device=device, task=task)
-      val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-      test_pred = test(model, loader_dict["test"], device=device, task=task)
-      test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-      scheduler.step(val_metrics[tune_metric])
-      if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
-            not higher_is_better and val_metrics[tune_metric] < best_val_metric
-      ):
-        best_val_metric = val_metrics[tune_metric]
-        state_dict = copy.deepcopy(model.state_dict())
-
-      #test:
-      if (higher_is_better and test_metrics[tune_metric] > best_test_metric) or (
-              not higher_is_better and test_metrics[tune_metric] < best_test_metric
-      ):
-          best_test_metric = test_metrics[tune_metric]
-          state_dict_test = copy.deepcopy(model.state_dict())
-
-      current_lr = optimizer.param_groups[0]["lr"]
-      print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
-
-      early_stopping(val_metrics[tune_metric], model)
-
-      if early_stopping.early_stop:
-          print(f"Early stopping triggered at epoch {epoch}")
-          break
-    print(f"best validation results: {best_val_metric}")
-    print(f"best test results: {best_test_metric}")
+    best_test_metrics = -math.inf if higher_is_better else math.inf
+    epochs = 200
+    for _ in range(0, epochs):
+        train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+        test_pred = test(model, loader_dict["test"], device=device, task=task)
+        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+        if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
+            best_test_metrics = test_metrics[tune_metric]
+        if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
+            best_test_metrics = test_metrics[tune_metric]
+    print(f"We obtain F1 test loss equal to {best_test_metrics}")
 
       
 
