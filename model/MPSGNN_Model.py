@@ -360,7 +360,7 @@ class MPSGNN(nn.Module):
         weights = weights/weights.sum() #normalization of count
         self.register_buffer("metapath_weights_tensor", weights) 
 
-        self.regressor = MetaPathWeightedSum(num_metapaths=len(metapaths))
+        self.regressor = MetaPathWeightedSum(num_metapaths=len(metapaths), emb_dim=hidden_channels)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
