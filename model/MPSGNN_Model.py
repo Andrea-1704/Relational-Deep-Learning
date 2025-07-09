@@ -292,14 +292,16 @@ class MetaPathGNN_SAGEConv(nn.Module):
 #         return self.output_proj(pooled).squeeze(-1)        # [N]
 
 class MetaPathWeightedSum(nn.Module):
-    def __init__(self, num_metapaths):
+    def __init__(self, num_metapaths, emb_dim):
         super().__init__()
-        self.weights = nn.Parameter(torch.randn(num_metapaths))  # learnable scalars
+        self.weights = nn.Parameter(torch.randn(num_metapaths))  # [M]
+        self.out_proj = nn.Linear(emb_dim, 1)  # proietta a singolo logit
 
     def forward(self, metapath_embeddings):  # [N, M, D]
         alpha = F.softmax(self.weights, dim=0)  # [M]
-        weighted = metapath_embeddings * alpha.view(1, -1, 1)  # broadcast
-        return weighted.sum(dim=1)  # [N, D]
+        weighted = metapath_embeddings * alpha.view(1, -1, 1)  # [N, M, D]
+        summed = weighted.sum(dim=1)  # [N, D]
+        return self.out_proj(summed).squeeze(-1)  # [N]
 
 
 
