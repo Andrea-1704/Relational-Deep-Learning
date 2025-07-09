@@ -40,11 +40,23 @@ class MetaPathGNN(nn.Module):
                 self.layers.append(MetaPathGNNLayer(hidden_channels, hidden_channels, rel_idx))
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
-    def forward(self, x, edge_index, edge_type):
-        h = x
-        for layer in self.layers:
-            h = F.relu(layer(x, edge_index, edge_type, h))
-        return self.out_proj(h)
+    def forward(self, x_dict, edge_index_dict):
+        h_dict = x_dict.copy()
+        for i, (src, rel, dst) in enumerate(reversed(self.metapath)):
+            conv_idx = len(self.metapath) - 1 - i
+            edge_index = edge_index_dict[(src, rel, dst)]
+            h_dst = self.layers[conv_idx](
+                x=h_dict[dst],
+                h=h_dict[dst],
+                edge_index=edge_index
+            )
+            h_dict[dst] = F.relu(h_dst)
+
+        # for layer in self.layers:
+        #     h = F.relu(layer(x, edge_index, edge_type, h))
+        # return self.out_proj(h)
+        start_type = self.metapath[0][0]
+        return self.out_proj(h_dict[start_type])
 
 # --- Attention tra metapath ---
 class MetaPathSelfAttention(nn.Module):
@@ -131,7 +143,7 @@ class MPSGNN(nn.Module):
         edge_type = batch.edge_types
 
         embeddings = [
-            model(x_target, edge_index, edge_type)
+            model(x_target, edge_index)
             for model in self.metapath_models
         ]
 

@@ -72,7 +72,7 @@ class MetaPathGNN(nn.Module):
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
 
-    def forward(self, x_dict, edge_index_dict, edge_type_dict):
+    def forward(self, x_dict, edge_index_dict):
         #edge_type_dict is the list of edge types
         #edge_index_dict contains for each edge_type the edges
         h_dict = x_dict.copy()
