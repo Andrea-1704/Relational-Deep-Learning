@@ -132,7 +132,7 @@ class MPSGNN(nn.Module):
             x_dict[node_type] += rel_time
 
         embeddings = [
-          model(x_dict, batch.edge_index_dict, batch.edge_types)
+          model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
 
