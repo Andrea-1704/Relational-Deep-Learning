@@ -139,8 +139,9 @@ class MetaPathGNN(nn.Module):
 
             #To solve the aforementioned problem we use a global->
             #to local mapping:
-            src_map = {int(i.item()): i for i, n in enumerate(src_nodes)}
-            dst_map = {int(i.item()): i for i, n in enumerate(dst_nodes)}
+            #src_map = {int(i.item()): i for i, n in enumerate(src_nodes)}
+            src_map = {int(n.item()): i for i, n in enumerate(src_nodes)}
+            dst_map = {int(n.item()): i for i, n in enumerate(dst_nodes)}
             """
             Example
             if:
