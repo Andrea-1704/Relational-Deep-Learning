@@ -20,9 +20,8 @@ class MetaPathGNNLayer(MessagePassing):
 
     def forward(self, x, edge_index, h):
         #mask = (edge_type == self.relation_index)
-        print(f"relation index: {self.relation_index}")
-        print(f"edge index: {edge_index}")
-        edge_index = edge_index[self.relation_index]
+        #edge index is already the one of the relation
+        #edge_index = edge_index[self.relation_index]
         agg = self.propagate(edge_index, x=h)
         return self.w_l(agg) + self.w_0(h) + self.w_1(x)
 
