@@ -163,9 +163,10 @@ class MetaPathGNN(nn.Module):
             """
 
             edge_index_remapped = torch.stack([
-                edge_index[0].apply_(lambda x: src_map[int(x)]),
-                edge_index[1].apply_(lambda x: dst_map[int(x)])
+                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
+                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
             ])
+
             """
             Example
             if:
