@@ -33,7 +33,7 @@ class MetaPathGNN(nn.Module):
         super().__init__()
         self.metapath = metapath
         self.layers = nn.ModuleList()
-        for i, rel_idx in enumerate(metapath[::-1]):
+        for i, rel_idx in enumerate(metapath[::-1]):#inverted order
             if i == 0:
                 self.layers.append(MetaPathGNNLayer(in_channels, hidden_channels, rel_idx))
             else:
@@ -115,10 +115,16 @@ class MPSGNN(nn.Module):
         x_dict = self.encoder(batch.tf_dict)
 
         rel_time_dict = self.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
+        
         for node_type, rel_time in rel_time_dict.items():
             x_dict[node_type] += rel_time
 
-        # Assumiamo che il nodo target sia quello da cui partono i metapath
+        embeddings = [
+          model(x_dict, batch.edge_index_dict, batch.edge_types)
+          for model in self.metapath_models 
+      ] #create a list of the embeddings, one for each metapath
+
+        #we start the metapath from the target node
         target_type = entity_table
         x_target = x_dict[target_type]
         edge_index = batch.edge_index_dict
@@ -129,7 +135,19 @@ class MPSGNN(nn.Module):
             for model in self.metapath_models
         ]
 
-        all_embeds = torch.stack(embeddings, dim=1)                     # [N, M, D]
-        weighted_embeds = all_embeds * self.metapath_weights_tensor.view(1, -1, 1)
-        out = self.regressor(weighted_embeds)                           # [N]
-        return out  # logits (use sigmoid + BCEWithLogitsLoss if needed)
+        # all_embeds = torch.stack(embeddings, dim=1)                     # [N, M, D]
+        # weighted_embeds = all_embeds * self.metapath_weights_tensor.view(1, -1, 1)
+        # out = self.regressor(weighted_embeds)                           # [N]
+        # return out  # logits 
+        concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
+        weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
+        
+        return self.regressor(weighted) #finally apply regression
+
+
+
+
+
+
+
+
