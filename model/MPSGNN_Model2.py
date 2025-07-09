@@ -18,7 +18,7 @@ class MetaPathGNNLayer(MessagePassing):
         self.w_l = nn.Linear(in_channels, out_channels)
         self.w_1 = nn.Linear(in_channels, out_channels)
 
-    def forward(self, x, edge_index, edge_type, h):
+    def forward(self, x, edge_index, h):
         #mask = (edge_type == self.relation_index)
         edge_index = edge_index[self.relation_index]
         agg = self.propagate(edge_index, x=h)
