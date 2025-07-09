@@ -10,6 +10,53 @@ from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
+
+"""
+In this implementation we are solving one major problem related to the 
+previous version, which is that, when we used the full x_dict[nodetype]
+tensors without checking which nodes were actually connected by the 
+relation. This means we were doing message passing over all nodes, 
+including nodes that are completely disconnected from the current relation.
+
+The solution should be that instead of considering all the dst e src nodes
+for the message passing, we focus only on the ones for which we have at
+leat an edge between src to dst.
+
+In other words, this code:
+def forward(self, x_dict, edge_index_dict):
+    #edge_type_dict is the list of edge types
+    #edge_index_dict contains for each edge_type the edges
+    h_dict = x_dict.copy()
+    for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
+        conv_idx = len(self.metapath) - 1 - i
+        edge_index = edge_index_dict[(src, rel, dst)]
+        #only the one of the relation specified
+        h_dst = self.convs[conv_idx](
+            x=h_dict[dst],
+            h=h_dict[dst],
+            edge_index=edge_index
+        )
+        h_dict[dst] = F.relu(h_dst)
+    start_type = self.metapath[0][0]
+    return self.out_proj(h_dict[start_type])
+
+was wrong because simply considered x=h_dict[dst], without exclude all the 
+dst nodes that are not reached from src, adding them to the aggregation phase.
+
+A solution could be to explude all the nodes that are not reached from the 
+relation, but this would generate a new problem to be managed:
+Given edge_index = [[3, 4, 5], [6, 2, 3]], this means there's an edge from
+x_dict["races"][3] to x_dict["drivers"][6], and so on. Suppose 
+x_dict["races"] originally has shape [128, D] and x_dict["drivers"]
+is [200, D]. If you do x_dict["races"] = x_dict["races"][[3,4,5]], then 
+x_dict["races"] now has shape [3, D] where index 0 corresponds to global
+node 3, index 1 to 4, and index 2 to 5. But edge_index still uses global
+indices [3, 4, 5], so when your GNN tries to index x[3], it will go out
+of bounds, because x only has indices [0,1,2] now. So after filtering nodes,
+you must remap edge_index to the new local indices. If global → local is 
+{3:0, 4:1, 5:2}, then remap edge_index[0] = [0,1,2].
+"""
+
 class MetaPathGNNLayer(MessagePassing):  
     """
     MetaPathGNNLayer implements equation 7 from the MPS-GNN paper.
@@ -79,13 +126,73 @@ class MetaPathGNN(nn.Module):
         for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
             conv_idx = len(self.metapath) - 1 - i
             edge_index = edge_index_dict[(src, rel, dst)]
-            #only the one of the relation specified
+
+            #Store the list of the nodes that are used in the 
+            #relation "(src, rel, dst)":
+            src_nodes = edge_index[0].unique()
+            dst_nodes = edge_index[1].unique()
+            """
+            Example
+            src_nodes = [3, 4, 5]
+            dst_nodes = [6, 2, 3]
+            """
+
+            #To solve the aforementioned problem we use a global->
+            #to local mapping:
+            #src_map = {int(i.item()): i for i, n in enumerate(src_nodes)}
+            src_map = {int(n.item()): i for i, n in enumerate(src_nodes)}
+            dst_map = {int(n.item()): i for i, n in enumerate(dst_nodes)}
+            """
+            Example
+            if:
+            src_nodes = [3, 4, 5]
+            dst_nodes = [6, 2, 3]
+
+            then:
+            src_map = {3: 0, 4: 1, 5: 2}
+            dst_map = {2: 0, 3: 1, 6: 2}
+            """
+
+            #Filter: consider only the nodes in the relation
+            x_src = h_dict[src][src_nodes]
+            x_dst = h_dict[dst][dst_nodes]
+            """
+            Example
+            x_src = [emb(3), emb(4), emb(5)]
+            x_dst = [emb(6), emb(2), emb(3)]
+            """
+
+            edge_index_remapped = torch.stack([
+                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
+                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
+            ])
+
+            """
+            Example
+            if:
+            src_map = {3: 0, 4: 1, 5: 2}
+            dst_map = {2: 0, 3: 1, 6: 2}
+
+            then:
+            edge_index_remapped = tensor([[0, 1, 2],
+                                         [0, 1, 2]])
+            """
+
             h_dst = self.convs[conv_idx](
-                x=h_dict[dst],
-                h=h_dict[dst],
-                edge_index=edge_index
+                x=x_dst,
+                h=x_dst,
+                edge_index=edge_index_remapped
             )
-            h_dict[dst] = F.relu(h_dst)
+            
+            new_h = h_dict[dst].clone()
+            new_h[dst_nodes] = F.relu(h_dst)
+            h_dict[dst] = new_h
+            """
+            Change the embeddings of original nodes :
+            src_nodes = [3, 4, 5]
+            dst_nodes = [6, 2, 3]
+            """
+
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
 
@@ -272,8 +379,8 @@ class MPSGNN(nn.Module):
             x_dict[node_type] = x_dict[node_type] + rel_time
       
       
-      embeddings = [
-          model(x_dict, batch.edge_index_dict, batch.edge_types)
+      embeddings = [#x_dict, edge_index_dict
+          model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
       concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
