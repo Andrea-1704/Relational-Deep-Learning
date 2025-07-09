@@ -190,7 +190,7 @@ class MetaPathGNN(nn.Module):
             src_nodes = [3, 4, 5]
             dst_nodes = [6, 2, 3]
             """
-            
+
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
 
@@ -377,8 +377,8 @@ class MPSGNN(nn.Module):
             x_dict[node_type] = x_dict[node_type] + rel_time
       
       
-      embeddings = [
-          model(x_dict, batch.edge_index_dict, batch.edge_types)
+      embeddings = [#x_dict, edge_index_dict
+          model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
       concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
