@@ -258,51 +258,38 @@ class MetaPathGNN_SAGEConv(nn.Module):
 
 
 
-# class MetaPathSelfAttention(nn.Module):
-#     """
-#     This module applies Transformer-based self-attention between the different metapaths.
-#     It uses a TransformerEncoder. This module apply self attention between the different
-#     metapaths. It is mostly used as a source of explainability, in orfer to assess the 
-#     relevance contribution of every metapath to the final result.
-#     It was not present in the original paper.
-#     """
-#     def __init__(self, dim, num_heads=4):
-#         super().__init__()
-#         self.attn_encoder = TransformerEncoder(
-#             TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
-#             num_layers=4
-#         )
-
-#         self.output_proj = nn.Sequential(
-#             nn.Linear(dim, dim * 2),
-#             nn.ReLU(),
-#             nn.Dropout(0.3),
-#             nn.Linear(dim * 2, dim),
-#             nn.ReLU(),
-#             nn.Dropout(0.2),
-#             nn.Linear(dim, 1)
-#         )
-
-#     def forward(self, metapath_embeddings):  # [N, M, D]
-#         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
-#         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
-
-#         attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
-#         pooled = attn_out.mean(dim=1)                      # [N, D]
-#         return self.output_proj(pooled).squeeze(-1)        # [N]
-
-class MetaPathWeightedSum(nn.Module):
-    def __init__(self, num_metapaths, emb_dim):
+class MetaPathSelfAttention(nn.Module):
+    """
+    This module applies Transformer-based self-attention between the different metapaths.
+    It uses a TransformerEncoder. This module apply self attention between the different
+    metapaths. It is mostly used as a source of explainability, in orfer to assess the 
+    relevance contribution of every metapath to the final result.
+    It was not present in the original paper.
+    """
+    def __init__(self, dim, num_heads=4):
         super().__init__()
-        self.weights = nn.Parameter(torch.randn(num_metapaths))  # [M]
-        self.out_proj = nn.Linear(emb_dim, 1)  # proietta a singolo logit
+        self.attn_encoder = TransformerEncoder(
+            TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
+            num_layers=4
+        )
+
+        self.output_proj = nn.Sequential(
+            nn.Linear(dim, dim * 2),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(dim * 2, dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(dim, 1)
+        )
 
     def forward(self, metapath_embeddings):  # [N, M, D]
-        alpha = F.softmax(self.weights, dim=0)  # [M]
-        weighted = metapath_embeddings * alpha.view(1, -1, 1)  # [N, M, D]
-        summed = weighted.sum(dim=1)  # [N, D]
-        return self.out_proj(summed).squeeze(-1)  # [N]
+        assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
+        assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
 
+        attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
+        pooled = attn_out.mean(dim=1)                      # [N, D]
+        return self.output_proj(pooled).squeeze(-1)        # [N]
 
 
 class MPSGNN(nn.Module):
@@ -360,7 +347,7 @@ class MPSGNN(nn.Module):
         weights = weights/weights.sum() #normalization of count
         self.register_buffer("metapath_weights_tensor", weights) 
 
-        self.regressor = MetaPathWeightedSum(num_metapaths=len(metapaths), emb_dim=hidden_channels)
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
