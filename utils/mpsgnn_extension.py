@@ -143,7 +143,8 @@ def greedy_metapath_search(
     metapath_counts = defaultdict(int) 
     driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
     current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
-    old_y = data[node_type].y.int().tolist()
+    old_y = data[node_type].y.int().tolist()    #be carefull: in this version we are going to consider only 
+    #regression or in general numerical labels!
     current_labels = []
     for i in range(0, len(old_y)):
         if train_mask[i]:
