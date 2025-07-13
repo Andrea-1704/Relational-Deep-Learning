@@ -277,6 +277,7 @@ def greedy_metapath_search(
 def build_json_for_entity(entity_id: int,
                           path: List[Tuple[str, str, str]],
                           db,
+                          data: HeteroData,
                           max_depth: int = 3,
                           max_per_hop: int = 5) -> Dict:
     """
@@ -295,7 +296,7 @@ def build_json_for_entity(entity_id: int,
         hop_key = f"hop_{level+1}"
         document[hop_key] = []
 
-        edge_index = db.graph.edge_index_dict[(src, rel, dst)]
+        edge_index = data.edge_index_dict[(src, rel, dst)]
         src_tensor, dst_tensor = edge_index
 
         for v in current_nodes:
