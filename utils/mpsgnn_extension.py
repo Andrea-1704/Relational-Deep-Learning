@@ -17,7 +17,7 @@ work of https://arxiv.org/abs/2412.00521, but tries to summer up the
 first implementation I proposed (greedy_metapath_search) and takes
 inspiration from the work https://arxiv.org/abs/2411.11829v1.
 
-In particular, the second implementation () 
+In particular, the second implementation (name of the implementation) 
 tries to choose in a similar way of the first version the metapaths 
 but at each iteration it simply considers all the possible relation 
 and for all of them build a JSON file that contains the graph 
@@ -270,3 +270,46 @@ def greedy_metapath_search(
     #print(f"\nfinal metapaths are {selected_metapaths}\n")
 
     return selected_metapaths, metapath_counts
+
+
+
+#VERSION TWO:
+def build_json_for_entity(entity_id: int,
+                          path: List[Tuple[str, str, str]],
+                          db,
+                          max_depth: int = 3,
+                          max_per_hop: int = 5) -> Dict:
+    """
+    Build a JSON document describing the neighborhood of a node along a metapath.
+    """
+    document = {
+        "source_id": entity_id,
+        "source_table": path[0][0] if path else None
+    }
+
+    current_nodes = [entity_id]
+    current_ntype = path[0][0] if path else None
+
+    for level, (src, rel, dst) in enumerate(path):
+        next_nodes = []
+        hop_key = f"hop_{level+1}"
+        document[hop_key] = []
+
+        edge_index = db.graph.edge_index_dict[(src, rel, dst)]
+        src_tensor, dst_tensor = edge_index
+
+        for v in current_nodes:
+            matched_indices = (src_tensor == v).nonzero(as_tuple=True)[0]
+            dst_nodes = dst_tensor[matched_indices].tolist()[:max_per_hop]
+
+            for u in dst_nodes:
+                row = db.table_dict[dst].df.iloc[u].to_dict()
+                row["table"] = dst
+                document[hop_key].append(row)
+
+            next_nodes.extend(dst_nodes)
+
+        current_nodes = next_nodes
+        current_ntype = dst
+
+    return document
