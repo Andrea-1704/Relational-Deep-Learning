@@ -380,11 +380,6 @@ def _download_task_descriptions() -> None:
             _TASK_CACHE[task_id] = {"dataset": ds, "description": desc}
 
 
-def get_task_description(task_name: str) -> str:
-    if not _TASK_CACHE:
-        _download_task_descriptions()
-    return _TASK_CACHE.get(task_name, {}).get("description", "")
-
 
 def build_prompt(json_doc: Dict,
                  task_name: str,
