@@ -116,7 +116,8 @@ def greedy_metapath_search(
     lr : float = 0.0001,
     wd: float = 0,
     epochs: int = 100,
-    max_rels: int = 10
+    max_rels: int = 10, 
+    final_out_channels: int = 1 #this depends on the task (multi class, regression etc)
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with torch.no_grad():
@@ -148,7 +149,6 @@ def greedy_metapath_search(
         if train_mask[i]:
             current_labels.append(old_y[i])
     assert len(current_bags) == len(current_labels)
-    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
     all_path_info = [] 
     local_path = []
     
@@ -208,7 +208,7 @@ def greedy_metapath_search(
                     metapaths=loc,
                     hidden_channels=hidden_channels,
                     out_channels=out_channels,
-                    final_out_channels=1,
+                    final_out_channels=final_out_channels,
                 ).to(device)
                 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
                 test_table = task.get_table("test", mask_input_cols=False)
@@ -238,6 +238,7 @@ def greedy_metapath_search(
                 next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
                 metapath_counts[tuple(local_path)] += 1
         current_paths = [best_rel] 
+        current_bags, current_labels = best_bags, best_labels
     
     best_score_per_path = {}
     for score, path in all_path_info:
