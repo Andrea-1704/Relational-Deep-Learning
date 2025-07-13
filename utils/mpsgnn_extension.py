@@ -211,19 +211,22 @@ def greedy_metapath_search(
                     final_out_channels=final_out_channels,
                 ).to(device)
                 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-                test_table = task.get_table("test", mask_input_cols=False)
-                best_test_metrics = -math.inf if higher_is_better else math.inf
+                #test_table = task.get_table("test", mask_input_cols=False)
+                val_table = task.get_table("val")
+                best_val_metrics = -math.inf if higher_is_better else math.inf
                 for _ in range(0, epochs):
                     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-                    test_pred = test(model, loader_dict["test"], device=device, task=task)
-                    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-                    if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
-                        best_test_metrics = test_metrics[tune_metric]
-                    if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
-                        best_test_metrics = test_metrics[tune_metric]
+                    # test_pred = test(model, loader_dict["test"], device=device, task=task)
+                    # test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+                    val_pred = test(model, loader_dict["val"], device=device, task=task)
+                    val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+                    if val_metrics[tune_metric] > best_val_metrics and higher_is_better:
+                        best_val_metrics = val_metrics[tune_metric]
+                    if val_metrics[tune_metric] < best_val_metrics and not higher_is_better:
+                        best_val_metrics = val_metrics[tune_metric]
                 print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
-                all_path_info.append((best_test_metrics, local_path2.copy()))
-                score = best_test_metrics #score now is directly the F1 score returneb by training the model on that metapath
+                all_path_info.append((best_val_metrics, local_path2.copy()))
+                score = best_val_metrics #score now is directly the F1 score returneb by training the model on that metapath
 
                 if score > best_score: #higher is better
                     best_rel = rel
