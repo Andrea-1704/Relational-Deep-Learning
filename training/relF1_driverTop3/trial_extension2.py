@@ -122,91 +122,100 @@ loader_dict = loader_dict_fn(
 lr=1e-02
 wd=0
 
-metapaths, metapath_counts = greedy_metapath_search(
-    col_stats_dict = col_stats_dict_official,
+doc = build_json_for_entity(
+    entity_id= 0,
+    path= [('drivers', 'rev_f2p_driverId', 'results')],
     data=data_official,
-    db= db_nuovo,
-    node_id='driverId',
-    train_mask=train_mask_full,
-    node_type='drivers',
-    L_max=4,
-    channels = hidden_channels,
-    number_of_metapaths = 3,     
-    out_channels = out_channels,
-    hidden_channels = hidden_channels, 
-    loader_dict = loader_dict,
-    lr = lr,
-    wd = wd,
-    task = task,
-    loss_fn= loss_fn, 
-    epochs = 100, 
-    tune_metric = tune_metric,
-    higher_is_better= higher_is_better
+    db=db_nuovo
 )
 
-print(f"\nfinal metapaths are {metapaths}\n")
-print(f"\nmetapaths counts are {metapath_counts}\n")
+print(doc)
 
-lr=0.0001
-wd = 0
+# metapaths, metapath_counts = greedy_metapath_search(
+#     col_stats_dict = col_stats_dict_official,
+#     data=data_official,
+#     db= db_nuovo,
+#     node_id='driverId',
+#     train_mask=train_mask_full,
+#     node_type='drivers',
+#     L_max=4,
+#     channels = hidden_channels,
+#     number_of_metapaths = 3,     
+#     out_channels = out_channels,
+#     hidden_channels = hidden_channels, 
+#     loader_dict = loader_dict,
+#     lr = lr,
+#     wd = wd,
+#     task = task,
+#     loss_fn= loss_fn, 
+#     epochs = 100, 
+#     tune_metric = tune_metric,
+#     higher_is_better= higher_is_better
+# )
 
-model = MPSGNN(
-    data=data_official,
-    col_stats_dict=col_stats_dict_official,
-    metadata=data_official.metadata(),
-    metapath_counts = metapath_counts,
-    metapaths=metapaths,
-    hidden_channels=hidden_channels,
-    out_channels=out_channels,
-    final_out_channels=1,
-).to(device)
+# print(f"\nfinal metapaths are {metapaths}\n")
+# print(f"\nmetapaths counts are {metapath_counts}\n")
 
-optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+# lr=0.0001
+# wd = 0
 
-scheduler = CosineAnnealingLR(optimizer, T_max=25)
+# model = MPSGNN(
+#     data=data_official,
+#     col_stats_dict=col_stats_dict_official,
+#     metadata=data_official.metadata(),
+#     metapath_counts = metapath_counts,
+#     metapaths=metapaths,
+#     hidden_channels=hidden_channels,
+#     out_channels=out_channels,
+#     final_out_channels=1,
+# ).to(device)
 
-early_stopping = EarlyStopping(
-    patience=60,
-    delta=0.0,
-    verbose=True,
-    higher_is_better = True,
-    path="best_basic_model.pt"
-)
+# optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+# scheduler = CosineAnnealingLR(optimizer, T_max=25)
+
+# early_stopping = EarlyStopping(
+#     patience=60,
+#     delta=0.0,
+#     verbose=True,
+#     higher_is_better = True,
+#     path="best_basic_model.pt"
+# )
 
 
-best_val_metric = -math.inf 
-test_table = task.get_table("test", mask_input_cols=False)
-best_test_metric = -math.inf 
-epochs = 500
-for epoch in range(0, epochs):
-    train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+# best_val_metric = -math.inf 
+# test_table = task.get_table("test", mask_input_cols=False)
+# best_test_metric = -math.inf 
+# epochs = 500
+# for epoch in range(0, epochs):
+#     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-    train_pred = test(model, loader_dict["train"], device=device, task=task)
-    val_pred = test(model, loader_dict["val"], device=device, task=task)
-    test_pred = test(model, loader_dict["test"], device=device, task=task)
+#     train_pred = test(model, loader_dict["train"], device=device, task=task)
+#     val_pred = test(model, loader_dict["val"], device=device, task=task)
+#     test_pred = test(model, loader_dict["test"], device=device, task=task)
     
-    train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-    val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+#     train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+#     val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+#     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    #scheduler.step(val_metrics[tune_metric])
+#     #scheduler.step(val_metrics[tune_metric])
 
-    if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
-        best_val_metric = val_metrics[tune_metric]
-        state_dict = copy.deepcopy(model.state_dict())
+#     if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
+#         best_val_metric = val_metrics[tune_metric]
+#         state_dict = copy.deepcopy(model.state_dict())
 
-    if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
-        best_test_metric = test_metrics[tune_metric]
-        state_dict_test = copy.deepcopy(model.state_dict())
+#     if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
+#         best_test_metric = test_metrics[tune_metric]
+#         state_dict_test = copy.deepcopy(model.state_dict())
 
-    current_lr = optimizer.param_groups[0]["lr"]
+#     current_lr = optimizer.param_groups[0]["lr"]
     
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+#     print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-    early_stopping(val_metrics[tune_metric], model)
+#     early_stopping(val_metrics[tune_metric], model)
 
-    if early_stopping.early_stop:
-        print(f"Early stopping triggered at epoch {epoch}")
-        break
-print(f"best validation results: {best_val_metric}")
-print(f"best test results: {best_test_metric}")
+#     if early_stopping.early_stop:
+#         print(f"Early stopping triggered at epoch {epoch}")
+#         break
+# print(f"best validation results: {best_val_metric}")
+# print(f"best test results: {best_test_metric}")
