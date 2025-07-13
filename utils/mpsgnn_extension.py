@@ -170,7 +170,6 @@ def greedy_metapath_search(
 
             best_rel = None
             best_score = -math.inf if higher_is_better else math.inf  
-            best_alpha = None
             best_bags = None
             best_labels = None
 
@@ -238,7 +237,7 @@ def greedy_metapath_search(
             if best_rel:
                 local_path.append(best_rel)
                 print(f"Best relation is {best_rel} and now local path is {local_path}")
-                next_paths_info.append((best_score, local_path, best_bags, best_labels, best_alpha))
+                next_paths_info.append((best_score, local_path, best_bags, best_labels))
                 metapath_counts[tuple(local_path)] += 1
         current_paths = [best_rel] 
         current_bags, current_labels = best_bags, best_labels
