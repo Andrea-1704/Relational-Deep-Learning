@@ -144,7 +144,10 @@ def greedy_metapath_search(
     current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
     old_y = data[node_type].y.int().tolist()    #be carefull: in this version we are going to consider only 
     #regression or in general numerical labels!
-    print(f"we got to change this old_y: {data[node_type].y}")
+    #this depends on the task.
+    #print(f"we got to change this old_y: {data[node_type].y}")
+    
+
     current_labels = []
     for i in range(0, len(old_y)):
         if train_mask[i]:
