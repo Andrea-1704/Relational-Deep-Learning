@@ -289,7 +289,6 @@ def build_json_for_entity(entity_id: int,
     }
 
     current_nodes = [entity_id]
-    current_ntype = path[0][0] if path else None
 
     for level, (src, rel, dst) in enumerate(path):
         next_nodes = []
@@ -311,6 +310,5 @@ def build_json_for_entity(entity_id: int,
             next_nodes.extend(dst_nodes)
 
         current_nodes = next_nodes
-        current_ntype = dst
 
     return document
