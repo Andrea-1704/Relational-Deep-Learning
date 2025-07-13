@@ -224,7 +224,7 @@ def greedy_metapath_search(
                         best_val_metrics = val_metrics[tune_metric]
                     if val_metrics[tune_metric] < best_val_metrics and not higher_is_better:
                         best_val_metrics = val_metrics[tune_metric]
-                print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_test_metrics}")
+                print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_val_metrics}")
                 all_path_info.append((best_val_metrics, local_path2.copy()))
                 score = best_val_metrics #score now is directly the F1 score returneb by training the model on that metapath
 
