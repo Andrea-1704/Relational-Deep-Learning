@@ -41,7 +41,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_extension import greedy_metapath_search
+from utils.mpsgnn_extension_1 import greedy_metapath_search
 from model.MPSGNN_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
