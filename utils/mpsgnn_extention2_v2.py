@@ -1,0 +1,141 @@
+import json
+from pathlib import Path
+import torch
+import math
+from torch_geometric.data import HeteroData
+from typing import List, Tuple, Dict, Any
+import torch.nn as nn
+import torch.nn.functional as F
+from relbench.modeling.nn import HeteroEncoder
+from collections import defaultdict
+from model.MPSGNN_Model import MPSGNN
+from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+import json
+from typing import Dict, List, Tuple, Sequence
+import pandas as pd
+from torch_geometric.data import HeteroData
+
+
+def _row_from_df(df: pd.DataFrame,
+                 node_id: int | str,
+                 ntype: str,
+                 id_map: Dict[str, pd.Index] | None) -> Dict[str, Any]:
+    """Return a dict of the row for `node_id` in table `ntype`."""
+    if id_map and ntype in id_map:
+        row_pos = id_map[ntype].get_loc(node_id)
+    else:
+        row_pos = node_id
+    row = df.iloc[row_pos].to_dict()
+    row["table"] = ntype
+    return row
+
+
+def _merge_child_into_parent(parent: Dict[str, Any],
+                             child_list: List[Dict[str, Any]],
+                             dst_ntype: str) -> None:
+    """
+    Add child rows under key `dst_ntype`.
+
+    We keep children under a dedicated list (JSON nesting) instead of flat-merge
+    to avoid key collisions.  This is faithful to the Figure 1 example in the
+    paper, where the Transaction row owns a list of Products.
+    """
+    parent.setdefault(dst_ntype, []).extend(child_list)
+
+
+def _build_row_recursive(curr_id: int,
+                         path_remaining: Sequence[Tuple[str, str, str]],
+                         data: HeteroData,
+                         db,
+                         id_map: Dict[str, pd.Index] | None,
+                         max_per_hop: int,
+                         curr_ntype: str,
+                         y_value: Any | None) -> Dict[str, Any]:
+    """
+    Recursive helper that returns a JSON dict for `curr_id`
+    and denormalises along the remaining path.
+    """
+    row = _row_from_df(db.table_dict[curr_ntype].df,
+                       curr_id, curr_ntype, id_map)
+
+    # attach target (only for labelled examples)
+    if y_value is not None:
+        row["Target"] = y_value
+
+    if not path_remaining:          # reached end of metapath
+        return row
+
+    src, rel, dst = path_remaining[0]
+    # sanity check
+    assert curr_ntype == src, f"path mismatch: expected src={src}, got {curr_ntype}"
+
+    src_ids, dst_ids = data.edge_index_dict[(src, rel, dst)]
+
+    # neighbours of curr_id via the current relation
+    mask = (src_ids == curr_id).nonzero(as_tuple=True)[0]
+    neigh = dst_ids[mask].tolist()[:max_per_hop]
+
+    child_jsons: List[Dict] = []
+    for nxt_id in neigh:
+        child_json = _build_row_recursive(
+            nxt_id,
+            path_remaining[1:],   # drop first hop
+            data,
+            db,
+            id_map,
+            max_per_hop,
+            dst,
+            y_value=None          # children are always *unlabelled* rows
+        )
+        child_jsons.append(child_json)
+
+    # add children under a dedicated key
+    _merge_child_into_parent(row, child_jsons, dst_ntype=dst)
+    return row
+
+
+def build_json_for_entity_path(entity_id: int | str,
+                               path: List[Tuple[str, str, str]],
+                               data: HeteroData,
+                               db,
+                               *,
+                               y: Any | None = None,
+                               max_per_hop: int = 5,
+                               id_map: Dict[str, pd.Index] | None = None) -> Dict:
+    """
+    Parameters
+    ----------
+    entity_id : global id of the source node
+    path      : ordered list of (src, rel, dst) tuples (the metapath)
+    data      : HeteroData with `edge_index_dict`
+    db        : RelBench DB object (gives `.table_dict[ntype].df`)
+    y         : label/target value (include => example becomes in-context)
+    max_per_hop : cap neighbours per hop to control JSON size
+    id_map      : optional {node_type: pandas.Index} for global→row mapping
+
+    Returns
+    -------
+    document : Dict  (ready to dump via json.dumps)
+    """
+    if not path:
+        raise ValueError("Metapath cannot be empty")
+
+    source_ntype = path[0][0]
+    doc_root = _build_row_recursive(
+        entity_id,
+        path_remaining=path,
+        data=data,
+        db=db,
+        id_map=id_map,
+        max_per_hop=max_per_hop,
+        curr_ntype=source_ntype,
+        y_value=y
+    )
+
+    # prepend metadata fields expected by the paper
+    document = {
+        "source_id": int(entity_id),
+        "source_table": source_ntype,
+        **doc_root
+    }
+    return document
