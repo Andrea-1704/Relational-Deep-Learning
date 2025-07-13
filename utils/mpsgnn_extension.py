@@ -33,6 +33,7 @@ whether a pre trained-LLM could improve the performances obtained by
 a GNN architecture.
 """
 
+import json
 import torch
 import math
 from torch_geometric.data import HeteroData
@@ -301,9 +302,13 @@ def build_json_for_entity(entity_id: int,
         for v in current_nodes:
             matched_indices = (src_tensor == v).nonzero(as_tuple=True)[0]
             dst_nodes = dst_tensor[matched_indices].tolist()[:max_per_hop]
+            #we are only following the metapath given by the path, ignoring the 
+            #rest of the graph
 
-            for u in dst_nodes:
+            for u in dst_nodes:#for all of the reached node following path and 
+                #starting from the entity id node
                 row = db.table_dict[dst].df.iloc[u].to_dict()
+                #we are assuming to use a global node id for u.
                 row["table"] = dst
                 document[hop_key].append(row)
 
@@ -312,3 +317,27 @@ def build_json_for_entity(entity_id: int,
         current_nodes = next_nodes
 
     return document
+
+
+def build_prompt(json_obj: Dict, task_type: str, label_desc: str = "") -> str:
+    """
+    task_type: one of {"binary", "multiclass", "regression"}
+    """
+    task_desc = {
+        "binary": "Output 1 if you think the entity satisfies the condition, 0 otherwise.",
+        "multiclass": "Output one of the following class labels: 0, 1, 2, ..., N.",
+        "regression": "Output a real-valued prediction (e.g., a number between 0 and 100)."
+    }
+
+    prompt = (
+        "You are a data analyst.\n\n"
+        "Below is a JSON describing an entity and its context extracted from a relational database.\n"
+        f"Task: {task_type.upper()}\n"
+        f"Target meaning: {label_desc}\n"
+        f"{task_desc[task_type]}\n\n"
+        f"JSON:\n{json.dumps(json_obj, indent=2)}\n\n"
+        "Answer:\n"
+    )
+
+    return prompt
+
