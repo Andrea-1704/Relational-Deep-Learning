@@ -42,7 +42,6 @@ def construct_bags(
     previous_bags: List[List[int]], 
     previous_labels: List[float],     # list of the "v" nodes
     rel: Tuple[str, str, str],
-    theta: nn.Module,                 # network to compute Θᵗx_v
     src_embeddings,
 ) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
     """
@@ -80,8 +79,6 @@ def construct_bags(
                 continue
             
             x_v = src_embeddings[v]
-
-            theta_xv = theta(x_v).item() # Θᵗ x_v scalar
 
             for u in neighbors_u.tolist():  #consider all the "sons" of node "v" through relation "rel"
                 bag_u.append(u)
@@ -192,7 +189,6 @@ def greedy_metapath_search(
                     previous_bags=current_bags,
                     previous_labels=current_labels,
                     rel=rel,
-                    theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
                 if len(bags) < 5:
