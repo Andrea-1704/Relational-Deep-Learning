@@ -181,9 +181,7 @@ def greedy_metapath_search(
                   continue
                 if rel == ('races', 'rev_f2p_raceId', 'standings'): # for some reasons it provokes side assertions
                   continue
-
-                node_embeddings = node_embeddings_dict.get(dst) #access at the value (Tensor[dst, hidden_dim]) for key node type "dst"
-                theta = nn.Linear(node_embeddings.size(-1), 1).to(device) #classifier which is used to compute Θᵗx_v
+                
                 bags, labels = construct_bags(
                     data=data,
                     previous_bags=current_bags,
