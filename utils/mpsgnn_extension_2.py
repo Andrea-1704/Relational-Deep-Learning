@@ -393,7 +393,10 @@ def build_prompt(json_doc: Dict,
     task_type ∈ {"binary", "multiclass", "regression"}
     task_name e.g. "driver-top3"
     """
-    task_desc = get_task_description(task_name)
+    #task_desc = get_task_description(task_name)
+    task = _TASK_CACHE[task_name]
+    task_desc = task["description"]
+    metric = task["metric"]
 
     requirement = {
         "binary":    "Return **only** 0 or 1.",
