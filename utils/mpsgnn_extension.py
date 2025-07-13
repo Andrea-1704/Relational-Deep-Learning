@@ -59,7 +59,6 @@ def construct_bags(
     edge_src, edge_dst = edge_index #tensor [2, #edges]
     bags = [] #the new bags, one for each "v" node.
     labels = [] #for each bag we consider its label, given by the one of the src in relation r.
-    alpha_next = {} #the result of the computation of the alfa scores given by equation 6.
 
     for bag_v, label in zip(previous_bags, previous_labels):
         #the previous bag now becomes a "v" node
@@ -92,7 +91,7 @@ def construct_bags(
             labels.append(label) #the label of the current bag is the same 
             #as the one that the father bag had.
 
-    return bags, labels, alpha_next
+    return bags, labels
 
 
 
@@ -145,6 +144,7 @@ def greedy_metapath_search(
     current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
     old_y = data[node_type].y.int().tolist()    #be carefull: in this version we are going to consider only 
     #regression or in general numerical labels!
+    print(f"we got to change this old_y: {old_y}")
     current_labels = []
     for i in range(0, len(old_y)):
         if train_mask[i]:
