@@ -45,7 +45,6 @@ def build_json_for_entity(entity_id: int,
                           path: Sequence[Tuple[str, str, str]],
                           data: HeteroData,
                           db,
-                          *,
                           max_per_hop: int = 5,
                           id_map: Dict[str, pd.Index] | None = None) -> Dict:
     """
