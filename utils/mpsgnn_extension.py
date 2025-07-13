@@ -341,3 +341,39 @@ def build_prompt(json_obj: Dict, task_type: str, label_desc: str = "") -> str:
 
     return prompt
 
+
+
+def score_metapath_with_llm(path: List[Tuple[str, str, str]],
+                            val_ids: List[int],
+                            val_labels: List,
+                            db,
+                            task_type: str,
+                            llm_call_fn,
+                            label_desc: str = "",
+                            metric_fn=None,
+                            max_docs: int = 50) -> float:
+    """
+    path: the current candidate metapath
+    val_ids: source node ids, equal to the initial bags
+    val_labels: corresponding ground-truth labels for each of the bags
+    llm_call_fn: function that sends prompts and returns predictions
+    metric_fn: evaluation function (e.g., f1_score, roc_auc, etc.)
+    """
+    preds, labels = [], []
+
+    for entity_id, label in zip(val_ids, val_labels):
+        json_doc = build_json_for_entity(entity_id, path, db)
+        prompt = build_prompt(json_doc, task_type, label_desc)
+
+        prediction = llm_call_fn(prompt)  # string or float
+        preds.append(prediction)
+        labels.append(label)
+
+        if len(preds) >= max_docs:
+            break
+
+    # parse & compute metric
+    if metric_fn:
+        return metric_fn(labels, preds)
+    else:
+        return default_metric(task_type, labels, preds)
