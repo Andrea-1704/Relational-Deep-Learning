@@ -24,6 +24,7 @@ a GNN architecture.
 """
 
 import json
+from pathlib import Path
 import torch
 import math
 from torch_geometric.data import HeteroData
@@ -121,3 +122,59 @@ def build_json_for_entity(entity_id: int,
 
 
 
+
+
+# === tiny cache of task descriptions downloaded once from relbench.stanford.edu =============
+_TASK_CACHE: Dict[str, Dict[str, str]] = {}
+
+
+def _download_task_descriptions() -> None:
+    """Fetch (dataset, task) -> description from RelBench website once."""
+    import requests
+    from bs4 import BeautifulSoup
+
+    root = "https://relbench.stanford.edu/databases"
+    datasets = ["rel-f1", "rel-trial", "rel-amazon", "rel-hm", "rel-avito", "rel-stack", "rel-event"]
+    for ds in datasets:
+        html = requests.get(f"{root}/{ds}/").text
+        soup = BeautifulSoup(html, "html.parser")
+        headers = soup.find_all("h3")
+        for h in headers:
+            task_id = h.text.strip("`")
+            desc = h.find_next("p").text
+            _TASK_CACHE[task_id] = {"dataset": ds, "description": desc}
+
+
+def get_task_description(task_name: str) -> str:
+    if not _TASK_CACHE:
+        _download_task_descriptions()
+    return _TASK_CACHE.get(task_name, {}).get("description", "")
+
+
+def build_prompt(json_doc: Dict,
+                 task_name: str,
+                 task_type: str) -> str:
+    """
+    task_type ∈ {"binary", "multiclass", "regression"}
+    task_name e.g. "driver-top3"
+    """
+    task_desc = get_task_description(task_name)
+
+    requirement = {
+        "binary":    "Return **only** 0 or 1.",
+        "multiclass": "Return **only** an integer class label (e.g., 0,1,2...).",
+        "regression": "Return **only** one real number (no units)."
+    }[task_type]
+
+    prompt = (
+        "You are an expert sports data analyst.\n\n"
+        f"**Task ({task_name})**: {task_desc}\n"
+        f"{requirement}\n\n"
+        "Below is a JSON dump of the entity and its neighbourhood in the database.\n"
+        "Use ONLY the information in the JSON.\n\n"
+        "<JSON>\n"
+        f"{json.dumps(json_doc, ensure_ascii=False)}\n"
+        "</JSON>\n\n"
+        "Answer:\n"
+    )
+    return prompt
