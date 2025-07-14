@@ -14,6 +14,7 @@ import json
 from typing import Dict, List, Tuple, Sequence
 import pandas as pd
 from torch_geometric.data import HeteroData
+from task_cache import get_task_dataset, get_task_metric, get_task_description
 
 
 def _row_from_df(df: pd.DataFrame,
@@ -39,6 +40,9 @@ def _merge_child_into_parent(parent: Dict[str, Any],
     We keep children under a dedicated list (JSON nesting) instead of flat-merge
     to avoid key collisions.  This is faithful to the Figure 1 example in the
     paper, where the Transaction row owns a list of Products.
+
+    This function is only used to manage the nesting of the fields in the json 
+    format.
     """
     parent.setdefault(dst_ntype, []).extend(child_list)
 
@@ -54,33 +58,43 @@ def _build_row_recursive(curr_id: int,
     """
     Recursive helper that returns a JSON dict for `curr_id`
     and denormalises along the remaining path.
+
+    In practice this function retrieves the informations of 
+    'curr_id' node and if an y_value is provided it adds a 
+    'target' field containing such value; is the path is 
+    finished it simply returns the node, otherwise it 
+    follows the path (src->dst) and reaches all the 
+    dst nodes linked and build their json recursively.
     """
     row = _row_from_df(db.table_dict[curr_ntype].df,
                        curr_id, curr_ntype, id_map)
-    #take the informations of the node
+    #take the informations of the node "curr_id"
 
     # attach target (only for labelled examples)
     if y_value is not None:
         row["Target"] = y_value
+    #target value should be present only if src type is target 
+    #node and we are considering example samples, so the ones
+    #coming from the training dataset.
 
-    if not path_remaining:          # reached end of metapath
+    if not path_remaining:          # reached end of metapath: return the node.
         return row
 
-    src, rel, dst = path_remaining[0]
-    # sanity check
-    assert curr_ntype == src, f"path mismatch: expected src={src}, got {curr_ntype}"
+    src, rel, dst = path_remaining[0] #take next path in the metapath
+    
+    assert curr_ntype == src, f"path mismatch: expected src={src}, got {curr_ntype}" # sanity check
 
-    src_ids, dst_ids = data.edge_index_dict[(src, rel, dst)]
+    src_ids, dst_ids = data.edge_index_dict[(src, rel, dst)] #take all the edges of the current rel type
 
     # neighbours of curr_id via the current relation
     mask = (src_ids == curr_id).nonzero(as_tuple=True)[0]
     neigh = dst_ids[mask].tolist()[:max_per_hop]
 
     child_jsons: List[Dict] = []
-    for nxt_id in neigh:
+    for nxt_id in neigh: #recursive construction
         child_json = _build_row_recursive(
             nxt_id,
-            path_remaining[1:],   # drop first hop
+            path_remaining[1:],   # drop first hop, which has already been considered
             data,
             db,
             id_map,
@@ -99,8 +113,9 @@ def build_json_for_entity_path(entity_id: int | str,
                                path: List[Tuple[str, str, str]],
                                data: HeteroData,
                                db,
-                               task,
+                               task_name : str,
                                max_per_hop: int = 5,
+                               y : Any = None,
                                id_map: Dict[str, pd.Index] | None = None) -> Dict:
     """
     Parameters
@@ -111,6 +126,7 @@ def build_json_for_entity_path(entity_id: int | str,
     db        : RelBench DB object (gives `.table_dict[ntype].df`)
     max_per_hop : cap neighbours per hop to control JSON size
     id_map      : optional {node_type: pandas.Index} for global→row mapping
+    y           : optional, is the target value for entity_id
 
     Returns
     -------
@@ -118,10 +134,9 @@ def build_json_for_entity_path(entity_id: int | str,
     """
     if not path:
         raise ValueError("Metapath cannot be empty")
-
     
-
     source_ntype = path[0][0] #source node of the first relation in 'path'
+
     doc_root = _build_row_recursive(
         entity_id,
         path_remaining=path,
@@ -130,12 +145,15 @@ def build_json_for_entity_path(entity_id: int | str,
         id_map=id_map,
         max_per_hop=max_per_hop,
         curr_ntype=source_ntype,
+        y_value= y
     )
 
     # prepend metadata fields expected by the paper
     document = {
         "source_id": int(entity_id),
         "source_table": source_ntype,
+        "TaskDescription": get_task_description(task_name),
+        "Metric": get_task_metric(task_name),
         **doc_root
     }
     return document
