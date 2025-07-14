@@ -41,7 +41,7 @@ from relbench.base.task_base import TaskType
 import numpy as np
 
 #
-#put here key openai # ← use ENV VAR in prod
+#put here key openai
 #
 
 def convert_timestamps(obj):
@@ -369,10 +369,54 @@ def parse_prediction(pred: str, task_type: str):
     
 
 
-import random
-import numpy as np
-from sklearn.metrics import roc_auc_score, mean_absolute_error
-from relbench.base.task_base import TaskType
+
+def sample_val_ids_balanced(val_mask, labels, num_val_samples, seed=42):
+    """
+    Sample validation node indices ensuring at least one example per label class.
+
+    Parameters
+    ----------
+    val_mask : torch.Tensor (bool)
+        Boolean mask indicating validation nodes.
+    labels : torch.Tensor
+        Tensor of labels (e.g., data[node_type].y)
+    num_val_samples : int
+        Total number of validation nodes to sample.
+    seed : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    sampled_val_ids : List[int]
+        List of sampled node indices covering all label classes.
+    """
+    import random
+    from collections import defaultdict
+
+    random.seed(seed)
+
+    val_indices = torch.where(val_mask)[0].tolist()
+    label_values = labels[val_mask].tolist()
+
+    label_to_indices = defaultdict(list)
+    for idx, label in zip(val_indices, label_values):
+        if not torch.isnan(labels[idx]):  # skip NaNs
+            label_to_indices[label].append(idx)
+
+    sampled = []
+    # Ensure at least one sample per class
+    for indices in label_to_indices.values():
+        if indices:
+            sampled.append(random.choice(indices))
+
+    # Fill remaining slots randomly
+    remaining = list(set(val_indices) - set(sampled))
+    random.shuffle(remaining)
+    sampled.extend(remaining[:max(0, num_val_samples - len(sampled))])
+
+    return sampled
+
+
 
 def evaluate_metapath_with_llm(
     metapath,
@@ -384,7 +428,7 @@ def evaluate_metapath_with_llm(
     train_mask,
     llm_model="llama3-70b-8192",
     max_per_hop=1,
-    num_val_samples=5,
+    num_val_samples=50,
     num_examples_per_prompt=2,
     seed=42
 ):
@@ -431,8 +475,23 @@ def evaluate_metapath_with_llm(
     all_labels = data[target_ntype].y
     task_type = task.task_type
 
-    val_indices = torch.where(val_mask)[0].tolist()
-    train_indices = torch.where(train_mask)[0].tolist()
+    # val_indices = torch.where(val_mask)[0].tolist()
+    #train_indices = torch.where(train_mask)[0].tolist()
+    #we want to select always at least one class for all of the possible labels
+    #otherwise metrics as roc auc would create errors:
+    val_indices = sample_val_ids_balanced(
+        val_mask=data[target_ntype].val_mask,
+        labels=data[target_ntype].y,
+        num_val_samples=5,
+        seed=42,
+    )
+
+    train_indices = sample_val_ids_balanced(
+        val_mask=train_mask,
+        labels=data[target_ntype].y,
+        num_val_samples=num_examples_per_prompt,
+        seed=seed,
+    )
 
     predictions = []
     ground_truths = []
@@ -488,6 +547,8 @@ def evaluate_metapath_with_llm(
         return None
 
     clean_y, clean_preds = zip(*pairs)
+    print(f"clean y is {clean_y}")
+    print(f"clean preds is {clean_preds}")
 
     if task_type == TaskType.BINARY_CLASSIFICATION:
         return roc_auc_score(clean_y, clean_preds)
