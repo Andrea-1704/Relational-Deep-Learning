@@ -42,7 +42,7 @@ import numpy as np
 import time
 
 #
-#put here key openai # ← use ENV VAR in prod
+#put here key openai  # ← use ENV VAR in prod
 #
 
 def convert_timestamps(obj):
@@ -599,7 +599,7 @@ def build_metapath(
     epsilon: float = 1e-3,
     max_per_hop: int = 2,
     num_val_samples: int = 2,
-    num_examples_per_prompt: int = 2,
+    num_examples_per_prompt: int = 10,
     llm_model: str = "llama3-70b-8192",
     seed: int = 42
 ) -> List[Tuple[str, str, str]]:
