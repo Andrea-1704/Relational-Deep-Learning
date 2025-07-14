@@ -179,6 +179,8 @@ node_type="drivers"
 
 from utils.mpsgnn_extention2 import build_llm_prompt, call_llm
 
+
+
 prompt = build_llm_prompt(
     metapath=[('drivers', 'rev_f2p_driverId', 'results')],
     target_id=42,
@@ -186,7 +188,8 @@ prompt = build_llm_prompt(
     task_name="driver-top3",
     db=db_nuovo,
     data=data_official,
-    task=task
+    task=task,
+    train_mask=train_mask_full,
 )
 
 print(prompt)
