@@ -15,6 +15,29 @@ from typing import Dict, List, Tuple, Sequence
 import pandas as pd
 from torch_geometric.data import HeteroData
 from utils.task_cache import get_task_dataset, get_task_metric, get_task_description
+import openai
+
+openai.api_base = "https://api.groq.com/openai/v1"
+openai.api_key = ""  # ← usa ENV VAR in produzione
+
+def call_llm(prompt: str, model="llama3-70b-8192") -> str:
+    """
+    Function that sends the prompt to the LLM and gets as an 
+    answer the results obtained by the LLM using a certain
+    metapath.
+    """
+    try:
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0,
+        )
+        return response["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print("LLM call failed:", e)
+        return ""
 
 
 def _row_from_df(df: pd.DataFrame,
@@ -157,3 +180,5 @@ def build_json_for_entity_path(entity_id: int | str,
         **doc_root
     }
     return document
+
+
