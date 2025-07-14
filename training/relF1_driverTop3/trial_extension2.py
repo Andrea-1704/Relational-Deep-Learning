@@ -45,7 +45,7 @@ from utils.mpsgnn_extention2 import build_json_for_entity_path
 from model.MPSGNN_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.task_cache import get_task_description, get_task_metric  
-from utils.mpsgnn_extention2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm
+from utils.mpsgnn_extention2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm, build_metapath
 from relbench.base.task_base import TaskType
 
 task_name = "driver-top3"
@@ -153,15 +153,27 @@ node_type="drivers"
 # print(prompt)
 
 
-score = evaluate_metapath_with_llm(
-    metapath=[('drivers', 'rev_f2p_driverId', 'results')],
+# score = evaluate_metapath_with_llm(
+#     metapath=[('drivers', 'rev_f2p_driverId', 'results')],
+#     data = data_official,
+#     db = db_nuovo,
+#     task_name = task_name,
+#     task = task,
+#     val_mask = val_mask, 
+#     train_mask = train_mask_full
+# )
+
+
+# print(f"The result of evaluate_metapath_with_llm is {score}")
+
+metapath = build_metapath(
     data = data_official,
     db = db_nuovo,
     task_name = task_name,
     task = task,
     val_mask = val_mask, 
-    train_mask = train_mask_full
+    train_mask = train_mask_full,
+    target_node="drivers"
 )
 
-
-print(f"The result of evaluate_metapath_with_llm is {score}")
+print(f"found metapath is {metapath}")

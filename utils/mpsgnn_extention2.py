@@ -39,9 +39,10 @@ import re
 from sklearn.metrics import accuracy_score, mean_absolute_error, roc_auc_score
 from relbench.base.task_base import TaskType
 import numpy as np
+import time
 
 #
-#put here key openai
+#put here key openai # ← use ENV VAR in prod
 #
 
 def convert_timestamps(obj):
@@ -57,24 +58,47 @@ def convert_timestamps(obj):
         return obj
 
 
-def call_llm(prompt: str, model="llama3-70b-8192") -> str:
+# def call_llm(prompt: str, model="llama3-70b-8192") -> str:
+#     """
+#     Function that sends the prompt to the LLM and gets as an 
+#     answer the results obtained by the LLM using a certain
+#     metapath.
+#     """
+#     try:
+#         response = openai.ChatCompletion.create(
+#             model=model,
+#             messages=[
+#                 {"role": "user", "content": prompt}
+#             ],
+#             temperature=0.0,
+#         )
+#         return response["choices"][0]["message"]["content"].strip()
+#     except Exception as e:
+#         print("LLM call failed:", e)
+#         return ""
+
+
+def call_llm(prompt: str, model="llama3-70b-8192", retries=5, wait=30) -> str:
     """
     Function that sends the prompt to the LLM and gets as an 
     answer the results obtained by the LLM using a certain
     metapath.
     """
-    try:
-        response = openai.ChatCompletion.create(
-            model=model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0,
-        )
-        return response["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print("LLM call failed:", e)
-        return ""
+    for attempt in range(retries):
+        try:
+            response = openai.ChatCompletion.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+            )
+            return response["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"LLM call failed (attempt {attempt+1}):", e)
+            if attempt < retries - 1:
+                print(f"Retrying in {wait} seconds...")
+                time.sleep(wait)
+            else:
+                return ""
 
 
 def _row_from_df(df: pd.DataFrame,
@@ -428,8 +452,8 @@ def evaluate_metapath_with_llm(
     train_mask,
     llm_model="llama3-70b-8192",
     max_per_hop=1,
-    num_val_samples=50,
-    num_examples_per_prompt=2,
+    num_val_samples=10,
+    num_examples_per_prompt=3,
     seed=42
 ):
     """
@@ -482,7 +506,7 @@ def evaluate_metapath_with_llm(
     val_indices = sample_val_ids_balanced(
         val_mask=data[target_ntype].val_mask,
         labels=data[target_ntype].y,
-        num_val_samples=5,
+        num_val_samples=num_val_samples,
         seed=42,
     )
 
@@ -497,9 +521,11 @@ def evaluate_metapath_with_llm(
     ground_truths = []
 
     sampled_val_ids = random.sample(val_indices, min(num_val_samples, len(val_indices)))
-
+    print(f"len of val indices is {len(val_indices)}")
+    print(f"length of sampled val ids is {len(sampled_val_ids)}")
     for target_id in sampled_val_ids:
         if torch.isnan(all_labels[target_id]):
+            print(f"nan detected")
             continue  # skip unlabelled
 
         # Sample examples with valid label
@@ -557,4 +583,115 @@ def evaluate_metapath_with_llm(
     else:
         raise ValueError(f"Unsupported task type: {task_type}")
 
-    
+
+
+
+
+def build_metapath(
+    data,
+    db,
+    task,
+    task_name: str,
+    train_mask: torch.Tensor,
+    val_mask: torch.Tensor,
+    target_node:str,
+    max_hops: int = 3,
+    epsilon: float = 1e-3,
+    max_per_hop: int = 2,
+    num_val_samples: int = 2,
+    num_examples_per_prompt: int = 2,
+    llm_model: str = "llama3-70b-8192",
+    seed: int = 42
+) -> List[Tuple[str, str, str]]:
+    """
+    Greedy LLM-guided metapath construction.
+
+    At each hop, the algorithm tries all possible outgoing relations from the
+    current node type and selects the one that yields the best LLM score.
+    Stops when the improvement in score is less than epsilon.
+
+    Parameters
+    ----------
+    data: HeteroData
+        The heterogeneous graph.
+    db: RelBench database
+        The relational database object (used to extract features and rows).
+    task: RelBench task
+        Task object with metadata.
+    task_name: str
+        Name of the task (e.g. "driver-top3").
+    train_mask, val_mask: torch.Tensor
+        Masks for training and validation nodes.
+    max_hops: int
+        Maximum number of hops in the metapath.
+    epsilon: float
+        Minimum performance improvement required to continue expanding.
+    max_per_hop: int
+        Max neighbors per hop when building JSON.
+    num_val_samples: int
+        Number of validation nodes to sample for scoring.
+    num_examples_per_prompt: int
+        Number of training examples in each prompt.
+    llm_model: str
+        Name of the LLM model (e.g. llama3).
+    seed: int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    List of (src, rel, dst) tuples representing the greedy metapath.
+    """
+
+    current_path = []
+    current_score = -float("inf")
+    history = []
+
+    source_ntype = target_node
+    for hop in range(max_hops):
+        print(f"\n--- Hop {hop+1} ---")
+        candidates = []
+
+        #Finds all the outgoing relationships from current node
+        last_type = source_ntype if not current_path else current_path[-1][2]
+        candidate_rels = [
+            rel for rel in data.edge_index_dict.keys()
+            if rel[0] == last_type and rel not in current_path
+        ]
+
+        best_rel = None
+        best_score = -float("inf")
+
+        for rel in candidate_rels:
+            temp_path = current_path + [rel]
+            score = evaluate_metapath_with_llm(
+                metapath=temp_path,
+                data=data,
+                db=db,
+                task_name=task_name,
+                task=task,
+                val_mask=val_mask,
+                train_mask=train_mask,
+                llm_model=llm_model,
+                max_per_hop=max_per_hop,
+                num_val_samples=num_val_samples,
+                num_examples_per_prompt=num_examples_per_prompt,
+                seed=seed
+            )
+            print(f"Candidate relation {rel} → score: {score}")
+            candidates.append((rel, score))
+
+            if score is not None and score > best_score:
+                best_score = score
+                best_rel = rel
+
+        #interrumpt if improvement is below a threshold
+        if best_rel is None or best_score - current_score < epsilon:
+            print("Stopping criteria met.")
+            break
+
+        current_path.append(best_rel)
+        current_score = best_score
+        history.append((best_rel, best_score))
+        print(f"Selected relation {best_rel} → cumulative path: {current_path} → score: {current_score:.4f}")
+
+    return current_path
