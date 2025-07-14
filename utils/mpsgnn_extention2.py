@@ -41,8 +41,7 @@ from relbench.base.task_base import TaskType
 import numpy as np
 import time
 
-#
-#put here key openai  # ← use ENV VAR in prod
+#put here openai key:
 #
 
 def convert_timestamps(obj):
