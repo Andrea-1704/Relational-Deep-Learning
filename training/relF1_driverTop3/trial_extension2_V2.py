@@ -43,6 +43,7 @@ from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_extention2_v2 import build_json_for_entity_path
 from model.MPSGNN_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from utils.task_cache import get_task_description, get_task_metric  # se non l’hai ancora fatto
 
 
 dataset = get_dataset("rel-f1", download=True)
@@ -123,102 +124,67 @@ lr=1e-02
 wd=0
 node_type="drivers"
 
-doc = build_json_for_entity_path(
-    entity_id=0,
-    node_type=node_type,
-    path = [('drivers', 'rev_f2p_driverId', 'results')],
-    data = data_official,
-    db = db_nuovo,
-    task = task,
+
+#execution:
+task_name = "driver-top3"
+path = [('drivers', 'rev_f2p_driverId', 'results')]
+
+# In-context example 1
+example_1 = build_json_for_entity_path(
+    entity_id=18,
+    path=path,
+    data=data_official,
+    db=db,
+    task_name=task_name,
+    y=1  # inserisce il campo "Target"
 )
 
-print(doc)
+# In-context example 2
+example_2 = build_json_for_entity_path(
+    entity_id=27,
+    path=path,
+    data=data_official,
+    db=db,
+    task_name=task_name,
+    y=0
+)
 
-# metapaths, metapath_counts = greedy_metapath_search(
-#     col_stats_dict = col_stats_dict_official,
-#     data=data_official,
-#     db= db_nuovo,
-#     node_id='driverId',
-#     train_mask=train_mask_full,
-#     node_type='drivers',
-#     L_max=4,
-#     channels = hidden_channels,
-#     number_of_metapaths = 3,     
-#     out_channels = out_channels,
-#     hidden_channels = hidden_channels, 
-#     loader_dict = loader_dict,
-#     lr = lr,
-#     wd = wd,
-#     task = task,
-#     loss_fn= loss_fn, 
-#     epochs = 100, 
-#     tune_metric = tune_metric,
-#     higher_is_better= higher_is_better
-# )
+# Target node (senza y)
+target_node = build_json_for_entity_path(
+    entity_id=42,
+    path=path,
+    data=data_official,
+    db=db,
+    task_name=task_name,
+    y=None  #  non inserisce "Target"
+)
 
-# print(f"\nfinal metapaths are {metapaths}\n")
-# print(f"\nmetapaths counts are {metapath_counts}\n")
+docs = [example_1, example_2, target_node]
+import json
+prompt = "You are a data analyst.\n\n"
+prompt += f"Task: {get_task_description(task_name)}\n\n"
+prompt += "Here are some examples:\n"
+import pandas as pd
 
-# lr=0.0001
-# wd = 0
-
-# model = MPSGNN(
-#     data=data_official,
-#     col_stats_dict=col_stats_dict_official,
-#     metadata=data_official.metadata(),
-#     metapath_counts = metapath_counts,
-#     metapaths=metapaths,
-#     hidden_channels=hidden_channels,
-#     out_channels=out_channels,
-#     final_out_channels=1,
-# ).to(device)
-
-# optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-
-# scheduler = CosineAnnealingLR(optimizer, T_max=25)
-
-# early_stopping = EarlyStopping(
-#     patience=60,
-#     delta=0.0,
-#     verbose=True,
-#     higher_is_better = True,
-#     path="best_basic_model.pt"
-# )
+def convert_timestamps(obj):
+    if isinstance(obj, dict):
+        return {k: convert_timestamps(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_timestamps(i) for i in obj]
+    elif isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    elif isinstance(obj, (pd.Series, pd.DataFrame)):
+        return obj.to_dict()
+    else:
+        return obj
 
 
-# best_val_metric = -math.inf 
-# test_table = task.get_table("test", mask_input_cols=False)
-# best_test_metric = -math.inf 
-# epochs = 500
-# for epoch in range(0, epochs):
-#     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+safe_docs = [convert_timestamps(doc) for doc in docs]
 
-#     train_pred = test(model, loader_dict["train"], device=device, task=task)
-#     val_pred = test(model, loader_dict["val"], device=device, task=task)
-#     test_pred = test(model, loader_dict["test"], device=device, task=task)
-    
-#     train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-#     val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-#     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+for doc in safe_docs[:-1]:  # solo gli in-context con Target
+    prompt += json.dumps(doc, indent=2, ensure_ascii=False) + "\n\n"
 
-#     #scheduler.step(val_metrics[tune_metric])
+prompt += "Now predict the label for this example:\n"
+prompt += json.dumps(safe_docs[-1], indent=2, ensure_ascii=False)
 
-#     if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
-#         best_val_metric = val_metrics[tune_metric]
-#         state_dict = copy.deepcopy(model.state_dict())
-
-#     if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
-#         best_test_metric = test_metrics[tune_metric]
-#         state_dict_test = copy.deepcopy(model.state_dict())
-
-#     current_lr = optimizer.param_groups[0]["lr"]
-    
-#     print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
-
-#     early_stopping(val_metrics[tune_metric], model)
-
-#     if early_stopping.early_stop:
-#         print(f"Early stopping triggered at epoch {epoch}")
-#         break
-# print(f"best validation results: {best_val_metric}")
-# print(f"best test results: {best_test_metric}")
+print(prompt)

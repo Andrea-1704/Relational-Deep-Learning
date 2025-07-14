@@ -14,7 +14,7 @@ import json
 from typing import Dict, List, Tuple, Sequence
 import pandas as pd
 from torch_geometric.data import HeteroData
-from task_cache import get_task_dataset, get_task_metric, get_task_description
+from utils.task_cache import get_task_dataset, get_task_metric, get_task_description
 
 
 def _row_from_df(df: pd.DataFrame,
