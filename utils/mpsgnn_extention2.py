@@ -38,9 +38,10 @@ import pandas as pd
 import re
 from sklearn.metrics import accuracy_score, mean_absolute_error, roc_auc_score
 from relbench.base.task_base import TaskType
+import numpy as np
 
 #
-#put here key openai
+#put here key openai # ← use ENV VAR in prod
 #
 
 def convert_timestamps(obj):
@@ -368,6 +369,11 @@ def parse_prediction(pred: str, task_type: str):
     
 
 
+import random
+import numpy as np
+from sklearn.metrics import roc_auc_score, mean_absolute_error
+from relbench.base.task_base import TaskType
+
 def evaluate_metapath_with_llm(
     metapath,
     data,
@@ -385,28 +391,69 @@ def evaluate_metapath_with_llm(
     """
     Evaluate a metapath by prompting an LLM with N validation samples
     and computing task-specific performance (e.g. AUROC or MAE).
+
+    Parameters
+    ----------
+    metapath : list of (src, rel, dst) tuples
+        The current metapath being evaluated.
+    data : HeteroData
+        Heterogeneous graph object (from TorchFrame).
+    db : RelBench DB
+        Database object.
+    task_name : str
+        Name of the task (e.g. "driver-top3").
+    task : RelBench Task object
+        Task object from relbench.get_task(...).
+    val_mask : torch.Tensor
+        Boolean mask of validation nodes.
+    train_mask : torch.Tensor
+        Boolean mask of training nodes.
+    llm_model : str
+        Model name to use with the LLM.
+    max_per_hop : int
+        Max neighbors per hop when building JSON.
+    num_val_samples : int
+        Number of validation examples to use.
+    num_examples_per_prompt : int
+        Number of labeled examples per prompt (in-context).
+    seed : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    score : float
+        AUROC for classification, -MAE for regression.
     """
 
     random.seed(seed)
 
-    target_ntype = metapath[0][0] 
-    all_labels = data[target_ntype].y #all labels 
-    task_type = task.task_type # Task info
+    target_ntype = metapath[0][0]
+    all_labels = data[target_ntype].y
+    task_type = task.task_type
 
-    # Select validation nodes
     val_indices = torch.where(val_mask)[0].tolist()
-    sampled_val_ids = random.sample(val_indices, min(num_val_samples, len(val_indices)))
+    train_indices = torch.where(train_mask)[0].tolist()
 
     predictions = []
     ground_truths = []
 
-    for target_id in sampled_val_ids:
-        # Sample example nodes from training set
-        train_mask = data[target_ntype].train_mask
-        train_indices = torch.where(train_mask)[0].tolist()
-        example_ids = random.sample(train_indices, min(num_examples_per_prompt, len(train_indices)))
+    sampled_val_ids = random.sample(val_indices, min(num_val_samples, len(val_indices)))
 
-        # Build prompt
+    for target_id in sampled_val_ids:
+        if torch.isnan(all_labels[target_id]):
+            continue  # skip unlabelled
+
+        # Sample examples with valid label
+        example_ids = []
+        while len(example_ids) < num_examples_per_prompt and train_indices:
+            candidate = random.choice(train_indices)
+            if not torch.isnan(all_labels[candidate]):
+                example_ids.append(candidate)
+
+        if len(example_ids) < num_examples_per_prompt:
+            print(f"Skipping target {target_id}: not enough training examples")
+            continue
+
         prompt = build_llm_prompt(
             metapath=metapath,
             target_id=target_id,
@@ -414,13 +461,12 @@ def evaluate_metapath_with_llm(
             task_name=task_name,
             db=db,
             data=data,
-            train_mask = train_mask,
+            train_mask=train_mask,
             task=task,
-            max_per_hop=max_per_hop, 
+            max_per_hop=max_per_hop,
             num_of_examples=num_examples_per_prompt
         )
 
-        # Call LLM
         raw_response = call_llm(prompt, model=llm_model)
         print(f"obtained raw response: {raw_response}")
         pred = parse_prediction(raw_response, task_type)
@@ -432,14 +478,22 @@ def evaluate_metapath_with_llm(
             predictions.append(pred)
             ground_truths.append(y_true)
         else:
-            print(f"Warning: Could not parse prediction for target_id={target_id} → {raw_response}")
+            print(f"Could not parse prediction for target_id={target_id} → {raw_response}")
 
-    # Compute score
-    if not predictions:
-        print("No valid predictions. Skipping evaluation.")
+    # filter out any accidental NaNs
+    pairs = [(y, p) for y, p in zip(ground_truths, predictions) if not np.isnan(y)]
+
+    if not pairs:
+        print("No valid predictions to evaluate.")
         return None
 
+    clean_y, clean_preds = zip(*pairs)
+
     if task_type == TaskType.BINARY_CLASSIFICATION:
-        return roc_auc_score(ground_truths, predictions)
+        return roc_auc_score(clean_y, clean_preds)
     elif task_type == TaskType.REGRESSION:
-        return -mean_absolute_error(ground_truths, predictions)  # negative for maximization
+        return -mean_absolute_error(clean_y, clean_preds)
+    else:
+        raise ValueError(f"Unsupported task type: {task_type}")
+
+    

@@ -164,4 +164,4 @@ score = evaluate_metapath_with_llm(
 )
 
 
-print(score)
+print(f"The result of evaluate_metapath_with_llm is {score}")
