@@ -119,8 +119,8 @@ def _build_row_recursive(curr_id: int,
     src, rel, dst = path_remaining[0] #take next path in the metapath
     
     assert curr_ntype == src, f"path mismatch: expected src={src}, got {curr_ntype}" # sanity check
-
-    src_ids, dst_ids = data.edge_index_dict[(src, rel, dst)] #take all the edges of the current rel type
+    #print(f"edges: {data.edge_index_dict}")
+    src_ids, dst_ids = data.edge_index_dict[path_remaining[0]] #take all the edges of the current rel type
 
     # neighbours of curr_id via the current relation
     mask = (src_ids == curr_id).nonzero(as_tuple=True)[0]
@@ -219,7 +219,7 @@ def build_llm_prompt(
             path=metapath,
             data=data,
             db=db,
-            task=task,
+            task_name=task,
             max_per_hop=max_per_hop,
             y=y_val
         )
@@ -231,7 +231,7 @@ def build_llm_prompt(
         path=metapath,
         data=data,
         db=db,
-        task=task,
+        task_name=task,
         max_per_hop=max_per_hop,
         y=None
     )

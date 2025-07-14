@@ -180,7 +180,7 @@ node_type="drivers"
 from utils.mpsgnn_extention2_v2 import build_llm_prompt
 
 prompt = build_llm_prompt(
-    metapath=[('drivers', 'f2p_driverId', 'results')],
+    metapath=[('drivers', 'rev_f2p_driverId', 'results')],
     target_id=42,
     example_ids=[18, 27],
     task_name="driver-top3",
