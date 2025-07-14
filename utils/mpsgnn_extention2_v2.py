@@ -57,6 +57,7 @@ def _build_row_recursive(curr_id: int,
     """
     row = _row_from_df(db.table_dict[curr_ntype].df,
                        curr_id, curr_ntype, id_map)
+    #take the informations of the node
 
     # attach target (only for labelled examples)
     if y_value is not None:
@@ -98,8 +99,7 @@ def build_json_for_entity_path(entity_id: int | str,
                                path: List[Tuple[str, str, str]],
                                data: HeteroData,
                                db,
-                               *,
-                               y: Any | None = None,
+                               task,
                                max_per_hop: int = 5,
                                id_map: Dict[str, pd.Index] | None = None) -> Dict:
     """
@@ -109,7 +109,6 @@ def build_json_for_entity_path(entity_id: int | str,
     path      : ordered list of (src, rel, dst) tuples (the metapath)
     data      : HeteroData with `edge_index_dict`
     db        : RelBench DB object (gives `.table_dict[ntype].df`)
-    y         : label/target value (include => example becomes in-context)
     max_per_hop : cap neighbours per hop to control JSON size
     id_map      : optional {node_type: pandas.Index} for global→row mapping
 
@@ -120,7 +119,9 @@ def build_json_for_entity_path(entity_id: int | str,
     if not path:
         raise ValueError("Metapath cannot be empty")
 
-    source_ntype = path[0][0]
+    
+
+    source_ntype = path[0][0] #source node of the first relation in 'path'
     doc_root = _build_row_recursive(
         entity_id,
         path_remaining=path,
@@ -129,7 +130,6 @@ def build_json_for_entity_path(entity_id: int | str,
         id_map=id_map,
         max_per_hop=max_per_hop,
         curr_ntype=source_ntype,
-        y_value=y
     )
 
     # prepend metadata fields expected by the paper
