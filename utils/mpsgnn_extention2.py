@@ -1,3 +1,4 @@
+
 """
 In this version we are going to include only the version of MPS GNN 
 extended to every kind of task.
@@ -24,22 +25,14 @@ a GNN architecture.
 """
 
 import json
-from pathlib import Path
-import torch
-import math
 from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict, Any
-import torch.nn as nn
-import torch.nn.functional as F
-from relbench.modeling.nn import HeteroEncoder
-from collections import defaultdict
-from model.MPSGNN_Model import MPSGNN
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-import json
+import torch
+import random
 from typing import Dict, List, Tuple, Sequence
 import pandas as pd
 from torch_geometric.data import HeteroData
-from utils.task_cache import get_task_dataset, get_task_metric, get_task_description
+from utils.task_cache import get_task_metric, get_task_description
 import openai  #pip install openai==0.28
 import pandas as pd
 
@@ -55,8 +48,6 @@ def convert_timestamps(obj):
     else:
         return obj
 
-openai.api_base = "https://api.groq.com/openai/v1"
-openai.api_key = ""  # ← usa ENV VAR in produzione
 
 def call_llm(prompt: str, model="llama3-70b-8192") -> str:
     """
@@ -141,7 +132,7 @@ def _build_row_recursive(curr_id: int,
     if not path_remaining:          # reached end of metapath: return the node.
         return row
 
-    src, rel, dst = path_remaining[0] #take next path in the metapath
+    src, _, dst = path_remaining[0] #take next path in the metapath
     
     assert curr_ntype == src, f"path mismatch: expected src={src}, got {curr_ntype}" # sanity check
     #print(f"edges: {data.edge_index_dict}")
@@ -228,17 +219,29 @@ def build_llm_prompt(
     task_name: str,
     db,
     data: HeteroData,
+    train_mask: torch.Tensor,
     task,
-    max_per_hop: int = 5
+    max_per_hop: int = 5,
+    num_of_examples: int =5, 
+    seed: int =42
 ) -> str:
-    # Step 1: estrai info task
     
-    task_desc = get_task_description(task_name)
+    """
+    
+    """
 
-    # Step 2: genera JSON per gli esempi
+    random.seed(seed)
+    source_ntype = metapath[0][0]
+    task_desc = get_task_description(task_name) #info of task
+
+    # --- select example nodes from training mask ---
+    candidate_ids = torch.where(train_mask)[0].tolist()
+    example_ids = random.sample(candidate_ids, num_of_examples)
+
+    #json for examples (with the labels)
     example_docs = []
     for eid in example_ids:
-        y_val = data[metapath[0][0]].y[eid].item()
+        y_val = data[source_ntype].y[eid].item()
         doc = build_json_for_entity_path(
             entity_id=eid,
             path=metapath,
@@ -250,19 +253,19 @@ def build_llm_prompt(
         )
         example_docs.append(convert_timestamps(doc))
 
-    # Step 3: genera JSON per il target node (senza y)
+    # --- build target node ---
     target_doc = build_json_for_entity_path(
         entity_id=target_id,
         path=metapath,
         data=data,
         db=db,
-        task_name=task,
+        task_name=task_name,
         max_per_hop=max_per_hop,
         y=None
     )
     target_doc = convert_timestamps(target_doc)
 
-    # Step 4: costruisci il prompt finale
+    #build final prompt
     prompt = "You are a data analyst.\n\n"
     prompt += f"Task: {task_desc}\n\n"
     prompt += "Here are some examples:\n"
@@ -274,5 +277,6 @@ def build_llm_prompt(
     prompt += json.dumps(target_doc, indent=2, ensure_ascii=False)
 
     return prompt
+
 
 
