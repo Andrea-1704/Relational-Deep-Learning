@@ -125,66 +125,68 @@ wd=0
 node_type="drivers"
 
 
-#execution:
-task_name = "driver-top3"
-path = [('drivers', 'rev_f2p_driverId', 'results')]
+# #execution:
+# task_name = "driver-top3"
+# path = [('drivers', 'rev_f2p_driverId', 'results')]
 
-# In-context example 1
-example_1 = build_json_for_entity_path(
-    entity_id=18,
-    path=path,
+# # In-context example 1
+# example_1 = build_json_for_entity_path(
+#     entity_id=18,
+#     path=path,
+#     data=data_official,
+#     db=db,
+#     task_name=task_name,
+#     y=1  # inserisce il campo "Target"
+# )
+
+# # In-context example 2
+# example_2 = build_json_for_entity_path(
+#     entity_id=27,
+#     path=path,
+#     data=data_official,
+#     db=db,
+#     task_name=task_name,
+#     y=0
+# )
+
+# # Target node (senza y)
+# target_node = build_json_for_entity_path(
+#     entity_id=42,
+#     path=path,
+#     data=data_official,
+#     db=db,
+#     task_name=task_name,
+#     y=None  #  non inserisce "Target"
+# )
+
+# docs = [example_1, example_2, target_node]
+# import json
+# prompt = "You are a data analyst.\n\n"
+# prompt += f"Task: {get_task_description(task_name)}\n\n"
+# prompt += "Here are some examples:\n"
+
+
+
+# # safe_docs = [convert_timestamps(doc) for doc in docs]
+
+# # for doc in safe_docs[:-1]:  # solo gli in-context con Target
+# #     prompt += json.dumps(doc, indent=2, ensure_ascii=False) + "\n\n"
+
+# # prompt += "Now predict the label for this example:\n"
+# # prompt += json.dumps(safe_docs[-1], indent=2, ensure_ascii=False)
+
+# # print(prompt)
+
+from utils.mpsgnn_extention2_v2 import build_llm_prompt
+
+prompt = build_llm_prompt(
+    metapath=[('drivers', 'f2p_driverId', 'results')],
+    target_id=42,
+    example_ids=[18, 27],
+    task_name="driver-top3",
+    db=db_nuovo,
     data=data_official,
-    db=db,
-    task_name=task_name,
-    y=1  # inserisce il campo "Target"
+    task=task
 )
-
-# In-context example 2
-example_2 = build_json_for_entity_path(
-    entity_id=27,
-    path=path,
-    data=data_official,
-    db=db,
-    task_name=task_name,
-    y=0
-)
-
-# Target node (senza y)
-target_node = build_json_for_entity_path(
-    entity_id=42,
-    path=path,
-    data=data_official,
-    db=db,
-    task_name=task_name,
-    y=None  #  non inserisce "Target"
-)
-
-docs = [example_1, example_2, target_node]
-import json
-prompt = "You are a data analyst.\n\n"
-prompt += f"Task: {get_task_description(task_name)}\n\n"
-prompt += "Here are some examples:\n"
-import pandas as pd
-
-def convert_timestamps(obj):
-    if isinstance(obj, dict):
-        return {k: convert_timestamps(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_timestamps(i) for i in obj]
-    elif isinstance(obj, pd.Timestamp):
-        return obj.isoformat()
-    elif isinstance(obj, (pd.Series, pd.DataFrame)):
-        return obj.to_dict()
-    else:
-        return obj
-
-
-safe_docs = [convert_timestamps(doc) for doc in docs]
-
-for doc in safe_docs[:-1]:  # solo gli in-context con Target
-    prompt += json.dumps(doc, indent=2, ensure_ascii=False) + "\n\n"
-
-prompt += "Now predict the label for this example:\n"
-prompt += json.dumps(safe_docs[-1], indent=2, ensure_ascii=False)
 
 print(prompt)

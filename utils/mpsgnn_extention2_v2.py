@@ -16,6 +16,19 @@ import pandas as pd
 from torch_geometric.data import HeteroData
 from utils.task_cache import get_task_dataset, get_task_metric, get_task_description
 import openai
+import pandas as pd
+
+def convert_timestamps(obj):
+    if isinstance(obj, dict):
+        return {k: convert_timestamps(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_timestamps(i) for i in obj]
+    elif isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    elif isinstance(obj, (pd.Series, pd.DataFrame)):
+        return obj.to_dict()
+    else:
+        return obj
 
 openai.api_base = "https://api.groq.com/openai/v1"
 openai.api_key = ""  # ← usa ENV VAR in produzione
@@ -180,5 +193,61 @@ def build_json_for_entity_path(entity_id: int | str,
         **doc_root
     }
     return document
+
+
+
+def build_llm_prompt(
+    metapath: List[Tuple[str, str, str]],
+    target_id: int,
+    example_ids: List[int],
+    task_name: str,
+    db,
+    data: HeteroData,
+    task,
+    max_per_hop: int = 5
+) -> str:
+    # Step 1: estrai info task
+    
+    task_desc = get_task_description(task_name)
+
+    # Step 2: genera JSON per gli esempi
+    example_docs = []
+    for eid in example_ids:
+        y_val = data[metapath[0][0]].y[eid].item()
+        doc = build_json_for_entity_path(
+            entity_id=eid,
+            path=metapath,
+            data=data,
+            db=db,
+            task=task,
+            max_per_hop=max_per_hop,
+            y=y_val
+        )
+        example_docs.append(convert_timestamps(doc))
+
+    # Step 3: genera JSON per il target node (senza y)
+    target_doc = build_json_for_entity_path(
+        entity_id=target_id,
+        path=metapath,
+        data=data,
+        db=db,
+        task=task,
+        max_per_hop=max_per_hop,
+        y=None
+    )
+    target_doc = convert_timestamps(target_doc)
+
+    # Step 4: costruisci il prompt finale
+    prompt = "You are a data analyst.\n\n"
+    prompt += f"Task: {task_desc}\n\n"
+    prompt += "Here are some examples:\n"
+
+    for doc in example_docs:
+        prompt += json.dumps(doc, indent=2, ensure_ascii=False) + "\n\n"
+
+    prompt += "Now predict the label for this example:\n"
+    prompt += json.dumps(target_doc, indent=2, ensure_ascii=False)
+
+    return prompt
 
 
