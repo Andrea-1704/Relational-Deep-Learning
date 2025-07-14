@@ -177,7 +177,7 @@ node_type="drivers"
 
 # # print(prompt)
 
-from utils.mpsgnn_extention2 import build_llm_prompt
+from utils.mpsgnn_extention2 import build_llm_prompt, call_llm
 
 prompt = build_llm_prompt(
     metapath=[('drivers', 'rev_f2p_driverId', 'results')],
@@ -190,3 +190,7 @@ prompt = build_llm_prompt(
 )
 
 print(prompt)
+
+res = call_llm(prompt=prompt)
+
+print(res)

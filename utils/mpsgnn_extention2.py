@@ -40,7 +40,7 @@ from typing import Dict, List, Tuple, Sequence
 import pandas as pd
 from torch_geometric.data import HeteroData
 from utils.task_cache import get_task_dataset, get_task_metric, get_task_description
-import openai
+import openai  #pip install openai==0.28
 import pandas as pd
 
 def convert_timestamps(obj):
