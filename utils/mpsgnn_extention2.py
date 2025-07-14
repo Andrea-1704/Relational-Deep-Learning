@@ -1,3 +1,28 @@
+"""
+In this version we are going to include only the version of MPS GNN 
+extended to every kind of task.
+
+The second version is very different from the one presented in the 
+work of https://arxiv.org/abs/2412.00521, but tries to summer up the
+first implementation I proposed (greedy_metapath_search) and takes
+inspiration from the work https://arxiv.org/abs/2411.11829v1.
+
+In particular, the second implementation (name of the implementation) 
+tries to choose in a similar way of the first version the metapaths 
+but at each iteration it simply considers all the possible relation 
+and for all of them build a JSON file that contains the graph 
+extracted considering the current relation and passes this file to a 
+pre-trained LLM to try to estimate the probability of the next token
+(the prediction) following https://arxiv.org/abs/2411.11829v1.
+After computing all the metapaths, we have two possibile implementations:
+1. Train the MPS GNN model we implemented 
+2. Pass the subgraph extracted by the metapath to the LLM
+This double implementation could help us to answer to the foundamental 
+question raised by https://arxiv.org/abs/2411.11829v1, which is 
+whether a pre trained-LLM could improve the performances obtained by 
+a GNN architecture.
+"""
+
 import json
 from pathlib import Path
 import torch

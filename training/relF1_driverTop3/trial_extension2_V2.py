@@ -40,7 +40,7 @@ sys.path.append(os.path.abspath("."))
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_extention2_v2 import build_json_for_entity_path
+from utils.mpsgnn_extention2 import build_json_for_entity_path
 from model.MPSGNN_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.task_cache import get_task_description, get_task_metric  # se non l’hai ancora fatto
@@ -177,7 +177,7 @@ node_type="drivers"
 
 # # print(prompt)
 
-from utils.mpsgnn_extention2_v2 import build_llm_prompt
+from utils.mpsgnn_extention2 import build_llm_prompt
 
 prompt = build_llm_prompt(
     metapath=[('drivers', 'rev_f2p_driverId', 'results')],
