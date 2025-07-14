@@ -36,6 +36,11 @@ from utils.task_cache import get_task_metric, get_task_description
 import openai  #pip install openai==0.28
 import pandas as pd
 
+#
+#put here key openai
+
+#
+
 def convert_timestamps(obj):
     if isinstance(obj, dict):
         return {k: convert_timestamps(v) for k, v in obj.items()}
@@ -227,7 +232,52 @@ def build_llm_prompt(
 ) -> str:
     
     """
-    
+    Build an LLM prompt for a given metapath and target node, including a few labeled examples.
+
+    This function selects a few example nodes from the training set (using the provided train_mask),
+    extracts their local neighborhood along the specified metapath, attaches their ground-truth labels,
+    and constructs a prompt string that includes:
+      - a task description
+      - example graphs in JSON format (with labels)
+      - the target graph (without label) to be predicted
+
+    Parameters
+    ----------
+    metapath : list of (src, rel, dst) tuples
+        Ordered list of relations forming the metapath to follow when building neighborhoods.
+
+    target_id : int
+        The global ID of the target node whose label should be predicted by the LLM.
+
+    task_name : str
+        The name of the RelBench task (e.g. "driver-top3"). Used to retrieve description and metric.
+
+    db : RelBench DB
+        A database object with `.table_dict` used to retrieve tabular node features.
+
+    data : HeteroData
+        A PyG `HeteroData` object containing `edge_index_dict`, features, and node labels.
+
+    task : Task
+        The current task object, required by `build_json_for_entity_path`.
+
+    train_mask : torch.Tensor
+        A boolean mask indicating which nodes belong to the training set. Used to sample examples.
+
+    max_per_hop : int, optional
+        Maximum number of neighbors to include at each hop (default is 5).
+
+    num_examples : int, optional
+        Number of labeled examples to include in the prompt (default is 2).
+
+    seed : int, optional
+        Random seed used to select example nodes reproducibly (default is 42).
+
+    Returns
+    -------
+    prompt : str
+        A formatted string to be sent to the LLM, including task description, example graphs,
+        and the target graph without label.
     """
 
     random.seed(seed)
