@@ -35,10 +35,12 @@ from torch_geometric.data import HeteroData
 from utils.task_cache import get_task_metric, get_task_description
 import openai  #pip install openai==0.28
 import pandas as pd
+import re
+from sklearn.metrics import accuracy_score, mean_absolute_error, roc_auc_score
+from relbench.base.task_base import TaskType
 
 #
 #put here key openai
-
 #
 
 def convert_timestamps(obj):
@@ -227,7 +229,7 @@ def build_llm_prompt(
     train_mask: torch.Tensor,
     task,
     max_per_hop: int = 5,
-    num_of_examples: int =5, 
+    num_of_examples: int =2, 
     seed: int =42
 ) -> str:
     
@@ -324,9 +326,120 @@ def build_llm_prompt(
         prompt += json.dumps(doc, indent=2, ensure_ascii=False) + "\n\n"
 
     prompt += "Now predict the label for this example:\n"
+    prompt += "Your answer must be a single line like: Target: 1"
     prompt += json.dumps(target_doc, indent=2, ensure_ascii=False)
 
     return prompt
 
 
 
+
+
+def parse_prediction(pred: str, task_type: str):
+    """
+    Parses an LLM prediction string based on task type.
+
+    Supports responses like:
+    - 'Target: 1'
+    - 'target = 0'
+    - 'The answer is: 3.5' (fallback)
+    """
+    try:
+        # estrai con regex un numero (intero o float) dopo 'target', ':', '='
+        match = re.search(r"target\s*[:=]?\s*(-?\d+(?:\.\d+)?)", pred, re.IGNORECASE)
+        if not match:
+            # fallback: prova a estrarre primo numero
+            match = re.search(r"(-?\d+(?:\.\d+)?)", pred)
+
+        if match:
+            value = match.group(1)
+            if task_type == TaskType.BINARY_CLASSIFICATION:
+                return int(float(value))  # 1.0 -> 1
+            elif task_type == TaskType.REGRESSION:
+                return float(value)
+            else:
+                raise ValueError(f"Unknown task type: {task_type}")
+        else:
+            return None  # no number found
+    except Exception as e:
+        print(f"Failed to parse prediction: {e}")
+        return None
+
+    
+
+
+def evaluate_metapath_with_llm(
+    metapath,
+    data,
+    db,
+    task_name,
+    task,
+    val_mask,
+    train_mask,
+    llm_model="llama3-70b-8192",
+    max_per_hop=1,
+    num_val_samples=5,
+    num_examples_per_prompt=2,
+    seed=42
+):
+    """
+    Evaluate a metapath by prompting an LLM with N validation samples
+    and computing task-specific performance (e.g. AUROC or MAE).
+    """
+
+    random.seed(seed)
+
+    target_ntype = metapath[0][0] 
+    all_labels = data[target_ntype].y #all labels 
+    task_type = task.task_type # Task info
+
+    # Select validation nodes
+    val_indices = torch.where(val_mask)[0].tolist()
+    sampled_val_ids = random.sample(val_indices, min(num_val_samples, len(val_indices)))
+
+    predictions = []
+    ground_truths = []
+
+    for target_id in sampled_val_ids:
+        # Sample example nodes from training set
+        train_mask = data[target_ntype].train_mask
+        train_indices = torch.where(train_mask)[0].tolist()
+        example_ids = random.sample(train_indices, min(num_examples_per_prompt, len(train_indices)))
+
+        # Build prompt
+        prompt = build_llm_prompt(
+            metapath=metapath,
+            target_id=target_id,
+            example_ids=example_ids,
+            task_name=task_name,
+            db=db,
+            data=data,
+            train_mask = train_mask,
+            task=task,
+            max_per_hop=max_per_hop, 
+            num_of_examples=num_examples_per_prompt
+        )
+
+        # Call LLM
+        raw_response = call_llm(prompt, model=llm_model)
+        print(f"obtained raw response: {raw_response}")
+        pred = parse_prediction(raw_response, task_type)
+        print(f"obtained pred {pred}")
+
+        if pred is not None:
+            y_true = all_labels[target_id].item()
+            print(f"the correct label was {y_true}")
+            predictions.append(pred)
+            ground_truths.append(y_true)
+        else:
+            print(f"Warning: Could not parse prediction for target_id={target_id} → {raw_response}")
+
+    # Compute score
+    if not predictions:
+        print("No valid predictions. Skipping evaluation.")
+        return None
+
+    if task_type == TaskType.BINARY_CLASSIFICATION:
+        return roc_auc_score(ground_truths, predictions)
+    elif task_type == TaskType.REGRESSION:
+        return -mean_absolute_error(ground_truths, predictions)  # negative for maximization

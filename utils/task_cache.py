@@ -1,3 +1,12 @@
+def get_task_description(task_name: str) -> str:
+    return _TASK_CACHE.get(task_name, {}).get("description", "")
+
+def get_task_metric(task_name: str) -> str:
+    return _TASK_CACHE.get(task_name, {}).get("metric", "")
+
+def get_task_dataset(task_name: str) -> str:
+    return _TASK_CACHE.get(task_name, {}).get("dataset", "")
+
 # _TASK_CACHE: Dict[str, Dict[str, str]] = {}
 _TASK_CACHE = {
     # === rel-f1 (Formula 1) ===
@@ -234,11 +243,3 @@ _TASK_CACHE = {
     },
 }
 
-def get_task_description(task_name: str) -> str:
-    return _TASK_CACHE.get(task_name, {}).get("description", "")
-
-def get_task_metric(task_name: str) -> str:
-    return _TASK_CACHE.get(task_name, {}).get("metric", "")
-
-def get_task_dataset(task_name: str) -> str:
-    return _TASK_CACHE.get(task_name, {}).get("dataset", "")

@@ -36,6 +36,13 @@ from utils.utils import evaluate_performance, evaluate_on_full_train, test, trai
 from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
 
+"""
+In order to understand driver top 3 you should consider that it only 
+labels some of the nodes, not all of them. 
+So we must manually exclude all the unlabeled nodes: this step is 
+avoided in the dirver position task since all the node in such task
+are labeled and usable for prediction.
+"""
 
 def train2():
     dataset = get_dataset("rel-f1", download=True)

@@ -1,3 +1,4 @@
+from enum import Enum
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
@@ -43,11 +44,15 @@ from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_extention2 import build_json_for_entity_path
 from model.MPSGNN_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-from utils.task_cache import get_task_description, get_task_metric  # se non l’hai ancora fatto
+from utils.task_cache import get_task_description, get_task_metric  
+from utils.mpsgnn_extention2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm
+from relbench.base.task_base import TaskType
 
+task_name = "driver-top3"
 
 dataset = get_dataset("rel-f1", download=True)
-task = get_task("rel-f1", "driver-top3", download=True)
+task = get_task("rel-f1", task_name, download=True)
+task_type = task.task_type
 
 train_table = task.get_table("train")
 val_table = task.get_table("val")
@@ -104,6 +109,15 @@ num_neg = (y_full[train_mask_full] == 0).sum()
 pos_weight = torch.tensor([num_neg / num_pos], device=device)
 data_official['drivers'].y = target_vector_official
 
+# Ricava gli ID dei driver nella validation table
+val_df_raw = val_table.df
+val_driver_ids = val_df_raw["driverId"].to_numpy()
+
+# Costruisci la mask come boolean mask sul vettore completo
+val_mask = torch.tensor([driver_id in val_driver_ids for driver_id in graph_driver_ids])
+data_official["drivers"].val_mask = val_mask
+
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -125,75 +139,29 @@ wd=0
 node_type="drivers"
 
 
-# #execution:
-# task_name = "driver-top3"
-# path = [('drivers', 'rev_f2p_driverId', 'results')]
 
-# # In-context example 1
-# example_1 = build_json_for_entity_path(
-#     entity_id=18,
-#     path=path,
+# prompt = build_llm_prompt(
+#     metapath=[('drivers', 'rev_f2p_driverId', 'results')],
+#     target_id=42,
+#     example_ids=[18, 27],
+#     task_name="driver-top3",
+#     db=db_nuovo,
 #     data=data_official,
-#     db=db,
-#     task_name=task_name,
-#     y=1  # inserisce il campo "Target"
+#     task=task,
+#     train_mask=train_mask_full,
 # )
-
-# # In-context example 2
-# example_2 = build_json_for_entity_path(
-#     entity_id=27,
-#     path=path,
-#     data=data_official,
-#     db=db,
-#     task_name=task_name,
-#     y=0
-# )
-
-# # Target node (senza y)
-# target_node = build_json_for_entity_path(
-#     entity_id=42,
-#     path=path,
-#     data=data_official,
-#     db=db,
-#     task_name=task_name,
-#     y=None  #  non inserisce "Target"
-# )
-
-# docs = [example_1, example_2, target_node]
-# import json
-# prompt = "You are a data analyst.\n\n"
-# prompt += f"Task: {get_task_description(task_name)}\n\n"
-# prompt += "Here are some examples:\n"
+# print(prompt)
 
 
-
-# # safe_docs = [convert_timestamps(doc) for doc in docs]
-
-# # for doc in safe_docs[:-1]:  # solo gli in-context con Target
-# #     prompt += json.dumps(doc, indent=2, ensure_ascii=False) + "\n\n"
-
-# # prompt += "Now predict the label for this example:\n"
-# # prompt += json.dumps(safe_docs[-1], indent=2, ensure_ascii=False)
-
-# # print(prompt)
-
-from utils.mpsgnn_extention2 import build_llm_prompt, call_llm
-
-
-
-prompt = build_llm_prompt(
+score = evaluate_metapath_with_llm(
     metapath=[('drivers', 'rev_f2p_driverId', 'results')],
-    target_id=42,
-    example_ids=[18, 27],
-    task_name="driver-top3",
-    db=db_nuovo,
-    data=data_official,
-    task=task,
-    train_mask=train_mask_full,
+    data = data_official,
+    db = db_nuovo,
+    task_name = task_name,
+    task = task,
+    val_mask = val_mask, 
+    train_mask = train_mask_full
 )
 
-print(prompt)
 
-res = call_llm(prompt=prompt)
-
-print(res)
+print(score)
