@@ -176,9 +176,6 @@ metapath = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict_official,
-    L_max=4,
-    epochs=30,
-    number_of_metapaths=2
 )
 
 print(f"The final metapath is {metapath}")
