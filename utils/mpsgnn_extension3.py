@@ -33,7 +33,6 @@ def greedy_metapath_search(
     node_id: str, #ex. driverId
     task, 
     task_name:str,
-    val_mask,
     higher_is_better: str,
     train_mask: torch.Tensor,
     node_type: str, 
@@ -114,7 +113,6 @@ def greedy_metapath_search(
                     db=db,
                     task_name=task_name,
                     task=task,
-                    val_mask=val_mask,
                     train_mask=train_mask,
                 )
                 all_path_info.append((score, cur_meta.copy()))
