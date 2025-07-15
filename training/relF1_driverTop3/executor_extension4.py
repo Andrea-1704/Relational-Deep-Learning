@@ -178,7 +178,7 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     col_stats_dict=col_stats_dict_official,
 )
 
-print(f"The final metapath is {metapath}")
+print(f"The final metapath is {metapaths}")
 
 #train the final model on the chosen paths
 lr=1e-02
