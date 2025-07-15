@@ -103,6 +103,7 @@ def greedy_metapath_search(
             for rel in candidate_rels: 
                 print(f"considering relation {rel}")
                 src, _, dst = rel
+                #I think we should delte this if in all of these versions:
                 # if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met, avoid to return to the source node
                 #   continue
                 cur_meta = local_path.copy()
@@ -136,7 +137,6 @@ def greedy_metapath_search(
             best_score_per_path[path_tuple] = score
     sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
     selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
-    #print(f"\nfinal metapaths are {selected_metapaths}\n")
-
+ 
     return selected_metapaths, metapath_counts
 
