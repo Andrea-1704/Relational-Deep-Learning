@@ -139,25 +139,6 @@ lr=1e-02
 wd=0
 node_type="drivers"
 
-metapaths = greedy_metapath_search(
-    data=data_official,
-    db=db_nuovo,
-    task_name = task_name,
-    task = task,
-    train_mask = train_mask_full,
-    node_type='drivers',
-    node_id='driverId',
-    higher_is_better=True,
-    col_stats_dict=col_stats_dict_official
-)
-
-print(f"found metapath is {metapaths}")
-
-
-
-
-
-
 agent = RLAgent(tau=1.0, alpha=0.5)
 
 # Warm-up: breve ma ripetuto
