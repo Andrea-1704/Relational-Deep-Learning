@@ -126,11 +126,11 @@ def greedy_metapath_search_rl(
     agent,  # agente RL esterno
     L_max=3,
     number_of_metapaths=5,
-    hidden_channels=64,
-    out_channels=64,
+    hidden_channels=128,
+    out_channels=128,
     final_out_channels=1,
     epochs=10,
-    lr=1e-3,
+    lr : float = 0.0001,
     wd=0.0
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -287,10 +287,10 @@ def final_metapath_search_with_rl(
     node_type,
     col_stats_dict,
     L_max=3,
-    epochs=20,
+    epochs=100,
     number_of_metapaths=5
 ):
-    print("Launching final metapath search using trained RL agent...")
+    print("\n\n Launching final metapath search using trained RL agent \n")
     selected_metapaths, metapath_counts = greedy_metapath_search_rl(
         data=data,
         db=db,
