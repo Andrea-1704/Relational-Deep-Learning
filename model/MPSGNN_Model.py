@@ -165,10 +165,15 @@ class MetaPathGNN(nn.Module):
             x_dst = [emb(6), emb(2), emb(3)]
             """
 
+            # edge_index_remapped = torch.stack([
+            #     torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
+            #     torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
+            # ])
             edge_index_remapped = torch.stack([
-                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
-                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
+                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device, dtype=torch.long),
+                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device, dtype=torch.long)
             ])
+
 
             """
             Example
