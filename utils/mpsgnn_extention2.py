@@ -36,7 +36,7 @@ from utils.task_cache import get_task_metric, get_task_description
 import openai  #pip install openai==0.28
 import pandas as pd
 import re
-from sklearn.metrics import accuracy_score, mean_absolute_error, roc_auc_score
+from sklearn.metrics import mean_absolute_error, roc_auc_score
 from relbench.base.task_base import TaskType
 import numpy as np
 import time
@@ -56,25 +56,6 @@ def convert_timestamps(obj):
     else:
         return obj
 
-
-# def call_llm(prompt: str, model="llama3-70b-8192") -> str:
-#     """
-#     Function that sends the prompt to the LLM and gets as an 
-#     answer the results obtained by the LLM using a certain
-#     metapath.
-#     """
-#     try:
-#         response = openai.ChatCompletion.create(
-#             model=model,
-#             messages=[
-#                 {"role": "user", "content": prompt}
-#             ],
-#             temperature=0.0,
-#         )
-#         return response["choices"][0]["message"]["content"].strip()
-#     except Exception as e:
-#         print("LLM call failed:", e)
-#         return ""
 
 
 def call_llm(prompt: str, model="llama3-70b-8192", retries=5, wait=30) -> str:
