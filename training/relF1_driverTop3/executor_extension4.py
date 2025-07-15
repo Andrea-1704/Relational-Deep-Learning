@@ -241,6 +241,8 @@ for epoch in range(0, epochs):
     if early_stopping.early_stop:
         print(f"Early stopping triggered at epoch {epoch}")
         break
+
+#giving interpretability (local interpretability)
 meta_names = []
 for m in metapaths:
   cur_metapath=m[0][0]
@@ -249,7 +251,6 @@ for m in metapaths:
     dst = metapath[2]
     cur_metapath=cur_metapath+"->"+dst
   meta_names.append(cur_metapath)
-  
 for batch in loader_dict["test"]:
     batch.to(device)
     results = interpret_attention(
