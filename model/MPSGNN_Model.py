@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-
 """
 In this implementation we are solving one major problem related to the 
 previous version (which is still in the repo in the file MPSGNN_Model_old),
@@ -284,13 +283,21 @@ class MetaPathSelfAttention(nn.Module):
             nn.Linear(dim, 1)
         )
 
-    def forward(self, metapath_embeddings):  # [N, M, D]
+    def forward(self, metapath_embeddings: torch.Tensor, return_attention=False):  # [N, M, D]
+        """
+        metapath_embeddings: [N, M, D]
+        return_attention: if True, returns intermediate attention embeddings as well
+        """
         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
 
         attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
         pooled = attn_out.mean(dim=1)                      # [N, D]
-        return self.output_proj(pooled).squeeze(-1)        # [N]
+        out = self.output_proj(pooled).squeeze(-1)        # [N]
+        if return_attention:
+            return out, attn_out
+        return out
+
 
 
 class MPSGNN(nn.Module):
