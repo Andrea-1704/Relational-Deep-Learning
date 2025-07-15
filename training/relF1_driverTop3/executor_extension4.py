@@ -163,7 +163,7 @@ warmup_rl_agent(
 print(f"\n \n RL warmed up! \n")
 
 #metapath selection through greedy algotithm
-metapath, metapath_count = final_metapath_search_with_rl(
+metapaths, metapath_count = final_metapath_search_with_rl(
     agent=agent,
     data=data_official,
     db=db_nuovo,
@@ -188,7 +188,7 @@ model = MPSGNN(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
     metadata=data_official.metadata(),
-    metapath_counts = metapath_counts,
+    metapath_counts = metapath_count,
     metapaths=metapaths,
     hidden_channels=hidden_channels,
     out_channels=out_channels,
