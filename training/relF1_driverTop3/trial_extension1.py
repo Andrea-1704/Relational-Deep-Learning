@@ -150,8 +150,8 @@ metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
 print(f"\nfinal metapaths are {metapaths}\n")
 print(f"\nmetapaths counts are {metapath_counts}\n")
 
-lr=0.0001
-wd = 0
+lr=1e-02
+wd=0
 
 model = MPSGNN(
     data=data_official,
@@ -191,7 +191,7 @@ early_stopping = EarlyStopping(
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 500
+epochs = 5
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
@@ -222,11 +222,21 @@ for epoch in range(0, epochs):
     if early_stopping.early_stop:
         print(f"Early stopping triggered at epoch {epoch}")
         break
+meta_names = []
+for m in metapaths:
+  cur_metapath=m[0][0]
+  for metapath in m:
+    source = metapath[0]
+    dst = metapath[2]
+    cur_metapath=cur_metapath+"->"+dst
+  meta_names.append(cur_metapath)
+  
 for batch in loader_dict["test"]:
+    batch.to(device)
     results = interpret_attention(
         model=model,
         batch=batch,
-        metapath_names=metapaths,
+        metapath_names=meta_names,
         entity_table="drivers"
     )
     print(f"result of interpretability are {results}")
