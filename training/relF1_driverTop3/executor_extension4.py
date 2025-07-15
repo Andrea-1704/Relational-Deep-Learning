@@ -141,7 +141,7 @@ node_type="drivers"
 
 agent = RLAgent(tau=1.0, alpha=0.5)
 
-# Warm-up: breve ma ripetuto
+#warm up: pre training for RL agent
 warmup_rl_agent(
     agent=agent,
     data=data_official,
