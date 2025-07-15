@@ -179,3 +179,5 @@ metapath = final_metapath_search_with_rl(
 )
 
 print(f"The final metapath is {metapath}")
+
+#train the final model on the chosen paths
