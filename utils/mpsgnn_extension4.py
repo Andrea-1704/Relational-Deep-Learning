@@ -171,6 +171,7 @@ def greedy_metapath_search_rl(
 
         # === RL: selezione relazione ===
         chosen_rel = agent.select_relation(current_path, candidate_rels)
+        print(f"The current chosen relation is {chosen_rel}")
 
         # === Espansione dei bag ===
         bags, labels = construct_bags(
@@ -187,6 +188,7 @@ def greedy_metapath_search_rl(
 
         # === Training rapido MPS-GNN ===
         mp_candidate = current_path + [chosen_rel]
+        print(f"Passing to model following metapaths: {mp_candidate}")
         model = MPSGNN(
             data=data,
             col_stats_dict=col_stats_dict,
@@ -265,7 +267,6 @@ def warmup_rl_agent(
             epochs=epochs,
             number_of_metapaths=1,  # serve solo a raccogliere reward
         )
-    print("RL agent warm-up completed.\n")
 
 
 #final call with agent already warmed up

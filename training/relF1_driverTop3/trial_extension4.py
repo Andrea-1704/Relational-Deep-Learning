@@ -160,6 +160,8 @@ warmup_rl_agent(
     epochs=5
 )
 
+print(f"RL warmed up!")
+
 # Chiamata finale
 metapath = final_metapath_search_with_rl(
     agent=agent,
