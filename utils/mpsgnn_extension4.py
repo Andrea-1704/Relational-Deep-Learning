@@ -134,8 +134,6 @@ def greedy_metapath_search_rl(
     wd=0.0
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # === Step 1: Inizializzazione encoder ed embedding ===
     with torch.no_grad():
         encoder = HeteroEncoder(
             channels=hidden_channels,
@@ -144,17 +142,14 @@ def greedy_metapath_search_rl(
         ).to(device)
         tf_dict = {nt: data[nt].tf.to(device) for nt in data.node_types if 'tf' in data[nt]}
         node_embeddings_dict = encoder(tf_dict)
-
-    # === Step 2: Inizializzazione bag di partenza ===
     ids = db.table_dict[node_type].df[node_id].to_numpy()
     current_bags = [[int(i)] for i in ids if train_mask[i]]
     current_labels = [int(data[node_type].y[i]) for i in range(len(train_mask)) if train_mask[i]]
-
     metapath_counts = defaultdict(int)
     all_path_info = []
     current_path = []
 
-    # === Step 3: Costruzione metapath guidata da RL ===
+    #Building metapath using reinforcement leanring
     for level in range(L_max):
         print(f"Step {level} - metapath so far: {current_path}")
         last_ntype = node_type if not current_path else current_path[-1][2]
@@ -169,11 +164,11 @@ def greedy_metapath_search_rl(
             print("No more candidates.")
             break
 
-        # === RL: selezione relazione ===
+        #The agent selects next relation, r* (no surrogate task)
         chosen_rel = agent.select_relation(current_path, candidate_rels)
-        print(f"The current chosen relation is {chosen_rel}")
+        print(f"The current chosen relation by RL is {chosen_rel}")
 
-        # === Espansione dei bag ===
+        #bags expansion
         bags, labels = construct_bags(
             data=data,
             previous_bags=current_bags,
@@ -186,7 +181,7 @@ def greedy_metapath_search_rl(
             print(f"Skipping relation {chosen_rel} (too few valid bags)")
             continue
 
-        # === Training rapido MPS-GNN ===
+        #testing on validation after training the MPS GNN 
         mp_candidate = current_path + [chosen_rel]
         print(f"Passing to model following metapaths: {mp_candidate}")
         model = MPSGNN(
@@ -212,19 +207,27 @@ def greedy_metapath_search_rl(
                 best_val = max(best_val, val_score)
             else:
                 best_val = min(best_val, val_score)
-
-        # === Aggiornamento RL ===
+        print(f"For the partial metapath {current_path.copy()} we obtain F1 test loss equal to {best_val}")
+        #update the agent of RL
         agent.update(current_path, chosen_rel, best_val)
 
-        # === Estensione del metapath ===
+        #extract metapath
         current_path.append(chosen_rel)
         current_bags, current_labels = bags, labels
         metapath_counts[tuple(current_path)] += 1
         all_path_info.append((best_val, current_path.copy()))
 
-    # === Selezione finale dei top metapath ===
-    sorted_paths = sorted(all_path_info, key=lambda x: x[0], reverse=higher_is_better)
-    selected_metapaths = [path for _, path in sorted_paths[:number_of_metapaths]]
+    #Select final metapaths
+    best_score_per_path = {}
+    for score, path in all_path_info:
+        path_tuple = tuple(path)
+        if path_tuple not in best_score_per_path:
+            best_score_per_path[path_tuple] = score
+    sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
+    selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
+
+    # sorted_paths = sorted(all_path_info, key=lambda x: x[0], reverse=higher_is_better)
+    # selected_metapaths = [path for _, path in sorted_paths[:number_of_metapaths]]
 
     return selected_metapaths, metapath_counts
 
