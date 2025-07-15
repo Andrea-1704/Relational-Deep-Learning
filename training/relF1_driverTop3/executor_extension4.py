@@ -155,9 +155,9 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict_official,
-    num_episodes=10,
-    L_max=2,
-    epochs=5
+    num_episodes=20,
+    L_max=4,
+    epochs=20
 )
 
 print(f"RL warmed up!")
@@ -176,9 +176,9 @@ metapath = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict_official,
-    L_max=3,
-    epochs=20,
-    number_of_metapaths=5
+    L_max=4,
+    epochs=30,
+    number_of_metapaths=2
 )
 
 print(f"The final metapath is {metapath}")
