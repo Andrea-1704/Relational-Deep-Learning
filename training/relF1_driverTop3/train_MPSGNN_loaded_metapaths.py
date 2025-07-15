@@ -128,6 +128,10 @@ def train2():
         final_out_channels=1,
     ).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+    
+
+
     #EPOCHS:
     epochs = 100
     test_table = task.get_table("test", mask_input_cols=False)

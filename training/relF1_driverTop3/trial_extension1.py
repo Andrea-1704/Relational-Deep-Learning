@@ -41,7 +41,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_extension_1 import greedy_metapath_search
-from model.MPSGNN_Model import MPSGNN
+from model.MPSGNN_Model import MPSGNN, interpret_attention
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
@@ -122,27 +122,30 @@ loader_dict = loader_dict_fn(
 lr=1e-02
 wd=0
 
-metapaths, metapath_counts = greedy_metapath_search(
-    col_stats_dict = col_stats_dict_official,
-    data=data_official,
-    db= db_nuovo,
-    node_id='driverId',
-    train_mask=train_mask_full,
-    node_type='drivers',
-    L_max=4,
-    channels = hidden_channels,
-    number_of_metapaths = 3,     
-    out_channels = out_channels,
-    hidden_channels = hidden_channels, 
-    loader_dict = loader_dict,
-    lr = lr,
-    wd = wd,
-    task = task,
-    loss_fn= loss_fn, 
-    epochs = 100, 
-    tune_metric = tune_metric,
-    higher_is_better= higher_is_better
-)
+# metapaths, metapath_counts = greedy_metapath_search(
+#     col_stats_dict = col_stats_dict_official,
+#     data=data_official,
+#     db= db_nuovo,
+#     node_id='driverId',
+#     train_mask=train_mask_full,
+#     node_type='drivers',
+#     L_max=4,
+#     channels = hidden_channels,
+#     number_of_metapaths = 3,     
+#     out_channels = out_channels,
+#     hidden_channels = hidden_channels, 
+#     loader_dict = loader_dict,
+#     lr = lr,
+#     wd = wd,
+#     task = task,
+#     loss_fn= loss_fn, 
+#     epochs = 100, 
+#     tune_metric = tune_metric,
+#     higher_is_better= higher_is_better
+# )
+
+metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
+metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
 
 print(f"\nfinal metapaths are {metapaths}\n")
 print(f"\nmetapaths counts are {metapath_counts}\n")
@@ -162,6 +165,17 @@ model = MPSGNN(
 ).to(device)
 
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+
+# results = interpret_attention(
+#     model=my_trained_model,
+#     batch=batch_data,
+#     metapath_names=["driver→race", "driver→race→circuit", "driver→constructor→race"],
+#     entity_table="drivers"
+# )
+
+# save_interpretations(results)
+
 
 scheduler = CosineAnnealingLR(optimizer, T_max=25)
 
@@ -208,5 +222,14 @@ for epoch in range(0, epochs):
     if early_stopping.early_stop:
         print(f"Early stopping triggered at epoch {epoch}")
         break
+for batch in loader_dict["test"]:
+    results = interpret_attention(
+        model=model,
+        batch=batch,
+        metapath_names=metapaths,
+        entity_table="drivers"
+    )
+    print(f"result of interpretability are {results}")
+
 print(f"best validation results: {best_val_metric}")
 print(f"best test results: {best_test_metric}")

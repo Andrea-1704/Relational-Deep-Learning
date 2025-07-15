@@ -8,6 +8,9 @@ from torch_geometric.data import HeteroData
 from torch_frame.data.stats import StatType
 from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 """
@@ -396,3 +399,69 @@ class MPSGNN(nn.Module):
       
       return self.regressor(weighted) #finally apply regression
 
+
+def interpret_attention(
+    model,
+    batch: HeteroData,
+    metapath_names: List[str],
+    entity_table: str,
+    visualize: bool = True,
+    figsize: tuple = (12, 6)
+) -> List[Dict[str, Any]]:
+    """
+    Interpret metapath self-attention scores for each target node in a batch.
+
+    Args:
+        model: A trained instance of MPSGNN.
+        batch: A torch_geometric HeteroData batch containing the current data.
+        metapath_names: List of human-readable names of metapaths.
+        entity_table: The target node type (e.g., "drivers").
+        visualize: If True, display a heatmap of attention scores.
+        figsize: Tuple for figure size in the visualization.
+
+    Returns:
+        List of dictionaries containing node indices and attention weights over metapaths.
+    """
+    model.eval()
+    with torch.no_grad():
+        #Encode static and temporal features
+        seed_time = batch[entity_table].seed_time
+        x_dict = model.encoder(batch.tf_dict)
+        rel_time_dict = model.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
+
+        for node_type in rel_time_dict:
+            x_dict[node_type] = x_dict[node_type] + rel_time_dict[node_type]
+
+        #Compute node embeddings via each metapath-specific GNN
+        embeddings = [
+            m(x_dict, batch.edge_index_dict) for m in model.metapath_models
+        ]  # List of [N, D]
+        concat = torch.stack(embeddings, dim=1)  # [N, M, D]
+        weighted = concat * model.metapath_weights_tensor.view(1, -1, 1)
+
+        #Retrieve output + attention representations
+        _, attn_repr = model.regressor(weighted, return_attention=True)  # [N, M, D]
+        attn_scores = attn_repr.mean(dim=-1).cpu()  # [N, M]
+
+        #Structure the interpretation output
+        results = []
+        for node_idx in range(attn_scores.size(0)):
+            node_attn = attn_scores[node_idx].tolist()
+            results.append({
+                "node_index": node_idx,
+                "attention_per_metapath": dict(zip(metapath_names, node_attn))
+            })
+
+        #visualize using a heatmap
+        if visualize:
+            df = pd.DataFrame(attn_scores.numpy(), columns=metapath_names)
+            plt.figure(figsize=figsize)
+            sns.heatmap(df, annot=True, fmt=".2f", cmap="YlOrBr", linewidths=0.5,
+                        cbar_kws={"label": "Metapath Attention Weight"})
+            plt.title(f"Metapath Contribution Heatmap for Nodes in '{entity_table}'", fontsize=14)
+            plt.xlabel("Metapath")
+            plt.ylabel("Node Index")
+            plt.tight_layout()
+            plt.show()
+
+        return results
