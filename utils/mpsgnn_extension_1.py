@@ -181,7 +181,7 @@ def greedy_metapath_search(
                 src, _, dst = rel
                 if dst in [step[0] for step in path] or dst == node_type:  # avoid loops in met, avoid to return to the source node
                   continue
-                if rel == ('races', 'rev_f2p_raceId', 'standings'): # for some reasons it provokes side assertions
+                if rel == ('races', 'rev_f2p_raceId', 'standings') or rel == ('races', 'rev_f2p_raceId', 'qualifying'): # for some reasons it provokes side assertions
                   continue
                 
                 bags, labels = construct_bags(
