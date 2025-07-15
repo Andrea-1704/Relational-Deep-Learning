@@ -160,7 +160,7 @@ warmup_rl_agent(
     epochs=20
 )
 
-print(f"RL warmed up!")
+print(f"\n \n RL warmed up! \n")
 
 # Chiamata finale
 metapath = final_metapath_search_with_rl(
