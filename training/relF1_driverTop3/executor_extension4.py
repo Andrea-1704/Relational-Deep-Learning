@@ -197,3 +197,12 @@ model = MPSGNN(
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
     
+scheduler = CosineAnnealingLR(optimizer, T_max=25)
+
+early_stopping = EarlyStopping(
+    patience=60,
+    delta=0.0,
+    verbose=True,
+    higher_is_better = True,
+    path="best_basic_model.pt"
+)
