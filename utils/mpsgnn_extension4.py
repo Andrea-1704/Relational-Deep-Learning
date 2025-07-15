@@ -308,7 +308,6 @@ def final_metapath_search_with_rl(
         epochs=epochs,
         number_of_metapaths=number_of_metapaths,
     )
-    print("Final metapath(s) selected using RL.")
     return selected_metapaths, metapath_counts
 
 
