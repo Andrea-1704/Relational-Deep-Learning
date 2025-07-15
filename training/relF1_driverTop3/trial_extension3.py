@@ -45,7 +45,7 @@ from utils.mpsgnn_extension2 import build_json_for_entity_path
 from model.MPSGNN_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.task_cache import get_task_description, get_task_metric  
-from utils.mpsgnn_extension2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm, build_metapath
+from utils.mpsgnn_extension3 import greedy_metapath_search
 from relbench.base.task_base import TaskType
 
 task_name = "driver-top3"
@@ -138,15 +138,17 @@ lr=1e-02
 wd=0
 node_type="drivers"
 
-
-metapath = build_metapath(
-    data = data_official,
-    db = db_nuovo,
+metapaths = greedy_metapath_search(
+    data=data_official,
+    db=db_nuovo,
     task_name = task_name,
     task = task,
     val_mask = val_mask, 
     train_mask = train_mask_full,
-    target_node="drivers"
+    node_type='drivers',
+    node_id='driverId',
+    higher_is_better=True,
+    col_stats_dict=col_stats_dict_official
 )
 
-print(f"found metapath is {metapath}")
+print(f"found metapath is {metapaths}")

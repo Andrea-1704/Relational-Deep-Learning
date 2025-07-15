@@ -13,7 +13,7 @@ from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-from mpsgnn_extention2 import evaluate_metapath_with_llm
+from utils.mpsgnn_extension2 import evaluate_metapath_with_llm
 
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
