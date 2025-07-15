@@ -162,7 +162,7 @@ warmup_rl_agent(
 
 print(f"\n \n RL warmed up! \n")
 
-# Chiamata finale
+#metapath selection through greedy algotithm
 metapath = final_metapath_search_with_rl(
     agent=agent,
     data=data_official,
