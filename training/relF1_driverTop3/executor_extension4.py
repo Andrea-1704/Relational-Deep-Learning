@@ -182,11 +182,8 @@ print(f"The final metapath is {metapath}")
 
 #train the final model on the chosen paths
 lr=1e-02
-    wd=0
+wd=0
     
-    
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
-    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
