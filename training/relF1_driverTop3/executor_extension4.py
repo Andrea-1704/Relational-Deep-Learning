@@ -181,3 +181,22 @@ metapath = final_metapath_search_with_rl(
 print(f"The final metapath is {metapath}")
 
 #train the final model on the chosen paths
+lr=1e-02
+    wd=0
+    
+    
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
+    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
+    model = MPSGNN(
+        data=data_official,
+        col_stats_dict=col_stats_dict_official,
+        metadata=data_official.metadata(),
+        metapath_counts = metapath_counts,
+        metapaths=metapaths,
+        hidden_channels=hidden_channels,
+        out_channels=out_channels,
+        final_out_channels=1,
+    ).to(device)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+    
