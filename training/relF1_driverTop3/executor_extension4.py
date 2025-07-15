@@ -155,9 +155,9 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict_official,
-    num_episodes=20,
+    num_episodes=5,
     L_max=4,
-    epochs=20
+    epochs=10
 )
 
 print(f"\n \n RL warmed up! \n")
