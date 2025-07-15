@@ -123,18 +123,19 @@ def greedy_metapath_search_rl(
     train_mask,
     node_type,
     col_stats_dict,
+    agent,  # agente RL esterno
     L_max=3,
     number_of_metapaths=5,
     hidden_channels=64,
     out_channels=64,
     final_out_channels=1,
-    epochs=10,  # breve training per reward
+    epochs=10,
     lr=1e-3,
     wd=0.0
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # Inizializzazione embedding di partenza
+    # === Step 1: Inizializzazione encoder ed embedding ===
     with torch.no_grad():
         encoder = HeteroEncoder(
             channels=hidden_channels,
@@ -144,17 +145,16 @@ def greedy_metapath_search_rl(
         tf_dict = {nt: data[nt].tf.to(device) for nt in data.node_types if 'tf' in data[nt]}
         node_embeddings_dict = encoder(tf_dict)
 
-    # Inizializzazione dei bag
+    # === Step 2: Inizializzazione bag di partenza ===
     ids = db.table_dict[node_type].df[node_id].to_numpy()
     current_bags = [[int(i)] for i in ids if train_mask[i]]
     current_labels = [int(data[node_type].y[i]) for i in range(len(train_mask)) if train_mask[i]]
 
-    # Agent RL
-    agent = RLAgent(tau=1.0, alpha=0.5)
     metapath_counts = defaultdict(int)
     all_path_info = []
     current_path = []
 
+    # === Step 3: Costruzione metapath guidata da RL ===
     for level in range(L_max):
         print(f"Step {level} - metapath so far: {current_path}")
         last_ntype = node_type if not current_path else current_path[-1][2]
@@ -169,10 +169,10 @@ def greedy_metapath_search_rl(
             print("No more candidates.")
             break
 
-        # RL-based scelta della relazione migliore
+        # === RL: selezione relazione ===
         chosen_rel = agent.select_relation(current_path, candidate_rels)
 
-        # Espansione bag
+        # === Espansione dei bag ===
         bags, labels = construct_bags(
             data=data,
             previous_bags=current_bags,
@@ -185,7 +185,7 @@ def greedy_metapath_search_rl(
             print(f"Skipping relation {chosen_rel} (too few valid bags)")
             continue
 
-        # Allenamento rapido modello per reward
+        # === Training rapido MPS-GNN ===
         mp_candidate = current_path + [chosen_rel]
         model = MPSGNN(
             data=data,
@@ -204,28 +204,27 @@ def greedy_metapath_search_rl(
 
         for _ in range(epochs):
             train(model, optimizer, loader_dict, device, task, loss_fn)
-            val_pred = test(model, loader_dict["val"], device, task)
+            val_pred = test(model, loader_dict["val"], device=device, task=task)
             val_score = evaluate_performance(val_pred, val_table, task.metrics, task=task)[tune_metric]
             if higher_is_better:
                 best_val = max(best_val, val_score)
             else:
                 best_val = min(best_val, val_score)
 
-        # Aggiornamento RL
+        # === Aggiornamento RL ===
         agent.update(current_path, chosen_rel, best_val)
 
-        # Aggiungi al metapath corrente
+        # === Estensione del metapath ===
         current_path.append(chosen_rel)
         current_bags, current_labels = bags, labels
         metapath_counts[tuple(current_path)] += 1
         all_path_info.append((best_val, current_path.copy()))
 
-    # Selezione finali
+    # === Selezione finale dei top metapath ===
     sorted_paths = sorted(all_path_info, key=lambda x: x[0], reverse=higher_is_better)
     selected_metapaths = [path for _, path in sorted_paths[:number_of_metapaths]]
+
     return selected_metapaths, metapath_counts
-
-
 
 
 #pre training tecnique for the agent of the RL
