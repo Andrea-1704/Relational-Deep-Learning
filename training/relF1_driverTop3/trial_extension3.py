@@ -143,7 +143,6 @@ metapaths = greedy_metapath_search(
     db=db_nuovo,
     task_name = task_name,
     task = task,
-    val_mask = val_mask, 
     train_mask = train_mask_full,
     node_type='drivers',
     node_id='driverId',
