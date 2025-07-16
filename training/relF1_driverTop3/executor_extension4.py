@@ -210,7 +210,7 @@ early_stopping = EarlyStopping(
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 5
+epochs = 100
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
