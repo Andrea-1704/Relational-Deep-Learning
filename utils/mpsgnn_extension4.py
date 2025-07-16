@@ -213,19 +213,22 @@ def greedy_metapath_search_rl(
         #now we check if current update in path is harmful:
         if best_val < current_best_val - epsilon * current_best_val:
             #we should stop here the construction of the metapath:
+            agent.update(current_path, chosen_rel, best_val)
+            break
+        elif best_val > current_best_val:
+            current_best_val = best_val
+            current_path.append(chosen_rel)
+            current_bags, current_labels = bags, labels
             metapath_counts[tuple(current_path)] += 1
             all_path_info.append((best_val, current_path.copy()))
-            break
+
 
         print(f"For the partial metapath {current_path.copy()} we obtain F1 test loss equal to {best_val}")
         #update the agent of RL
-        agent.update(current_path, chosen_rel, best_val)
+        
 
         #extract metapath
-        current_path.append(chosen_rel)
-        current_bags, current_labels = bags, labels
-        metapath_counts[tuple(current_path)] += 1
-        all_path_info.append((best_val, current_path.copy()))
+        
 
     #Select final metapaths
     best_score_per_path = {}
