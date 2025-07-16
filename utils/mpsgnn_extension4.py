@@ -131,7 +131,8 @@ def greedy_metapath_search_rl(
     final_out_channels=1,
     epochs=10,
     lr : float = 0.0001,
-    wd=0.0
+    wd=0.0,
+    epsilon:float = 0.05
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with torch.no_grad():
@@ -148,6 +149,7 @@ def greedy_metapath_search_rl(
     metapath_counts = defaultdict(int)
     all_path_info = []
     current_path = []
+    current_best_val = -math.inf if higher_is_better else math.inf
 
     #Building metapath using reinforcement leanring
     for level in range(L_max):
@@ -207,6 +209,14 @@ def greedy_metapath_search_rl(
                 best_val = max(best_val, val_score)
             else:
                 best_val = min(best_val, val_score)
+        
+        #now we check if current update in path is harmful:
+        if best_val < current_best_val - epsilon * current_best_val:
+            #we should stop here the construction of the metapath:
+            metapath_counts[tuple(current_path)] += 1
+            all_path_info.append((best_val, current_path.copy()))
+            break
+
         print(f"For the partial metapath {current_path.copy()} we obtain F1 test loss equal to {best_val}")
         #update the agent of RL
         agent.update(current_path, chosen_rel, best_val)
