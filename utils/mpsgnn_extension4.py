@@ -246,7 +246,7 @@ def warmup_rl_agent(
     train_mask,
     node_type,
     col_stats_dict,
-    num_episodes=10,
+    num_episodes=5,
     L_max=2,
     epochs=5
 ):
