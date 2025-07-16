@@ -129,7 +129,7 @@ def greedy_metapath_search_rl(
     hidden_channels=128,
     out_channels=128,
     final_out_channels=1,
-    epochs=10,
+    epochs=100,
     lr : float = 0.0001,
     wd=0.0,
     epsilon:float = 0.05
@@ -216,33 +216,28 @@ def greedy_metapath_search_rl(
             agent.update(current_path, chosen_rel, best_val)
             break
         elif best_val > current_best_val:
+            #only if this chosen_rel improve performances on gnn we add it to current path
             current_best_val = best_val
+            agent.update(current_path, chosen_rel, best_val)
             current_path.append(chosen_rel)
             current_bags, current_labels = bags, labels
             metapath_counts[tuple(current_path)] += 1
             all_path_info.append((best_val, current_path.copy()))
-
-
-        print(f"For the partial metapath {current_path.copy()} we obtain F1 test loss equal to {best_val}")
-        #update the agent of RL
-        
-
-        #extract metapath
-        
+            print(f"For the partial metapath {current_path.copy()} we obtain F1 test loss equal to {best_val}, added {chosen_rel}")
 
     #Select final metapaths
-    best_score_per_path = {}
-    for score, path in all_path_info:
-        path_tuple = tuple(path)
-        if path_tuple not in best_score_per_path:
-            best_score_per_path[path_tuple] = score
-    sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
-    selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
+    # best_score_per_path = {}
+    # for score, path in all_path_info:
+    #     path_tuple = tuple(path)
+    #     if path_tuple not in best_score_per_path:
+    #         best_score_per_path[path_tuple] = score
+    # sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
+    # selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
 
     # sorted_paths = sorted(all_path_info, key=lambda x: x[0], reverse=higher_is_better)
     # selected_metapaths = [path for _, path in sorted_paths[:number_of_metapaths]]
-
-    return selected_metapaths, metapath_counts
+    return current_path, metapath_counts
+    #return selected_metapaths, metapath_counts
 
 
 #pre training tecnique for the agent of the RL
