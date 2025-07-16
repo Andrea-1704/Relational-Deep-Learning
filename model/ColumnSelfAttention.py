@@ -422,7 +422,8 @@ class ResNet2(Module):
         
         col_order = self.col_names  
         x = torch.stack([col_emb_dict[col] for col in col_order], dim=1)  # [N, F, C]
-        x = self.feature_attn(x)  #pass the result to self attention module
+        #pass the result to self attention module
+        x = self.feature_attn(x)  
 
         x = self.backbone(x)
         out = self.decoder(x)
