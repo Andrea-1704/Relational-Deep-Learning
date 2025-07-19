@@ -49,11 +49,8 @@ from utils.mpsgnn_extension3 import greedy_metapath_search
 from utils.mpsgnn_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 from relbench.base.task_base import TaskType
 
-task_name = "driver-top3"
-
 dataset = get_dataset("rel-f1", download=True)
-task = get_task("rel-f1", task_name, download=True)
-task_type = task.task_type
+task = get_task("rel-f1", "driver-top3", download=True)
 
 train_table = task.get_table("train")
 val_table = task.get_table("val")
@@ -67,8 +64,6 @@ higher_is_better = True #is referred to the tune metric
 
 seed_everything(42) #We should remember to try results 5 times with
 #different seed values to provide a confidence interval over results.
-
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
@@ -97,7 +92,7 @@ binary_top3_labels_raw = qualifying_positions #do not need to binarize
 #since the task is already a binary classification task
 
 
-target_vector_official = torch.full((len(graph_driver_ids),), float("nan")) #inizialize a vector with all "nan" elements
+target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
 for i, driver_id in enumerate(driver_ids_raw):
     if driver_id in id_to_idx:#if the driver is in the training
         target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
@@ -110,16 +105,9 @@ train_mask_full = data_official['drivers'].train_mask
 num_pos = (y_full[train_mask_full] == 1).sum()
 num_neg = (y_full[train_mask_full] == 0).sum()
 pos_weight = torch.tensor([num_neg / num_pos], device=device)
-data_official['drivers'].y = target_vector_official
 
-# Ricava gli ID dei driver nella validation table
-val_df_raw = val_table.df
-val_driver_ids = val_df_raw["driverId"].to_numpy()
 
-# Costruisci la mask come boolean mask sul vettore completo
-val_mask = torch.tensor([driver_id in val_driver_ids for driver_id in graph_driver_ids])
-data_official["drivers"].val_mask = val_mask
-
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
@@ -165,8 +153,6 @@ for _ in range(0, epochs):
     if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
         best_test_metrics = test_metrics[tune_metric]
 print(f"We obtain F1 test loss equal to {best_test_metrics}")
-
-
 
 
 
