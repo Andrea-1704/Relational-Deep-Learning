@@ -152,7 +152,7 @@ for _ in range(0, epochs):
         best_test_metrics = test_metrics[tune_metric]
     if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
         best_test_metrics = test_metrics[tune_metric]
-print(f"We obtain F1 test loss equal to {best_test_metrics}")
+print(f"We obtain F1 test value equal to {best_test_metrics}")
 
 
 
