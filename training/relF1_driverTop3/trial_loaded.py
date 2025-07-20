@@ -33,7 +33,6 @@ def train2():
     seed_everything(42) #We should remember to try results 5 times with
     #different seed values to provide a confidence interval over results.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    root_dir = "./data"
 
     db = dataset.get_db()
     col_to_stype_dict = get_stype_proposal(db)
@@ -49,22 +48,15 @@ def train2():
 
     graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
-
     
     train_df_raw = train_table.df
     driver_ids_raw = train_df_raw["driverId"].to_numpy()
     qualifying_positions = train_df_raw["qualifying"].to_numpy() #labels (train)
 
-    
-    binary_top3_labels_raw = qualifying_positions #do not need to binarize 
-    #since the task is already a binary classification task
-
-
     target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
     for i, driver_id in enumerate(driver_ids_raw):
         if driver_id in id_to_idx:#if the driver is in the training
-            target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
-
+            target_vector_official[id_to_idx[driver_id]] = qualifying_positions[i]
 
     data_official['drivers'].y = target_vector_official.float()
     data_official['drivers'].train_mask = ~torch.isnan(target_vector_official)
@@ -73,7 +65,6 @@ def train2():
     num_pos = (y_full[train_mask_full] == 1).sum()
     num_neg = (y_full[train_mask_full] == 0).sum()
     pos_weight = torch.tensor([num_neg / num_pos], device=device)
-
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -93,7 +84,6 @@ def train2():
     )
     lr=1e-02
     wd=0
-    
     
     # metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
     # metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
@@ -124,7 +114,6 @@ def train2():
         if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
             best_test_metrics = test_metrics[tune_metric]
     print(f"We obtain F1 test equal to {best_test_metrics}")
-
 
 if __name__ == '__main__':
     train2()
