@@ -13,12 +13,13 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 """
 In this implementation we are solving one major problem related to the 
-previous version, which is that, when we used the full x_dict[nodetype]
+previous version (which is still in the repo in the file MPSGNN_Model_old),
+which is that, when we used the full x_dict[nodetype]
 tensors without checking which nodes were actually connected by the 
 relation. This means we were doing message passing over all nodes, 
 including nodes that are completely disconnected from the current relation.
 
-The solution should be that instead of considering all the dst e src nodes
+The solution should be that instead considering all the dst e src nodes
 for the message passing, we focus only on the ones for which we have at
 leat an edge between src to dst.
 
@@ -43,7 +44,7 @@ def forward(self, x_dict, edge_index_dict):
 was wrong because simply considered x=h_dict[dst], without exclude all the 
 dst nodes that are not reached from src, adding them to the aggregation phase.
 
-A solution could be to explude all the nodes that are not reached from the 
+A solution could be to exclude all the nodes that are not reached from the 
 relation, but this would generate a new problem to be managed:
 Given edge_index = [[3, 4, 5], [6, 2, 3]], this means there's an edge from
 x_dict["races"][3] to x_dict["drivers"][6], and so on. Suppose 
@@ -139,8 +140,9 @@ class MetaPathGNN(nn.Module):
 
             #To solve the aforementioned problem we use a global->
             #to local mapping:
-            src_map = {int(i): i for i, n in enumerate(src_nodes)}
-            dst_map = {int(i): i for i, n in enumerate(dst_nodes)}
+            #src_map = {int(i.item()): i for i, n in enumerate(src_nodes)}
+            src_map = {int(n.item()): i for i, n in enumerate(src_nodes)}
+            dst_map = {int(n.item()): i for i, n in enumerate(dst_nodes)}
             """
             Example
             if:
@@ -162,9 +164,10 @@ class MetaPathGNN(nn.Module):
             """
 
             edge_index_remapped = torch.stack([
-                edge_index[0].apply_(lambda x: src_map[int(x)]),
-                edge_index[1].apply_(lambda x: dst_map[int(x)])
+                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
+                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
             ])
+
             """
             Example
             if:
@@ -190,7 +193,7 @@ class MetaPathGNN(nn.Module):
             src_nodes = [3, 4, 5]
             dst_nodes = [6, 2, 3]
             """
-            
+
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
 
@@ -377,7 +380,7 @@ class MPSGNN(nn.Module):
             x_dict[node_type] = x_dict[node_type] + rel_time
       
       
-      embeddings = [
+      embeddings = [#x_dict, edge_index_dict
           model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
