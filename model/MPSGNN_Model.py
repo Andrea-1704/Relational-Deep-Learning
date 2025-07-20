@@ -13,12 +13,13 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 """
 In this implementation we are solving one major problem related to the 
-previous version, which is that, when we used the full x_dict[nodetype]
+previous version (which is still in the repo in the file MPSGNN_Model_old),
+which is that, when we used the full x_dict[nodetype]
 tensors without checking which nodes were actually connected by the 
 relation. This means we were doing message passing over all nodes, 
 including nodes that are completely disconnected from the current relation.
 
-The solution should be that instead of considering all the dst e src nodes
+The solution should be that instead considering all the dst e src nodes
 for the message passing, we focus only on the ones for which we have at
 leat an edge between src to dst.
 
@@ -43,7 +44,7 @@ def forward(self, x_dict, edge_index_dict):
 was wrong because simply considered x=h_dict[dst], without exclude all the 
 dst nodes that are not reached from src, adding them to the aggregation phase.
 
-A solution could be to explude all the nodes that are not reached from the 
+A solution could be to exclude all the nodes that are not reached from the 
 relation, but this would generate a new problem to be managed:
 Given edge_index = [[3, 4, 5], [6, 2, 3]], this means there's an edge from
 x_dict["races"][3] to x_dict["drivers"][6], and so on. Suppose 
