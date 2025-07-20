@@ -378,7 +378,7 @@ class MPSGNN(nn.Module):
       
       
       embeddings = [
-          model(x_dict, batch.edge_index_dict, batch.edge_types)
+          model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
       concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
