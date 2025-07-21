@@ -10,7 +10,54 @@ from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-class MetaPathGNNLayer(MessagePassing):
+
+"""
+In this implementation we are solving one major problem related to the 
+previous version, which is that, when we used the full x_dict[nodetype]
+tensors without checking which nodes were actually connected by the 
+relation. This means we were doing message passing over all nodes, 
+including nodes that are completely disconnected from the current relation.
+
+The solution should be that instead of considering all the dst e src nodes
+for the message passing, we focus only on the ones for which we have at
+leat an edge between src to dst.
+
+In other words, this code:
+def forward(self, x_dict, edge_index_dict):
+    #edge_type_dict is the list of edge types
+    #edge_index_dict contains for each edge_type the edges
+    h_dict = x_dict.copy()
+    for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
+        conv_idx = len(self.metapath) - 1 - i
+        edge_index = edge_index_dict[(src, rel, dst)]
+        #only the one of the relation specified
+        h_dst = self.convs[conv_idx](
+            x=h_dict[dst],
+            h=h_dict[dst],
+            edge_index=edge_index
+        )
+        h_dict[dst] = F.relu(h_dst)
+    start_type = self.metapath[0][0]
+    return self.out_proj(h_dict[start_type])
+
+was wrong because simply considered x=h_dict[dst], without exclude all the 
+dst nodes that are not reached from src, adding them to the aggregation phase.
+
+A solution could be to explude all the nodes that are not reached from the 
+relation, but this would generate a new problem to be managed:
+Given edge_index = [[3, 4, 5], [6, 2, 3]], this means there's an edge from
+x_dict["races"][3] to x_dict["drivers"][6], and so on. Suppose 
+x_dict["races"] originally has shape [128, D] and x_dict["drivers"]
+is [200, D]. If you do x_dict["races"] = x_dict["races"][[3,4,5]], then 
+x_dict["races"] now has shape [3, D] where index 0 corresponds to global
+node 3, index 1 to 4, and index 2 to 5. But edge_index still uses global
+indices [3, 4, 5], so when your GNN tries to index x[3], it will go out
+of bounds, because x only has indices [0,1,2] now. So after filtering nodes,
+you must remap edge_index to the new local indices. If global → local is 
+{3:0, 4:1, 5:2}, then remap edge_index[0] = [0,1,2].
+"""
+
+class MetaPathGNNLayer(MessagePassing):  
     """
     MetaPathGNNLayer implements equation 7 from the MPS-GNN paper.
 
@@ -72,20 +119,80 @@ class MetaPathGNN(nn.Module):
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
 
-    def forward(self, x_dict, edge_index_dict, edge_type_dict):
+    def forward(self, x_dict, edge_index_dict):
         #edge_type_dict is the list of edge types
         #edge_index_dict contains for each edge_type the edges
         h_dict = x_dict.copy()
         for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
             conv_idx = len(self.metapath) - 1 - i
             edge_index = edge_index_dict[(src, rel, dst)]
-            #only the one of the relation specified
+
+            #Store the list of the nodes that are used in the 
+            #relation "(src, rel, dst)":
+            src_nodes = edge_index[0].unique()
+            dst_nodes = edge_index[1].unique()
+            """
+            Example
+            src_nodes = [3, 4, 5]
+            dst_nodes = [6, 2, 3]
+            """
+
+            #To solve the aforementioned problem we use a global->
+            #to local mapping:
+            #src_map = {int(i.item()): i for i, n in enumerate(src_nodes)}
+            src_map = {int(n.item()): i for i, n in enumerate(src_nodes)}
+            dst_map = {int(n.item()): i for i, n in enumerate(dst_nodes)}
+            """
+            Example
+            if:
+            src_nodes = [3, 4, 5]
+            dst_nodes = [6, 2, 3]
+
+            then:
+            src_map = {3: 0, 4: 1, 5: 2}
+            dst_map = {2: 0, 3: 1, 6: 2}
+            """
+
+            #Filter: consider only the nodes in the relation
+            x_src = h_dict[src][src_nodes]
+            x_dst = h_dict[dst][dst_nodes]
+            """
+            Example
+            x_src = [emb(3), emb(4), emb(5)]
+            x_dst = [emb(6), emb(2), emb(3)]
+            """
+
+            edge_index_remapped = torch.stack([
+                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
+                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
+            ])
+
+            """
+            Example
+            if:
+            src_map = {3: 0, 4: 1, 5: 2}
+            dst_map = {2: 0, 3: 1, 6: 2}
+
+            then:
+            edge_index_remapped = tensor([[0, 1, 2],
+                                         [0, 1, 2]])
+            """
+
             h_dst = self.convs[conv_idx](
-                x=h_dict[dst],
-                h=h_dict[dst],
-                edge_index=edge_index
+                x=x_dst,
+                h=x_dst,
+                edge_index=edge_index_remapped
             )
-            h_dict[dst] = F.relu(h_dst)
+            
+            new_h = h_dict[dst].clone()
+            new_h[dst_nodes] = F.relu(h_dst)
+            h_dict[dst] = new_h
+            """
+            Change the embeddings of original nodes :
+            src_nodes = [3, 4, 5]
+            dst_nodes = [6, 2, 3]
+            """
+
         start_type = self.metapath[0][0]
         return self.out_proj(h_dict[start_type])
 
@@ -93,99 +200,71 @@ class MetaPathGNN(nn.Module):
 
 
 #Version 1, using SAGEConv:
-# class MetaPathGNN(nn.Module):
-#     """
-#     This is the network that express the GNN operations over a meta path.
-#     We create a GNN layer for each relation in the metapath. Then, we 
-#     propagate over the metapath using convolutions.
-#     Finally we apply a final prejection to the initial node embeddings.
+class MetaPathGNN_SAGEConv(nn.Module):
+    """
+    This is the network that express the GNN operations over a meta path.
+    We create a GNN layer for each relation in the metapath. Then, we 
+    propagate over the metapath using convolutions.
+    Finally we apply a final prejection to the initial node embeddings.
 
-#     So, we generate embeddings considering the metapath "metapath".
-#     A metapath is passed, and is a list of tuple (src, rel, dst).
+    So, we generate embeddings considering the metapath "metapath".
+    A metapath is passed, and is a list of tuple (src, rel, dst).
 
-#     Here, we use SAGEConv as GNN layer, but we can change this choice.
+    Here, we use SAGEConv as GNN layer, but we can change this choice.
 
-#     In Section 4.2 of the aforementioned paper, is indicated that they
-#     use apply GNN layers by starting from the last layer, going back
-#     to the first one. The aim is that target node receives immediatly
-#     the informations coming from the reached node:
-#     driver->race->circuit
-#     We want to aggregate the information for making a prediction for 
-#     the driver. By using a reverse technique, in the first GNN layer
-#     race is going to receive and aggregate the information of the 
-#     final destination of the metapath (in this case circuit) and in
-#     the second GNN layer driver is going to receive the infromations 
-#     from race, already considering circuit.
+    In Section 4.2 of the aforementioned paper, is indicated that they
+    use apply GNN layers by starting from the last layer, going back
+    to the first one. The aim is that target node receives immediatly
+    the informations coming from the reached node:
+    driver->race->circuit
+    We want to aggregate the information for making a prediction for 
+    the driver. By using a reverse technique, in the first GNN layer
+    race is going to receive and aggregate the information of the 
+    final destination of the metapath (in this case circuit) and in
+    the second GNN layer driver is going to receive the infromations 
+    from race, already considering circuit.
 
-#     Also consider that we decided to use a RELU function, while the 
-#     paper used a sigmoid function.
-#     """
-#     def __init__(self,
-#                  metapath: List[Tuple[str, str, str]],
-#                  hidden_channels: int,  #dimension of the hidden state, 
-#                  #after each aggregation
-#                  out_channels: int #final dimension of the 
-#                  #embeddings produced by the GNN
-#         ):
-#         super().__init__()
-#         self.metapath = metapath
-#         self.convs = nn.ModuleList()
+    Also consider that we decided to use a RELU function, while the 
+    paper used a sigmoid function.
+    """
+    def __init__(self,
+                 metapath: List[Tuple[str, str, str]],
+                 hidden_channels: int,  #dimension of the hidden state, 
+                 #after each aggregation
+                 out_channels: int #final dimension of the 
+                 #embeddings produced by the GNN
+        ):
+        super().__init__()
+        self.metapath = metapath
+        self.convs = nn.ModuleList()
 
-#         for _ in metapath:
-#             #for each relation in the metapath we consider 
-#             #a SAGEConv layer
-#             conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
-#             self.convs.append(conv)
+        for _ in metapath:
+            #for each relation in the metapath we consider 
+            #a SAGEConv layer
+            conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
+            self.convs.append(conv)
 
-#         self.out_proj = nn.Linear(hidden_channels, out_channels)
+        self.out_proj = nn.Linear(hidden_channels, out_channels)
 
-#     def forward(self, x_dict, edge_index_dict, edge_type_dict = None):
-#         h_dict = x_dict.copy()
-#         for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
-#             conv_idx = len(self.metapath) - 1 - i #obtaining the correct index
-#             edge_index = edge_index_dict[(src, rel, dst)]
-#             h_dst = self.convs[conv_idx]((h_dict[src], h_dict[dst]), edge_index)
-#             h_dict[dst] = F.relu(h_dst)
-#         start_type = self.metapath[0][0]
-#         return self.out_proj(h_dict[start_type])
-
-
-
-
-
-
-# class MetaPathSelfAttention(nn.Module):
-#     """
-#     This module apply self attention between the different metapaths. 
-#     It is mostly used as a source of explainability, in orfer to assess
-#     the relevance contribution of every metapath to the final result.
-#     It was not present in the original paper.
-#     """
-#     def __init__(self, dim, num_heads=4):
-#         super().__init__()
-#         self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
-#         self.output_proj = nn.Sequential(
-#             nn.Linear(dim, dim),
-#             nn.ReLU(),
-#             nn.Linear(dim, 1)  #final prediction
-#         )
-
-#     def forward(self, metapath_embeddings):  # [N, M, D]
-#         #self attention requires an input of shape [batch, seq_len, embed_dim]
-#         #print("metapath_embeddings.shape:", metapath_embeddings.shape)
-#         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
-#         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
-
-#         attn_output, _ = self.attn(metapath_embeddings, metapath_embeddings, metapath_embeddings)  # [N, M, D]
-#         pooled = attn_output.mean(dim=1)  #matapaths mean -> [N, D]
-#         return self.output_proj(pooled).squeeze(-1)  # output: [N]
+    def forward(self, x_dict, edge_index_dict, edge_type_dict = None):
+        h_dict = x_dict.copy()
+        for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
+            conv_idx = len(self.metapath) - 1 - i #obtaining the correct index
+            edge_index = edge_index_dict[(src, rel, dst)]
+            h_dst = self.convs[conv_idx]((h_dict[src], h_dict[dst]), edge_index)
+            h_dict[dst] = F.relu(h_dst)
+        start_type = self.metapath[0][0]
+        return self.out_proj(h_dict[start_type])
 
 
 
 class MetaPathSelfAttention(nn.Module):
     """
     This module applies Transformer-based self-attention between the different metapaths.
-    It replaces the original MultiHeadAttention + mean pooling with a TransformerEncoder.
+    It uses a TransformerEncoder. This module apply self attention between the different
+    metapaths. It is mostly used as a source of explainability, in orfer to assess the 
+    relevance contribution of every metapath to the final result.
+    It was not present in the original paper.
     """
     def __init__(self, dim, num_heads=4):
         super().__init__()
@@ -193,12 +272,6 @@ class MetaPathSelfAttention(nn.Module):
             TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
             num_layers=4
         )
-
-        # self.output_proj = nn.Sequential(
-        #     nn.Linear(dim, dim),
-        #     nn.ReLU(),
-        #     nn.Linear(dim, 1)  # Final scalar regression prediction
-        # )
 
         self.output_proj = nn.Sequential(
             nn.Linear(dim, dim * 2),
@@ -210,7 +283,6 @@ class MetaPathSelfAttention(nn.Module):
             nn.Linear(dim, 1)
         )
 
-
     def forward(self, metapath_embeddings):  # [N, M, D]
         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
@@ -218,8 +290,6 @@ class MetaPathSelfAttention(nn.Module):
         attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
         pooled = attn_out.mean(dim=1)                      # [N, D]
         return self.output_proj(pooled).squeeze(-1)        # [N]
-
-
 
 
 class MPSGNN(nn.Module):
@@ -262,6 +332,7 @@ class MPSGNN(nn.Module):
                  metapath_counts: Dict[Tuple, int], #statistics of each metapath
                  hidden_channels: int = 64,
                  out_channels: int = 64,
+                 num_heads: int = 8,
                  final_out_channels: int = 1):
         super().__init__()
         
@@ -276,7 +347,7 @@ class MPSGNN(nn.Module):
         weights = weights/weights.sum() #normalization of count
         self.register_buffer("metapath_weights_tensor", weights) 
 
-        self.regressor = MetaPathSelfAttention(out_channels, num_heads=4)
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
@@ -306,10 +377,10 @@ class MPSGNN(nn.Module):
 
       for node_type, rel_time in rel_time_dict.items():
             x_dict[node_type] = x_dict[node_type] + rel_time
-      #print(f"edge_index_dict è {batch.edge_index_dict}")
-      #print(f"edge_types è {batch.edge_types}") 
-      embeddings = [
-          model(x_dict, batch.edge_index_dict, batch.edge_types)
+      
+      
+      embeddings = [#x_dict, edge_index_dict
+          model(x_dict, batch.edge_index_dict)
           for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
       concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 

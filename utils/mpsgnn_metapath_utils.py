@@ -10,65 +10,6 @@ from model.MPSGNN_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
-def beam_metapath_search_with_bags_learned_trial_attempt(
-    data: HeteroData, #the result of make_pkey_fkey_graph
-    db,   #Object that was passed to make_pkey_fkey_graph to build data
-    node_id: str, #ex. driverId
-    loader_dict,
-    task, 
-    loss_fn,
-    tune_metric : str,
-    higher_is_better: str,
-    train_mask: torch.Tensor,
-    node_type: str, 
-    col_stats_dict: Dict[str, Dict[str, Dict]], 
-    L_max: int = 3,
-    channels : int = 64,
-    number_of_metapaths: int = 5,  #number of metapaths to look for
-    out_channels: int = 128,
-    hidden_channels: int = 128,
-    lr : float = 0.0001,
-    wd: float = 0,
-    epochs: int = 100,
-    max_rel: int = 10
-) :
-    """
-    Avoid score computation, compute results only using mps gnn.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    metapath_counts = defaultdict(int)
-    local_path2 = [('drivers', 'rev_f2p_driverId', 'standings')]
-    metapath_counts[tuple(local_path2)] += 1
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
-    model = MPSGNN(
-        data=data,
-        col_stats_dict=col_stats_dict,
-        metadata=data.metadata(),
-        metapath_counts = metapath_counts,
-        metapaths=metapaths,
-        hidden_channels=hidden_channels,
-        out_channels=out_channels,
-        final_out_channels=1,
-    ).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-    
-    
-    test_table = task.get_table("test", mask_input_cols=False)
-    best_test_metrics = -math.inf if higher_is_better else math.inf
-    for _ in range(0, epochs):
-        train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-        test_pred = test(model, loader_dict["test"], device=device, task=task)
-        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-        if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-        if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-    print(f"For the partial metapath {local_path2.copy()} with metapath_counts: {metapath_counts} we obtain F1 test loss equal to {best_test_metrics}")
-    #next_paths_info.append((best_test_metrics, local_path2.copy(), bags, labels, alpha_next))
-
-    return ""
-
-
 def binarize_targets(y: torch.Tensor, threshold: float = 11) -> torch.Tensor:
     """
     This function trasforms a regression task (like the one of driver position)
