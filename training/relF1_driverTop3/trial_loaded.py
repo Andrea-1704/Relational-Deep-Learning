@@ -33,7 +33,8 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
+from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, greedy_metapath_search_with_bags_learned_2, greedy_metapath_search_with_bags_learned_3, beam_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned_2
+#from utils.mapping_utils import get_global_to_local_id_map
 
 
 def train2():
@@ -114,42 +115,64 @@ def train2():
     lr=1e-02
     wd=0
     
-    
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
-    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
-    model = MPSGNN(
-        data=data_official,
-        col_stats_dict=col_stats_dict_official,
-        metadata=data_official.metadata(),
-        metapath_counts = metapath_counts,
-        metapaths=metapaths,
-        hidden_channels=hidden_channels,
-        out_channels=out_channels,
-        final_out_channels=1,
-    ).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-    #EPOCHS:
-    epochs = 100
-    test_table = task.get_table("test", mask_input_cols=False)
-    best_test_metrics = -math.inf if higher_is_better else math.inf
-    for _ in range(0, epochs):
-        train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-        test_pred = test(model, loader_dict["test"], device=device, task=task)
-        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-        if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-        if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-    print(f"We obtain F1 test loss equal to {best_test_metrics}")
+    from utils.mpsgnn_metapath_utils import beam_metapath_search_with_bags_learned_trial_attempt
 
-    
-    # # early_stopping = EarlyStopping(
-    # #     patience=60,
-    # #     delta=0.0,
-    # #     verbose=True,
-    # #     higher_is_better = True,
-    # #     path="best_basic_model.pt"
-    # # )
+    beam_metapath_search_with_bags_learned_trial_attempt(
+        col_stats_dict = col_stats_dict_official,
+        data=data_official,
+        db= db_nuovo,
+        node_id='driverId',
+        train_mask=train_mask_full,
+        node_type='drivers',
+        L_max=4,
+        channels = hidden_channels,
+        number_of_metapaths = 3,     
+        out_channels = out_channels,
+        hidden_channels = hidden_channels, 
+        loader_dict = loader_dict,
+        lr = lr,
+        wd = wd,
+        task = task,
+        loss_fn= loss_fn, 
+        epochs = 100, 
+        tune_metric = tune_metric,
+        higher_is_better= higher_is_better
+    )
+
+    # print(f"\nfinal metapaths are {metapaths}\n")
+
+    # print(f"\n metapaths counts are {metapath_counts}\n")
+    # hidden_channels = 64
+    # out_channels = 64
+    # lr=0.0001
+    # wd = 0
+    # model = MPSGNN(
+    #     data=data_official,
+    #     col_stats_dict=col_stats_dict_official,
+    #     metadata=data_official.metadata(),
+    #     metapath_counts = metapath_counts,
+    #     metapaths=metapaths,
+    #     hidden_channels=hidden_channels,
+    #     out_channels=out_channels,
+    #     final_out_channels=1,
+    # ).to(device)
+
+    # optimizer = torch.optim.Adam(
+    #   model.parameters(),
+    #   lr=lr,
+    #   weight_decay=wd
+    # )
+    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+    # scheduler = CosineAnnealingLR(optimizer, T_max=25)
+
+    # early_stopping = EarlyStopping(
+    #     patience=60,
+    #     delta=0.0,
+    #     verbose=True,
+    #     higher_is_better = True,
+    #     path="best_basic_model.pt"
+    # )
 
     
     # best_val_metric = -math.inf 
