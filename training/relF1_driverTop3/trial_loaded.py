@@ -127,9 +127,9 @@ def train2():
         out_channels=out_channels,
         final_out_channels=1,
     ).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
     #EPOCHS:
-    epochs = 150
+    epochs = 100
     test_table = task.get_table("test", mask_input_cols=False)
     best_test_metrics = -math.inf if higher_is_better else math.inf
     for _ in range(0, epochs):
