@@ -115,8 +115,8 @@ def train2():
     wd=0
     
     
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
-    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
+    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
     model = MPSGNN(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
@@ -129,7 +129,7 @@ def train2():
     ).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
     #EPOCHS:
-    epochs = 100
+    epochs = 150
     test_table = task.get_table("test", mask_input_cols=False)
     best_test_metrics = -math.inf if higher_is_better else math.inf
     for _ in range(0, epochs):
