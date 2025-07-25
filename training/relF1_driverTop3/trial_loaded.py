@@ -128,6 +128,7 @@ def train2():
     lrs_to_try = [1e-2, 1e-3, 1e-4]
     wds_to_try = [0.0, 1e-4]
     momenta_to_try = [0.0, 0.5, 0.9]  # solo per SGD
+    test_table = task.get_table("test", mask_input_cols=False)
 
     max_epochs = 1000
     early_patience = 50
