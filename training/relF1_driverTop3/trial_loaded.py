@@ -111,36 +111,112 @@ def train2():
         val_table=val_table,
         test_table=test_table
     )
-    lr=1e-02
-    wd=0
+    # lr=1e-02
+    #wd=0
     
     
     metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
     metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
-    model = MPSGNN(
-        data=data_official,
-        col_stats_dict=col_stats_dict_official,
-        metadata=data_official.metadata(),
-        metapath_counts = metapath_counts,
-        metapaths=metapaths,
-        hidden_channels=hidden_channels,
-        out_channels=out_channels,
-        final_out_channels=1,
-    ).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-    #EPOCHS:
-    epochs = 100
-    test_table = task.get_table("test", mask_input_cols=False)
-    best_test_metrics = -math.inf if higher_is_better else math.inf
-    for _ in range(0, epochs):
-        train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-        test_pred = test(model, loader_dict["test"], device=device, task=task)
-        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-        if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-        if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-    print(f"We obtain F1 test loss equal to {best_test_metrics}")
+
+
+
+
+
+    optimizers_to_try = ['SGD', 'Adam']
+    lrs_to_try = [1e-2, 1e-3, 1e-4]
+    wds_to_try = [0.0, 1e-4]
+    epochs = 50
+    best_score = -math.inf
+    best_config = None
+    best_model_state = None
+
+    for opt_name in optimizers_to_try:
+        for lr in lrs_to_try:
+            for wd in wds_to_try:
+                print(f"\nTrying optimizer={opt_name}, lr={lr}, wd={wd}")
+                
+                # Reset del modello
+                model = MPSGNN(
+                    data=data_official,
+                    col_stats_dict=col_stats_dict_official,
+                    metadata=data_official.metadata(),
+                    metapath_counts=metapath_counts,
+                    metapaths=metapaths,
+                    hidden_channels=hidden_channels,
+                    out_channels=out_channels,
+                    final_out_channels=1,
+                ).to(device)
+
+                if opt_name == 'SGD':
+                    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+                elif opt_name == 'Adam':
+                    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+                else:
+                    raise ValueError(f"Unknown optimizer {opt_name}")
+                
+                for epoch in range(epochs):
+                    train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+
+                test_pred = test(model, loader_dict["val"], device=device, task=task)
+                val_metrics = evaluate_performance(test_pred, val_table, task.metrics, task=task)
+                f1_score = val_metrics[tune_metric]
+
+                print(f"F1 score on val: {f1_score:.4f}")
+
+                if f1_score > best_score:
+                    best_score = f1_score
+                    best_config = (opt_name, lr, wd)
+                    best_model_state = copy.deepcopy(model.state_dict())
+
+    print(f"\nBest configuration: optimizer={best_config[0]}, lr={best_config[1]}, wd={best_config[2]} with val F1={best_score:.4f}")
+
+    # Valutazione finale su test set
+    model.load_state_dict(best_model_state)
+    test_pred = test(model, loader_dict["test"], device=device, task=task)
+    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+    print(f"Final test F1 score: {test_metrics[tune_metric]:.4f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # model = MPSGNN(
+    #     data=data_official,
+    #     col_stats_dict=col_stats_dict_official,
+    #     metadata=data_official.metadata(),
+    #     metapath_counts = metapath_counts,
+    #     metapaths=metapaths,
+    #     hidden_channels=hidden_channels,
+    #     out_channels=out_channels,
+    #     final_out_channels=1,
+    # ).to(device)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+    # #EPOCHS:
+    # epochs = 100
+    # test_table = task.get_table("test", mask_input_cols=False)
+    # best_test_metrics = -math.inf if higher_is_better else math.inf
+    # for _ in range(0, epochs):
+    #     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+    #     test_pred = test(model, loader_dict["test"], device=device, task=task)
+    #     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+    #     if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
+    #         best_test_metrics = test_metrics[tune_metric]
+    #     if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
+    #         best_test_metrics = test_metrics[tune_metric]
+    # print(f"We obtain F1 test loss equal to {best_test_metrics}")
 
     
 
