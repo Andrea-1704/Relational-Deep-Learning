@@ -171,6 +171,7 @@ def train2():
     print(f"\nBest configuration: optimizer={best_config[0]}, lr={best_config[1]}, wd={best_config[2]} with val F1={best_score:.4f}")
 
     # Valutazione finale su test set
+    test_table = task.get_table("test", mask_input_cols=False)
     model.load_state_dict(best_model_state)
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
