@@ -136,6 +136,8 @@ def train2():
     best_config = None
     best_model_state = None
 
+    results_log = []  # Per salvare i risultati per ogni configurazione
+
     for opt_name in optimizers_to_try:
         for lr in lrs_to_try:
             for wd in wds_to_try:
@@ -164,7 +166,7 @@ def train2():
                         delta=0.0,
                         verbose=False,
                         higher_is_better=True,
-                        path="tmp_model.pt"  # sovrascrive a ogni prova
+                        path="tmp_model.pt"
                     )
 
                     for epoch in range(max_epochs):
@@ -178,24 +180,41 @@ def train2():
                             print(f"Early stopping triggered at epoch {epoch}")
                             break
 
-                    # recupera il modello salvato
+                    # Carica miglior modello
                     model.load_state_dict(torch.load("tmp_model.pt", map_location=device))
+
+                    # Val & Test
                     final_val_pred = test(model, loader_dict["val"], device=device, task=task)
                     final_val_metrics = evaluate_performance(final_val_pred, val_table, task.metrics, task=task)
-                    final_f1 = final_val_metrics[tune_metric]
+                    final_f1_val = final_val_metrics[tune_metric]
 
-                    if final_f1 > best_score:
-                        best_score = final_f1
+                    final_test_pred = test(model, loader_dict["test"], device=device, task=task)
+                    final_test_metrics = evaluate_performance(final_test_pred, test_table, task.metrics, task=task)
+                    final_f1_test = final_test_metrics[tune_metric]
+
+                    print(f"✅ Config completed: optimizer={opt_name}, lr={lr}, wd={wd}, momentum={momentum} → Val F1: {final_f1_val:.4f}, Test F1: {final_f1_test:.4f}")
+
+                    results_log.append({
+                        "optimizer": opt_name,
+                        "lr": lr,
+                        "wd": wd,
+                        "momentum": momentum,
+                        "val_f1": final_f1_val,
+                        "test_f1": final_f1_test
+                    })
+
+                    if final_f1_val > best_score:
+                        best_score = final_f1_val
                         best_config = (opt_name, lr, wd, momentum)
                         best_model_state = copy.deepcopy(model.state_dict())
 
-    print(f"\nBest config: optimizer={best_config[0]}, lr={best_config[1]}, wd={best_config[2]}, momentum={best_config[3]} with val F1={best_score:.4f}")
+    # 🏁 Riepilogo finale
+    print("\n=== RIEPILOGO CONFIGURAZIONI PROVATE ===")
+    for r in results_log:
+        print(f"[{r['optimizer']} | lr={r['lr']} | wd={r['wd']} | momentum={r['momentum']}] → Val F1: {r['val_f1']:.4f} | Test F1: {r['test_f1']:.4f}")
 
-    # Final evaluation on test set
-    model.load_state_dict(best_model_state)
-    test_pred = test(model, loader_dict["test"], device=device, task=task)
-    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-    print(f"Final test F1 score: {test_metrics[tune_metric]:.4f}")
+    print(f"\n🏆 Best config: optimizer={best_config[0]}, lr={best_config[1]}, wd={best_config[2]}, momentum={best_config[3]} with val F1={best_score:.4f}")
+
 
 
 
