@@ -115,8 +115,8 @@ def train2():
     #wd=0
     
     
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
-    metapath_count = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
+    metapath_count = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
 
 
 
