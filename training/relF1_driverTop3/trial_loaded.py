@@ -111,84 +111,144 @@ def train2():
         val_table=val_table,
         test_table=test_table
     )
-    lr=1e-02
-    wd=0
+    # lr=1e-02
+    #wd=0
     
     
     metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
-    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
-    model = MPSGNN(
-        data=data_official,
-        col_stats_dict=col_stats_dict_official,
-        metadata=data_official.metadata(),
-        metapath_counts = metapath_counts,
-        metapaths=metapaths,
-        hidden_channels=hidden_channels,
-        out_channels=out_channels,
-        final_out_channels=1,
-    ).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-    #EPOCHS:
-    epochs = 100
+    metapath_count = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
+
+
+
+
+
+    from utils.EarlyStopping import EarlyStopping
+
+    optimizers_to_try = ['SGD', 'Adam']
+    lrs_to_try = [1e-2, 1e-3, 1e-4]
+    wds_to_try = [0.0, 1e-4]
+    momenta_to_try = [0.0, 0.5, 0.9]  # solo per SGD
     test_table = task.get_table("test", mask_input_cols=False)
-    best_test_metrics = -math.inf if higher_is_better else math.inf
-    for _ in range(0, epochs):
-        train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-        test_pred = test(model, loader_dict["test"], device=device, task=task)
-        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-        if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-        if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-    print(f"We obtain F1 test loss equal to {best_test_metrics}")
 
-    
-    # # early_stopping = EarlyStopping(
-    # #     patience=60,
-    # #     delta=0.0,
-    # #     verbose=True,
-    # #     higher_is_better = True,
-    # #     path="best_basic_model.pt"
-    # # )
+    max_epochs = 1000
+    early_patience = 50
 
-    
-    # best_val_metric = -math.inf 
+    best_score = -math.inf
+    best_config = None
+    best_model_state = None
+
+    results_log = []  # Per salvare i risultati per ogni configurazione
+
+    for opt_name in optimizers_to_try:
+        for lr in lrs_to_try:
+            for wd in wds_to_try:
+                momenta = [None] if opt_name != "SGD" else momenta_to_try
+                for momentum in momenta:
+                    print(f"\nTrying optimizer={opt_name}, lr={lr}, wd={wd}, momentum={momentum}")
+
+                    model = MPSGNN(
+                        data=data_official,
+                        col_stats_dict=col_stats_dict_official,
+                        metadata=data_official.metadata(),
+                        metapath_counts=metapath_count,
+                        metapaths=metapaths,
+                        hidden_channels=hidden_channels,
+                        out_channels=out_channels,
+                        final_out_channels=1,
+                    ).to(device)
+
+                    if opt_name == 'Adam':
+                        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+                    elif opt_name == 'SGD':
+                        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=wd)
+
+                    early_stopping = EarlyStopping(
+                        patience=early_patience,
+                        delta=0.0,
+                        verbose=False,
+                        higher_is_better=True,
+                        path="tmp_model.pt"
+                    )
+
+                    for epoch in range(max_epochs):
+                        train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+                        val_pred = test(model, loader_dict["val"], device=device, task=task)
+                        val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+                        val_score = val_metrics[tune_metric]
+
+                        early_stopping(val_score, model)
+                        if early_stopping.early_stop:
+                            print(f"Early stopping triggered at epoch {epoch}")
+                            break
+
+                    # Carica miglior modello
+                    model.load_state_dict(torch.load("tmp_model.pt", map_location=device))
+
+                    # Val & Test
+                    final_val_pred = test(model, loader_dict["val"], device=device, task=task)
+                    final_val_metrics = evaluate_performance(final_val_pred, val_table, task.metrics, task=task)
+                    final_f1_val = final_val_metrics[tune_metric]
+
+                    final_test_pred = test(model, loader_dict["test"], device=device, task=task)
+                    final_test_metrics = evaluate_performance(final_test_pred, test_table, task.metrics, task=task)
+                    final_f1_test = final_test_metrics[tune_metric]
+
+                    print(f"✅ Config completed: optimizer={opt_name}, lr={lr}, wd={wd}, momentum={momentum} → Val F1: {final_f1_val:.4f}, Test F1: {final_f1_test:.4f}")
+
+                    results_log.append({
+                        "optimizer": opt_name,
+                        "lr": lr,
+                        "wd": wd,
+                        "momentum": momentum,
+                        "val_f1": final_f1_val,
+                        "test_f1": final_f1_test
+                    })
+
+                    if final_f1_val > best_score:
+                        best_score = final_f1_val
+                        best_config = (opt_name, lr, wd, momentum)
+                        best_model_state = copy.deepcopy(model.state_dict())
+
+    # 🏁 Riepilogo finale
+    print("\n=== RIEPILOGO CONFIGURAZIONI PROVATE ===")
+    for r in results_log:
+        print(f"[{r['optimizer']} | lr={r['lr']} | wd={r['wd']} | momentum={r['momentum']}] → Val F1: {r['val_f1']:.4f} | Test F1: {r['test_f1']:.4f}")
+
+    print(f"\n🏆 Best config: optimizer={best_config[0]}, lr={best_config[1]}, wd={best_config[2]}, momentum={best_config[3]} with val F1={best_score:.4f}")
+
+
+
+
+
+
+
+
+    # model = MPSGNN(
+    #     data=data_official,
+    #     col_stats_dict=col_stats_dict_official,
+    #     metadata=data_official.metadata(),
+    #     metapath_counts = metapath_counts,
+    #     metapaths=metapaths,
+    #     hidden_channels=hidden_channels,
+    #     out_channels=out_channels,
+    #     final_out_channels=1,
+    # ).to(device)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+    # #EPOCHS:
+    # epochs = 100
     # test_table = task.get_table("test", mask_input_cols=False)
-    # best_test_metric = -math.inf 
-    # epochs = 500
-    # for epoch in range(0, epochs):
-    #   train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+    # best_test_metrics = -math.inf if higher_is_better else math.inf
+    # for _ in range(0, epochs):
+    #     train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+    #     test_pred = test(model, loader_dict["test"], device=device, task=task)
+    #     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+    #     if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
+    #         best_test_metrics = test_metrics[tune_metric]
+    #     if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
+    #         best_test_metrics = test_metrics[tune_metric]
+    # print(f"We obtain F1 test loss equal to {best_test_metrics}")
 
-    #   train_pred = test(model, loader_dict["train"], device=device, task=task)
-    #   val_pred = test(model, loader_dict["val"], device=device, task=task)
-    #   test_pred = test(model, loader_dict["test"], device=device, task=task)
-      
-    #   train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-    #   val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-    #   test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-
-    #   #scheduler.step(val_metrics[tune_metric])
-
-    #   if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
-    #     best_val_metric = val_metrics[tune_metric]
-    #     state_dict = copy.deepcopy(model.state_dict())
-
-    #   if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
-    #       best_test_metric = test_metrics[tune_metric]
-    #       state_dict_test = copy.deepcopy(model.state_dict())
-
-    #   current_lr = optimizer.param_groups[0]["lr"]
-      
-    #   print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
-
-    #   # early_stopping(val_metrics[tune_metric], model)
-
-    #   # if early_stopping.early_stop:
-    #   #     print(f"Early stopping triggered at epoch {epoch}")
-    #   #     break
-    # print(f"best validation results: {best_val_metric}")
-    # print(f"best test results: {best_test_metric}")
-
+    
 
 if __name__ == '__main__':
     train2()
