@@ -8,20 +8,17 @@ from torch_geometric.data import HeteroData
 from torch_frame.data.stats import StatType
 from typing import Any, Dict, List, Tuple
 from torch_geometric.nn import SAGEConv
-import seaborn as sns
-import pandas as pd
-import matplotlib.pyplot as plt
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
+
 
 """
 In this implementation we are solving one major problem related to the 
-previous version (which is still in the repo in the file MPSGNN_Model_old),
-which is that, when we used the full x_dict[nodetype]
+previous version, which is that, when we used the full x_dict[nodetype]
 tensors without checking which nodes were actually connected by the 
 relation. This means we were doing message passing over all nodes, 
 including nodes that are completely disconnected from the current relation.
 
-The solution should be that instead considering all the dst e src nodes
+The solution should be that instead of considering all the dst e src nodes
 for the message passing, we focus only on the ones for which we have at
 leat an edge between src to dst.
 
@@ -46,7 +43,7 @@ def forward(self, x_dict, edge_index_dict):
 was wrong because simply considered x=h_dict[dst], without exclude all the 
 dst nodes that are not reached from src, adding them to the aggregation phase.
 
-A solution could be to exclude all the nodes that are not reached from the 
+A solution could be to explude all the nodes that are not reached from the 
 relation, but this would generate a new problem to be managed:
 Given edge_index = [[3, 4, 5], [6, 2, 3]], this means there's an edge from
 x_dict["races"][3] to x_dict["drivers"][6], and so on. Suppose 
@@ -165,15 +162,10 @@ class MetaPathGNN(nn.Module):
             x_dst = [emb(6), emb(2), emb(3)]
             """
 
-            # edge_index_remapped = torch.stack([
-            #     torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
-            #     torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
-            # ])
             edge_index_remapped = torch.stack([
-                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device, dtype=torch.long),
-                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device, dtype=torch.long)
+                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
+                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
             ])
-
 
             """
             Example
@@ -291,21 +283,13 @@ class MetaPathSelfAttention(nn.Module):
             nn.Linear(dim, 1)
         )
 
-    def forward(self, metapath_embeddings: torch.Tensor, return_attention=False):  # [N, M, D]
-        """
-        metapath_embeddings: [N, M, D]
-        return_attention: if True, returns intermediate attention embeddings as well
-        """
+    def forward(self, metapath_embeddings):  # [N, M, D]
         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
 
         attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
         pooled = attn_out.mean(dim=1)                      # [N, D]
-        out = self.output_proj(pooled).squeeze(-1)        # [N]
-        if return_attention:
-            return out, attn_out
-        return out
-
+        return self.output_proj(pooled).squeeze(-1)        # [N]
 
 
 class MPSGNN(nn.Module):
@@ -403,70 +387,3 @@ class MPSGNN(nn.Module):
       weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
       
       return self.regressor(weighted) #finally apply regression
-
-
-def interpret_attention(
-    model,
-    batch: HeteroData,
-    metapath_names: List[str],
-    entity_table: str,
-    visualize: bool = True,
-    figsize: tuple = (12, 6)
-) -> List[Dict[str, Any]]:
-    """
-    Interpret metapath self-attention scores for each target node in a batch.
-
-    Args:
-        model: A trained instance of MPSGNN.
-        batch: A torch_geometric HeteroData batch containing the current data.
-        metapath_names: List of human-readable names of metapaths.
-        entity_table: The target node type (e.g., "drivers").
-        visualize: If True, display a heatmap of attention scores.
-        figsize: Tuple for figure size in the visualization.
-
-    Returns:
-        List of dictionaries containing node indices and attention weights over metapaths.
-    """
-    model.eval()
-    with torch.no_grad():
-        #Encode static and temporal features
-        seed_time = batch[entity_table].seed_time
-        x_dict = model.encoder(batch.tf_dict)
-        rel_time_dict = model.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
-
-        for node_type in rel_time_dict:
-            x_dict[node_type] = x_dict[node_type] + rel_time_dict[node_type]
-
-        #Compute node embeddings via each metapath-specific GNN
-        embeddings = [
-            m(x_dict, batch.edge_index_dict) for m in model.metapath_models
-        ]  # List of [N, D]
-        concat = torch.stack(embeddings, dim=1)  # [N, M, D]
-        weighted = concat * model.metapath_weights_tensor.view(1, -1, 1)
-
-        #Retrieve output + attention representations
-        _, attn_repr = model.regressor(weighted, return_attention=True)  # [N, M, D]
-        attn_scores = attn_repr.mean(dim=-1).cpu()  # [N, M]
-
-        #Structure the interpretation output
-        results = []
-        for node_idx in range(attn_scores.size(0)):
-            node_attn = attn_scores[node_idx].tolist()
-            results.append({
-                "node_index": node_idx,
-                "attention_per_metapath": dict(zip(metapath_names, node_attn))
-            })
-
-        #visualize using a heatmap
-        if visualize:
-            df = pd.DataFrame(attn_scores.numpy(), columns=metapath_names)
-            plt.figure(figsize=figsize)
-            sns.heatmap(df, annot=True, fmt=".2f", cmap="YlOrBr", linewidths=0.5,
-                        cbar_kws={"label": "Metapath Attention Weight"})
-            plt.title(f"Metapath Contribution Heatmap for Nodes in '{entity_table}'", fontsize=14)
-            plt.xlabel("Metapath")
-            plt.ylabel("Node Index")
-            plt.tight_layout()
-            plt.show()
-
-        return results
