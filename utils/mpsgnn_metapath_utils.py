@@ -259,34 +259,11 @@ def beam_metapath_search_with_bags_learned(
     it simply considers all the metapaths (also the intermediate ones and their score
     value to be able to consider also intermediate metapaths).
     We also added a statistics count that takes into account the counts of how many 
-    times each metapath has been use in the path (for example assuming to have the 
+    times each metapath has been used in the path (for example assuming to have the 
     metapath A->B->C, we count how many A nodes are linked to C nodes throught this
     set of relations).    
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    metapaths = []
-    metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
-    current_paths = [[]]
-    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
-    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
-    #current_bags contains the id of the drivers node 
-    old_y = data[node_type].y.int().tolist() #ordered as current bags
-    print(f"initial y: {old_y}")
-    current_labels = []
-    for i in range(0, len(old_y)):
-        if train_mask[i]:
-            current_labels.append(old_y[i])
-    # print(len(current_bags))
-    print(current_bags)
-
-    # print(len(current_labels))
-    # print(current_labels)
-    
-    assert len(current_bags) == len(current_labels)
-    
-    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
-    all_path_info = [] #memorize all the metapaths with scores, in order
-    #to select only the best beam_width at the end
 
     with torch.no_grad():
         encoder = HeteroEncoder(
@@ -306,9 +283,26 @@ def beam_metapath_search_with_bags_learned(
         } #each node type as a tf.
         node_embeddings_dict = encoder(tf_dict)
 
+    metapaths = []
+    metapath_counts = {} #for each metapath counts how many bags are presents, so how many istances of that metapath are present
+    current_paths = [[]]
+    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
+    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
+    #current_bags contains the id of the drivers node 
+    old_y = data[node_type].y.int().tolist() #ordered as current bags
+    current_labels = []
+    for i in range(0, len(old_y)):
+        if train_mask[i]:
+            current_labels.append(old_y[i])
+    assert len(current_bags) == len(current_labels)
+    
+    alpha = {int(i): 1.0 for i in torch.where(train_mask)[0]}
+    all_path_info = [] #memorize all the metapaths with scores, in order
+    #to select only the best beam_width at the end
+
 
     for level in range(L_max):
-        print(f"we are at level {level}")
+        print(f"level {level}")
         
         next_paths_info = []
 
@@ -342,7 +336,6 @@ def beam_metapath_search_with_bags_learned(
                     previous_labels=current_labels,
                     alpha_prev=alpha, 
                     rel=rel,
-                    #node_embeddings=node_embeddings,
                     theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
@@ -405,7 +398,10 @@ def beam_metapath_search_with_bags_learned_2(
     max_rel: int = 10
 ) -> Tuple[List[List[Tuple[str, str, str]]], Dict[Tuple, int]]:
     """
-    Avoid score computation, compute results only using mps gnn.
+    In this implementation we store as "score" of the metapath, not the one that 
+    the surrogate task would give us, but the actual score that the model gets
+    using only that metapath. Depending on the task this score might be an 
+    F1 score, or other tune metrics.
     """
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -428,12 +424,10 @@ def beam_metapath_search_with_bags_learned_2(
         }
         node_embeddings_dict = encoder(tf_dict)
     
-    metapaths = []
     metapath_counts = defaultdict(int)
     driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
     current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
     old_y = data[node_type].y.int().tolist() #ordered as current bags
-    print(f"initial y: {old_y}")
     current_labels = []
     for i in range(0, len(old_y)):
         if train_mask[i]:
@@ -444,7 +438,7 @@ def beam_metapath_search_with_bags_learned_2(
 
     current_paths = [[]]
     for level in range(L_max):
-        print(f"we are at level {level}")
+        print(f"level {level}")
         next_paths_info = []
 
         for path in current_paths:
@@ -472,7 +466,6 @@ def beam_metapath_search_with_bags_learned_2(
                     previous_labels=current_labels,
                     alpha_prev=alpha, 
                     rel=rel,
-                    #node_embeddings=node_embeddings,
                     theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
@@ -485,7 +478,6 @@ def beam_metapath_search_with_bags_learned_2(
                 local_path2 = path.copy()
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
-                #print(f"Quello che mettiamo dentro metapaths counts è {tuple(local_path2)}")
                 metapath_counts[tuple(local_path2)] += 1
                 print(loc) #[[('drivers', 'rev_f2p_driverId', 'results')]]
                 model = MPSGNN(
@@ -538,64 +530,6 @@ def beam_metapath_search_with_bags_learned_2(
     
     return selected_metapaths, metapath_counts
 
-
-def beam_metapath_search_with_bags_learned_trial_attempt(
-    data: HeteroData, #the result of make_pkey_fkey_graph
-    db,   #Object that was passed to make_pkey_fkey_graph to build data
-    node_id: str, #ex. driverId
-    loader_dict,
-    task, 
-    loss_fn,
-    tune_metric : str,
-    higher_is_better: str,
-    train_mask: torch.Tensor,
-    node_type: str, 
-    col_stats_dict: Dict[str, Dict[str, Dict]], 
-    L_max: int = 3,
-    channels : int = 64,
-    number_of_metapaths: int = 5,  #number of metapaths to look for
-    out_channels: int = 128,
-    hidden_channels: int = 128,
-    lr : float = 0.0001,
-    wd: float = 0,
-    epochs: int = 100,
-    max_rel: int = 10
-) :
-    """
-    Avoid score computation, compute results only using mps gnn.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    metapath_counts = defaultdict(int)
-    local_path2 = [('drivers', 'rev_f2p_driverId', 'standings')]
-    metapath_counts[tuple(local_path2)] += 1
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
-    model = MPSGNN(
-        data=data,
-        col_stats_dict=col_stats_dict,
-        metadata=data.metadata(),
-        metapath_counts = metapath_counts,
-        metapaths=metapaths,
-        hidden_channels=hidden_channels,
-        out_channels=out_channels,
-        final_out_channels=1,
-    ).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-    
-    
-    test_table = task.get_table("test", mask_input_cols=False)
-    best_test_metrics = -math.inf if higher_is_better else math.inf
-    for _ in range(0, epochs):
-        train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-        test_pred = test(model, loader_dict["test"], device=device, task=task)
-        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-        if test_metrics[tune_metric] > best_test_metrics and higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-        if test_metrics[tune_metric] < best_test_metrics and not higher_is_better:
-            best_test_metrics = test_metrics[tune_metric]
-    print(f"For the partial metapath {local_path2.copy()} with metapath_counts: {metapath_counts} we obtain F1 test loss equal to {best_test_metrics}")
-    #next_paths_info.append((best_test_metrics, local_path2.copy(), bags, labels, alpha_next))
-
-    return ""
 
 """
 Beam search is a very strong and powerfull version 
@@ -928,7 +862,6 @@ def greedy_metapath_search_with_bags_learned_2(
                 local_path2 = local_path.copy()
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
-                print(f"Quello che mettiamo dentro metapaths counts è {tuple(local_path2)}")
                 metapath_counts[tuple(local_path2)] += 1
                 model = MPSGNN(
                     data=data,
