@@ -15,7 +15,8 @@ from torch_geometric.nn import Linear
 from torch_geometric.utils import softmax, degree
 
 class HeteroGraphormerLayerComplete(nn.Module):
-    def __init__(self, channels, edge_types, device, num_heads=4, dropout=0.1):
+    def __init__(self, channels, edge_types, device, num_heads=4, dropout=0.1,
+                 max_spd=3, undirected=False, use_reverse=True):
         super().__init__()
         self.device = device
         self.num_heads = num_heads
@@ -36,6 +37,12 @@ class HeteroGraphormerLayerComplete(nn.Module):
             "__".join(edge_type): nn.Parameter(torch.randn(1))
             for edge_type in edge_types
         })
+
+        self.max_spd = max_spd                 # K: hop massimi (consigliato 2-4)
+        self.undirected = undirected           # True = grafo non diretto per SPD
+        self.use_reverse = use_reverse         # True = distanza d->s (come nel tuo uso)
+        # bucket: 0..max_spd mappano 1..K (useremo 0 per distanza=1), bucket max_spd+1 = ">K/unreachable"
+        self.spd_emb = nn.Embedding(self.max_spd + 2, self.num_heads)  # (K+2, H)
 
     def compute_total_degrees(self, x_dict, edge_index_dict):
         device = self.device
@@ -61,23 +68,70 @@ class HeteroGraphormerLayerComplete(nn.Module):
             for node_type in x_dict
         }
 
-    def compute_batch_spatial_bias(self, edge_index, num_nodes):
-        # Costruisci grafo da edge_index del batch corrente
-        G = nx.DiGraph()
-        G.add_nodes_from(range(num_nodes))
-        src, dst = edge_index
-        for s, d in zip(src.tolist(), dst.tolist()):
-            G.add_edge(s, d)
+    @torch.no_grad()
+    def compute_batch_spatial_bias_fast(self, edge_index, num_nodes):
+        """
+        Calcola un 'reverse' shortest-path (d -> s) fino a K hop in modo vettoriale.
+        Ritorna: spd_bucket [E] (long) con valori in {1..K, K+1} dove K+1 = '>K o non raggiungibile'.
+        """
+        src, dst = edge_index  # [E]
+        device = src.device
+        K = self.max_spd
 
-        spatial_bias = {}
-        for node in G.nodes():
-            lengths = nx.single_source_dijkstra_path_length(G, node)
-            for target, dist in lengths.items():
-                spatial_bias[(node, target)] = dist
+        # --- Costruisci adiacenza sparsa del batch ---
+        # Verso per SPD: se use_reverse=True, vogliamo d->s, quindi costruiamo A_rev con archi (d->s).
+        if self.use_reverse:
+            row = dst
+            col = src
+        else:
+            row = src
+            col = dst
 
-        # Costruzione tensor di bias dallo spatial_bias
-        bias_vals = [spatial_bias.get((d, s), -1.0) for s, d in zip(src.tolist(), dst.tolist())]
-        return torch.tensor(bias_vals, dtype=torch.float32, device=self.device)
+        if self.undirected:
+            row = torch.cat([row, col], dim=0)
+            col = torch.cat([col, row[:row.numel()//2]], dim=0)  # aggiungi l'opposto
+
+        # Sparse adjacency (N x N) in COO
+        indices = torch.stack([row, col], dim=0)
+        values = torch.ones(indices.size(1), device=device, dtype=torch.float32)
+        A = torch.sparse_coo_tensor(indices, values, (num_nodes, num_nodes)).coalesce()
+
+        # --- Multi-source BFS vettoriale a partire da tutti i nodi 'dst' (se use_reverse) / 'src' altrimenti ---
+        # Consideriamo solo i 'destinazioni' unici per ridurre dimensione colonna
+        anchor = dst if self.use_reverse else src                   # shape [E]
+        uniq_anchor, inv_anchor = torch.unique(anchor, return_inverse=True)  # [M], [E]  (M <= num_nodes)
+        M = uniq_anchor.numel()
+
+        # Inizializza fronte: (N x M) denso boole (possiamo usare float e poi >0)
+        # F0 ha 1 in (anchor_node, anchor_col)
+        init_inds = torch.stack([uniq_anchor, torch.arange(M, device=device)], dim=0)  # [2, M]
+        init_vals = torch.ones(M, device=device, dtype=torch.float32)
+        F = torch.sparse_coo_tensor(init_inds, init_vals, (num_nodes, M)).coalesce().to_dense()  # (N,M) denso
+        F = (F > 0).to(torch.float32)
+
+        # spd per-edge, default K+1 (bucket 'far/unreachable')
+        E = src.size(0)
+        spd = torch.full((E,), K + 1, dtype=torch.long, device=device)
+        unset = torch.ones((E,), dtype=torch.bool, device=device)
+
+        # k-hop espansione: F_k = A @ F_{k-1} (propaga reachability di 1 hop per iterazione)
+        # A e F sono su device; torch.sparse.mm(A, F) è denso
+        for k in range(1, K + 1):
+            F = torch.sparse.mm(A, F)  # (N,N) x (N,M) -> (N,M)
+            F = (F > 0).to(torch.float32)  # binarizza
+
+            # Per ogni edge e=(s,d), controlla se s è raggiunto dalla colonna corrispondente a d (inv_anchor[e])
+            col_idx = inv_anchor  # [E]
+            reach = F[src, col_idx] > 0  # [E] bool
+            newly = unset & reach
+            spd[newly] = k
+            unset = unset & (~newly)
+            if not unset.any():
+                break
+
+        # Ritorna bucket di distanza: 1..K, K+1 (= non raggiunto entro K)
+        return spd
+
 
     def forward(self, x_dict, edge_index_dict):
         out_dict = {k: torch.zeros_like(v) for k, v in x_dict.items()}
@@ -94,11 +148,17 @@ class HeteroGraphormerLayerComplete(nn.Module):
             attn_scores = (Q[dst] * K[src]).sum(dim=-1) / self.head_dim**0.5
 
             # Nuovo spatial bias (batch-local)
-            spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
-            attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
+            # spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
+            # attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
 
-            bias_name = "__".join(edge_type)
-            attn_scores = attn_scores + self.edge_type_bias[bias_name]
+            # bias_name = "__".join(edge_type)
+            # attn_scores = attn_scores + self.edge_type_bias[bias_name]
+                        # --- SPD bias veloce (k-hop) ---
+            spd_bucket = self.compute_batch_spatial_bias_fast(edge_index, x_dst.size(0))   # [E] in {1..K, K+1}
+            spd_bias = self.spd_emb(spd_bucket)  # [E, H]  embedding per head
+
+            attn_scores = attn_scores + spd_bias  # broadcast OK: attn_scores [E,H]
+
 
             attn_weights = softmax(attn_scores, dst)
             attn_weights = self.dropout(attn_weights)
