@@ -120,8 +120,8 @@ class HeteroGraphormerHeteroLite(nn.Module):
             if edge_index.numel() == 0:
                 continue
             src, dst = edge_index
-            in_deg[dst_t]  += degree(dst, num_nodes=x_dict[dst_t].size(0), dtype=torch.float32, device=x_dict[dst_t].device)
-            out_deg[src_t] += degree(src, num_nodes=x_dict[src_t].size(0), dtype=torch.float32, device=x_dict[src_t].device)
+            in_deg[dst_t]  += degree(dst, num_nodes=x_dict[dst_t].size(0), dtype=torch.float32)
+            out_deg[src_t] += degree(src, num_nodes=x_dict[src_t].size(0), dtype=torch.float32)
         return in_deg, out_deg
 
     # ---------- forward ----------
