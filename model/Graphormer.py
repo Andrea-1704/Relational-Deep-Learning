@@ -94,8 +94,8 @@ class HeteroGraphormerLayerComplete(nn.Module):
             attn_scores = (Q[dst] * K[src]).sum(dim=-1) / self.head_dim**0.5
 
             # Nuovo spatial bias (batch-local)
-            #spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
-            #attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
+            spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
+            attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
 
             bias_name = "__".join(edge_type)
             attn_scores = attn_scores + self.edge_type_bias[bias_name]
