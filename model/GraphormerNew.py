@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
+import torch_geometric
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import MLP
 from torch_geometric.typing import NodeType
@@ -15,314 +16,217 @@ from torch_geometric.nn import Linear
 from torch_geometric.utils import softmax, degree
 from typing import Dict, Tuple
 
-class HeteroGraphormerLayerComplete(nn.Module):
+
+import torch
+from torch import nn, Tensor
+from torch_geometric.nn import Linear
+from torch_geometric.utils import degree
+from typing import Dict, Tuple
+
+def _etype_key(etype):  # ('user','follows','user') -> "user__follows__user"
+    return "__".join(etype)
+
+class HeteroGraphormerHeteroLite(nn.Module):
+    """
+    Heterogeneous Graphormer-style layer (lightweight, no SPD):
+      - Node-type-specific Q/K/V projections.
+      - Per-edge-type head bias + per (src_type,dst_type) head bias.
+      - Degree embeddings (log-bucket) added to node inputs (optional).
+      - Per-head degree bias on attention logits (optional).
+      - Pre-LN Transformer block: MHA(out_proj) + FFN with residuals.
+    Complexity: O(E*H) time, O(N + E) memory.
+    """
     def __init__(
         self,
         channels: int,
+        node_types,
         edge_types,
         device: str = "cuda",
         num_heads: int = 4,
         dropout: float = 0.1,
-        # SPD settings:
-        max_spd: int = 3,                # k-hop massimo
-        undirected_spd: bool = False,    # se True: SPD su grafo non diretto
-        use_reverse_spd: bool = True,    # True: distanza d->s ; False: s->d
-        enable_spd: bool = True,         # per debug: disattiva SPD
-        # Degree settings:
+        # degree encodings:
+        use_degree_input: bool = True,
+        use_degree_bias: bool = True,
         deg_max_bucket: int = 8,
-        enable_degree: bool = True,      # per debug: disattiva degree
     ):
         super().__init__()
         self.device = torch.device(device)
-        self.channels = int(channels)
-        self.num_heads = int(num_heads)
-        self.head_dim = self.channels // self.num_heads
-        assert self.channels % self.num_heads == 0, "channels must be divisible by num_heads"
+        self.C = channels
+        self.H = num_heads
+        self.Dh = channels // num_heads
+        assert channels % num_heads == 0, "channels must be divisible by num_heads"
 
-        # Proiezioni MHA
-        self.q_lin = Linear(self.channels, self.channels)
-        self.k_lin = Linear(self.channels, self.channels)
-        self.v_lin = Linear(self.channels, self.channels)
-        self.out_lin = Linear(self.channels, self.channels)
+        # --- Q/K/V projection per node type (heterogeneous) ---
+        self.q_lin = nn.ModuleDict({nt: Linear(self.C, self.C) for nt in node_types})
+        self.k_lin = nn.ModuleDict({nt: Linear(self.C, self.C) for nt in node_types})
+        self.v_lin = nn.ModuleDict({nt: Linear(self.C, self.C) for nt in node_types})
+        self.out_lin = Linear(self.C, self.C)
 
-        # FFN
+        # --- Transformer FFN ---
         self.ffn = nn.Sequential(
-            nn.Linear(self.channels, 4 * self.channels),
+            nn.Linear(self.C, 4 * self.C),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(4 * self.channels, self.channels),
+            nn.Linear(4 * self.C, self.C),
             nn.Dropout(dropout),
         )
 
-        # Norm (pre-LN)
-        self.norm1 = nn.LayerNorm(self.channels)
-        self.norm2 = nn.LayerNorm(self.channels)
+        # --- Norms (pre-LN) ---
+        self.norm1 = nn.LayerNorm(self.C)
+        self.norm2 = nn.LayerNorm(self.C)
 
         self.attn_dropout = nn.Dropout(dropout)
 
-        # Edge-type scalar bias
-        self.edge_type_bias = nn.ParameterDict({
-            "__".join(et): nn.Parameter(torch.zeros(1))
-            for et in edge_types
+        # --- Per-edge-type head bias (learnable) ---
+        self.rel_head_bias = nn.ParameterDict({
+            _etype_key(et): nn.Parameter(torch.zeros(self.H)) for et in edge_types
         })
 
-        # SPD
-        self.max_spd = int(max_spd)
-        self.undirected_spd = bool(undirected_spd)
-        self.use_reverse_spd = bool(use_reverse_spd)
-        self.enable_spd = bool(enable_spd)
-        # bucket: 1..K, K+1 => ">K/unreachable" ; 0 non usato
-        self.spd_emb = nn.Embedding(self.max_spd + 2, self.num_heads)
-        nn.init.zeros_(self.spd_emb.weight)
+        # --- Per (src_type, dst_type) head bias (learnable) ---
+        self.typepair_head_bias = nn.ParameterDict()
+        type_pairs = {(s, d) for (s, _, d) in edge_types}
+        for (s, d) in type_pairs:
+            self.typepair_head_bias[f"{s}__{d}"] = nn.Parameter(torch.zeros(self.H))
 
-        # Degree embedding (in/out, in input)
-        self.deg_max_bucket = int(deg_max_bucket)
-        self.enable_degree = bool(enable_degree)
-        self.in_deg_emb = nn.Embedding(self.deg_max_bucket + 1, self.channels)
-        self.out_deg_emb = nn.Embedding(self.deg_max_bucket + 1, self.channels)
-        nn.init.normal_(self.in_deg_emb.weight, std=0.02)
-        nn.init.normal_(self.out_deg_emb.weight, std=0.02)
+        # --- Degree encodings (shared across types; cheap & effective) ---
+        self.use_degree_input = use_degree_input
+        self.use_degree_bias  = use_degree_bias
+        self.deg_max_bucket   = int(deg_max_bucket)
+        if self.use_degree_input:
+            self.in_deg_emb  = nn.Embedding(self.deg_max_bucket + 1, self.C)
+            self.out_deg_emb = nn.Embedding(self.deg_max_bucket + 1, self.C)
+            nn.init.normal_(self.in_deg_emb.weight,  std=0.02)
+            nn.init.normal_(self.out_deg_emb.weight, std=0.02)
+
+        if self.use_degree_bias:
+            # global per-head coefficients for src out-degree / dst in-degree
+            self.alpha_head = nn.Parameter(torch.zeros(self.H))
+            self.beta_head  = nn.Parameter(torch.zeros(self.H))
 
         self.to(self.device)
 
-    # -------------------- utils --------------------
+    # ---------- utils ----------
     @staticmethod
     def _bucket_degree(d: Tensor, max_bucket: int) -> Tensor:
         d = d.to(torch.float32).clamp_min_(0)
         b = torch.floor(torch.log2(d + 1.0))
-        b = torch.clamp(b, 0, max_bucket).to(torch.long)
-        return b
+        return torch.clamp(b, 0, max_bucket).to(torch.long)
 
+    @torch.no_grad()
     def _compute_in_out_degree(self, x_dict: Dict[str, Tensor], edge_index_dict):
-        in_deg = {nt: torch.zeros(x_dict[nt].size(0), device=x_dict[nt].device) for nt in x_dict}
+        in_deg  = {nt: torch.zeros(x_dict[nt].size(0), device=x_dict[nt].device) for nt in x_dict}
         out_deg = {nt: torch.zeros(x_dict[nt].size(0), device=x_dict[nt].device) for nt in x_dict}
         for (src_t, _, dst_t), edge_index in edge_index_dict.items():
             if edge_index.numel() == 0:
                 continue
             src, dst = edge_index
-            in_deg[dst_t]  += degree(dst, num_nodes=x_dict[dst_t].size(0), dtype=torch.float32)
-            out_deg[src_t] += degree(src, num_nodes=x_dict[src_t].size(0), dtype=torch.float32)
+            in_deg[dst_t]  += degree(dst, num_nodes=x_dict[dst_t].size(0), dtype=torch.float32, device=x_dict[dst_t].device)
+            out_deg[src_t] += degree(src, num_nodes=x_dict[src_t].size(0), dtype=torch.float32, device=x_dict[src_t].device)
         return in_deg, out_deg
 
-    # -------------------- SPD globale k-hop --------------------
-    @torch.no_grad()
-    def _compute_global_spd_buckets(
-        self,
-        edge_index_dict,
-        x_dict: Dict[str, Tensor],
-    ) -> Tuple[Tensor, Dict[Tuple[str,str,str], slice]]:
-        # Offsets globali
-        node_types = list(x_dict.keys())
-        offsets = {}
-        n_acc = 0
-        for nt in node_types:
-            offsets[nt] = n_acc
-            n_acc += x_dict[nt].size(0)
-        N = n_acc
-
-        # Concat edge globali
-        gsrc_all, gdst_all = [], []
-        edge_slices = {}
-        start = 0
-        for etype, edge_index in edge_index_dict.items():
-            if edge_index.numel() == 0:
-                edge_slices[etype] = slice(start, start)  # vuoto
-                continue
-            src_t, _, dst_t = etype
-            src, dst = edge_index
-            # safety: long & device
-            src = src.to(torch.long)
-            dst = dst.to(torch.long)
-            # assert su range
-            if src.numel() > 0:
-                assert src.max().item() < x_dict[src_t].size(0), f"src index out of range for {etype}"
-            if dst.numel() > 0:
-                assert dst.max().item() < x_dict[dst_t].size(0), f"dst index out of range for {etype}"
-
-            gsrc = src + offsets[src_t]
-            gdst = dst + offsets[dst_t]
-            gsrc_all.append(gsrc)
-            gdst_all.append(gdst)
-            cnt = src.numel()
-            edge_slices[etype] = slice(start, start + cnt)
-            start += cnt
-
-        if len(gsrc_all) == 0:
-            # nessun arco nel batch
-            return torch.empty(0, dtype=torch.long, device=self.device), edge_slices
-
-        gsrc_all = torch.cat(gsrc_all, dim=0).to(self.device)
-        gdst_all = torch.cat(gdst_all, dim=0).to(self.device)
-        E_total = gsrc_all.numel()
-
-        # Direzione per SPD
-        if self.use_reverse_spd:
-            row = gdst_all
-            col = gsrc_all
-        else:
-            row = gsrc_all
-            col = gdst_all
-
-        if self.undirected_spd:
-            row = torch.cat([row, col], dim=0)
-            col = torch.cat([col, row[:row.numel()//2]], dim=0)  # <- sostituito sotto con versione corretta
-            # >>> CORREZIONE: la riga sopra è stata spesso fonte di assert;
-            # useremo subito dopo la versione corretta che aggiunge entrambe le direzioni:
-        # versione corretta: (assicura stesso num di coppie)
-        if self.undirected_spd:
-            row = torch.cat([row, col], dim=0)
-            col = torch.cat([col, row[:row.numel()//2]], dim=0)  # placeholder per compatibilità
-            # ricalcolo davvero simmetrico:
-            row = torch.cat([gsrc_all, gdst_all], dim=0) if not self.use_reverse_spd else torch.cat([gdst_all, gsrc_all], dim=0)
-            col = torch.cat([gdst_all, gsrc_all], dim=0) if not self.use_reverse_spd else torch.cat([gsrc_all, gdst_all], dim=0)
-
-        # A sparse
-        indices = torch.stack([row, col], dim=0)
-        values = torch.ones(indices.size(1), device=self.device, dtype=torch.float32)
-        A = torch.sparse_coo_tensor(indices, values, (N, N)).coalesce()
-
-        # Anchor nodes (unici)
-        anchor_nodes = gdst_all if self.use_reverse_spd else gsrc_all
-        uniq_anchor, inv_anchor = torch.unique(anchor_nodes, return_inverse=True)
-        M = uniq_anchor.numel()
-        if M == 0:
-            return torch.full((E_total,), self.max_spd + 1, dtype=torch.long, device=self.device), edge_slices
-
-        # F0 denso binario (N x M)
-        init_inds = torch.stack([uniq_anchor, torch.arange(M, device=self.device)], dim=0)
-        init_vals = torch.ones(M, device=self.device, dtype=torch.float32)
-        F = torch.sparse_coo_tensor(init_inds, init_vals, (N, M)).coalesce().to_dense()
-        F = (F > 0).to(torch.float32)
-
-        # spd predefinito
-        spd = torch.full((E_total,), self.max_spd + 1, dtype=torch.long, device=self.device)
-        unset = torch.ones((E_total,), dtype=torch.bool, device=self.device)
-
-        # k-hop
-        for k in range(1, self.max_spd + 1):
-            # F_k = A @ F_{k-1}
-            F = torch.sparse.mm(A, F)
-            F = (F > 0).to(torch.float32)
-
-            # reachability per-edge:
-            probe = gsrc_all if self.use_reverse_spd else gdst_all
-            reach = F[probe, inv_anchor] > 0  # [E_total]
-            newly = unset & reach
-            spd[newly] = k
-            unset = unset & (~newly)
-            if not unset.any():
-                break
-
-        # clamp difensivo (1..K, K+1)
-        spd = torch.clamp(spd, 1, self.max_spd + 1)
-        return spd, edge_slices
-
-    # -------------------- forward --------------------
+    # ---------- forward ----------
     def forward(self, x_dict: Dict[str, Tensor], edge_index_dict) -> Dict[str, Tensor]:
-        # allineamento device
+        # ensure device
         for nt in x_dict:
             if x_dict[nt].device != self.device:
                 x_dict[nt] = x_dict[nt].to(self.device)
 
-        # (0) degree embeddings (pre-LN)
-        if self.enable_degree:
+        # (0) degree embeddings in input (optional)
+        if self.use_degree_input or self.use_degree_bias:
             in_deg, out_deg = self._compute_in_out_degree(x_dict, edge_index_dict)
-            x_in = {}
-            for nt, x in x_dict.items():
-                in_b = self._bucket_degree(in_deg[nt], self.deg_max_bucket)
+        x_in = {}
+        for nt, x in x_dict.items():
+            if self.use_degree_input:
+                in_b  = self._bucket_degree(in_deg[nt],  self.deg_max_bucket)
                 out_b = self._bucket_degree(out_deg[nt], self.deg_max_bucket)
                 x_in[nt] = x + self.in_deg_emb(in_b) + self.out_deg_emb(out_b)
-        else:
-            x_in = x_dict
+            else:
+                x_in[nt] = x
 
-        # (1) SPD buckets globali (una volta sola)
-        if self.enable_spd:
-            spd_buckets_all, edge_slices = self._compute_global_spd_buckets(edge_index_dict, x_dict)
-        else:
-            # costruisci mappe vuote coerenti
-            total_edges = sum((edge_index.numel() // 2) for edge_index in edge_index_dict.values())
-            spd_buckets_all = torch.full((total_edges,), self.max_spd + 1, dtype=torch.long, device=self.device)
-            edge_slices = {}
-            start = 0
-            for etype, edge_index in edge_index_dict.items():
-                E_rel = edge_index.size(1) if edge_index.numel() > 0 else 0
-                edge_slices[etype] = slice(start, start + E_rel)
-                start += E_rel
-
-        # (2) Pre-LN per attenzione
+        # (1) Pre-LN for attention
         x_norm = {nt: self.norm1(x_in[nt]) for nt in x_in}
+
+        # (2) attention per edge type (sparse)
         out_attn = {nt: torch.zeros_like(x_dict[nt], device=self.device) for nt in x_dict}
 
-        # (3) loop sugli edge type
         for etype, edge_index in edge_index_dict.items():
-            src_t, _, dst_t = etype
             if edge_index.numel() == 0:
                 continue
+            src_t, _, dst_t = etype
             src, dst = edge_index
             src = src.to(torch.long).to(self.device)
             dst = dst.to(torch.long).to(self.device)
 
             N_src = x_norm[src_t].size(0)
             N_dst = x_norm[dst_t].size(0)
-            assert (src.numel() == dst.numel()), "src/dst must have same length"
             if src.numel() == 0:
                 continue
             if src.max().item() >= N_src or dst.max().item() >= N_dst:
                 raise RuntimeError(f"indices out of range in {etype}")
 
-            # proiezioni
-            Q = self.q_lin(x_norm[dst_t]).view(N_dst, self.num_heads, self.head_dim)  # [N_dst,H,d]
-            K = self.k_lin(x_norm[src_t]).view(N_src, self.num_heads, self.head_dim)  # [N_src,H,d]
-            V = self.v_lin(x_norm[src_t]).view(N_src, self.num_heads, self.head_dim)
+            # type-specific projections
+            Q = self.q_lin[dst_t](x_norm[dst_t]).view(N_dst, self.H, self.Dh)  # [N_dst,H,dh]
+            K = self.k_lin[src_t](x_norm[src_t]).view(N_src, self.H, self.Dh)  # [N_src,H,dh]
+            V = self.v_lin[src_t](x_norm[src_t]).view(N_src, self.H, self.Dh)  # [N_src,H,dh]
 
-            # gather per-edge
-            Qe = Q[dst]  # [E_rel,H,d]
-            Ke = K[src]  # [E_rel,H,d]
-            Ve = V[src]  # [E_rel,H,d]
+            Qe = Q[dst]            # [E,H,dh]
+            Ke = K[src]            # [E,H,dh]
+            Ve = V[src]            # [E,H,dh]
 
-            # logits
-            attn_scores = (Qe * Ke).sum(dim=-1) / (self.head_dim ** 0.5)  # [E_rel,H]
+            attn_scores = (Qe * Ke).sum(dim=-1) / (self.Dh ** 0.5)  # [E,H]
 
-            # SPD bias
-            sl = edge_slices[etype]
-            spd_slice = spd_buckets_all[sl] if sl.stop > sl.start else torch.empty(0, dtype=torch.long, device=self.device)
-            if spd_slice.numel() == 0:
-                spd_bias = 0.0
-            else:
-                # clamp difensivo
-                spd_slice = torch.clamp(spd_slice, 1, self.max_spd + 1)
-                spd_bias = self.spd_emb(spd_slice)  # [E_rel,H]
+            # per-edge-type head bias
+            attn_scores = attn_scores + self.rel_head_bias[_etype_key(etype)]  # broadcast [H] -> [E,H]
+            # per (src_type, dst_type) head bias
+            attn_scores = attn_scores + self.typepair_head_bias[f"{src_t}__{dst_t}"]
 
-            # edge-type scalar bias (broadcast)
-            et_bias = self.edge_type_bias["__".join(etype)]  # [1]
-
-            # somma bias
-            attn_scores = attn_scores + (spd_bias if isinstance(spd_bias, Tensor) else 0.0) + et_bias
+            # optional per-head degree bias
+            if self.use_degree_bias:
+                src_out = out_deg[src_t][src]  # [E]
+                dst_in  = in_deg[dst_t][dst]   # [E]
+                log_src = torch.log1p(src_out).unsqueeze(1)  # [E,1]
+                log_dst = torch.log1p(dst_in).unsqueeze(1)   # [E,1]
+                deg_bias = log_src * self.alpha_head.view(1, self.H) + \
+                           log_dst * self.beta_head.view(1, self.H)    # [E,H]
+                attn_scores = attn_scores + deg_bias
 
             # softmax per nodo di destinazione
-            attn_weights = softmax(attn_scores, dst)  # [E_rel,H]
+            attn_weights = torch_geometric.utils.softmax(attn_scores, dst)  # [E,H]
             attn_weights = self.attn_dropout(attn_weights)
 
             # messaggi
-            msg = Ve * attn_weights.unsqueeze(-1)     # [E_rel,H,d]
-            msg = msg.reshape(msg.size(0), self.channels)  # concat heads
-            msg = self.out_lin(msg)
+            msg = Ve * attn_weights.unsqueeze(-1)      # [E,H,dh]
+            msg = msg.reshape(msg.size(0), self.C)     # concat heads
+            msg = self.out_lin(msg)                    # out projection
 
             out_attn[dst_t].index_add_(0, dst, msg)
 
-        # (4) residuo + FFN + residuo (pre-LN anche prima di FFN)
-        y_dict = {nt: x_dict[nt] + out_attn[nt] for nt in x_dict}
-        y_norm = {nt: self.norm2(y_dict[nt]) for nt in x_dict}
-        z_dict = {nt: self.ffn(y_norm[nt]) for nt in x_dict}
+        # (3) residuo + FFN + residuo
+        y_dict  = {nt: x_dict[nt] + out_attn[nt] for nt in x_dict}
+        y_norm  = {nt: self.norm2(y_dict[nt]) for nt in x_dict}
+        z_dict  = {nt: self.ffn(y_norm[nt]) for nt in x_dict}
         out_dict = {nt: y_dict[nt] + z_dict[nt] for nt in x_dict}
-
         return out_dict
 
-class HeteroGraphormer(torch.nn.Module):
-    def __init__(self, node_types, edge_types, channels, num_layers=2, device="cuda"):
+
+class HeteroGraphormer(nn.Module):
+    def __init__(self, node_types, edge_types, channels, num_layers=2, device="cuda",
+                 num_heads=4, dropout=0.1,
+                 use_degree_input=True, use_degree_bias=True, deg_max_bucket=8):
         super().__init__()
-        self.layers = torch.nn.ModuleList([
-            HeteroGraphormerLayerComplete(channels, edge_types, device) for _ in range(num_layers)
+        self.layers = nn.ModuleList([
+            HeteroGraphormerHeteroLite(
+                channels=channels,
+                node_types=node_types,
+                edge_types=edge_types,
+                device=device,
+                num_heads=num_heads,
+                dropout=dropout,
+                use_degree_input=use_degree_input,
+                use_degree_bias=use_degree_bias,
+                deg_max_bucket=deg_max_bucket,
+            )
+            for _ in range(num_layers)
         ])
 
     def forward(self, x_dict, edge_index_dict, *args, **kwargs):
@@ -331,10 +235,10 @@ class HeteroGraphormer(torch.nn.Module):
         return x_dict
 
     def reset_parameters(self):
-        for layer in self.layers:
-            if hasattr(layer, "reset_parameters"):
-                layer.reset_parameters()
-
+        for m in self.modules():
+            if hasattr(m, "reset_parameters"):
+                try: m.reset_parameters()
+                except: pass
 
 
 
@@ -375,7 +279,14 @@ class Model(torch.nn.Module):
             edge_types=data.edge_types,
             channels=channels,
             num_layers=num_layers,
+            device="cuda",
+            num_heads=4,
+            dropout=0.1,
+            use_degree_input=True,
+            use_degree_bias=True,
+            deg_max_bucket=8,
         )
+
         self.head = MLP(
             channels,
             out_channels=out_channels,
