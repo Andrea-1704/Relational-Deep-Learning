@@ -321,7 +321,7 @@ class Model(torch.nn.Module):
             channels=channels,
             num_layers=num_layers,
             device="cuda",
-            num_heads=4,
+            num_heads=16,
             dropout=0.1,
             use_degree_bias=True,
         )
