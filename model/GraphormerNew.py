@@ -23,224 +23,265 @@ from torch_geometric.nn import Linear
 from torch_geometric.utils import degree
 from typing import Dict, Tuple
 
+import torch
+from torch import nn, Tensor
+from torch_geometric.nn import Linear
+from torch_geometric.utils import degree, softmax
+from typing import Dict, Tuple
+
 def _etype_key(etype):  # ('user','follows','user') -> "user__follows__user"
     return "__".join(etype)
 
-class HeteroGraphormerHeteroLite(nn.Module):
+class HeteroGraphormerLayerComplete(nn.Module):
     """
-    Heterogeneous Graphormer-style layer (lightweight, no SPD):
-      - Node-type-specific Q/K/V projections.
-      - Per-edge-type head bias + per (src_type,dst_type) head bias.
-      - Degree embeddings (log-bucket) added to node inputs (optional).
-      - Per-head degree bias on attention logits (optional).
-      - Pre-LN Transformer block: MHA(out_proj) + FFN with residuals.
-    Complexity: O(E*H) time, O(N + E) memory.
+    Heterogeneous Graphormer-style layer (lightweight):
+      - Q/K/V condivisi (come nel tuo codice originale), ma puoi passare a type-specific se vuoi.
+      - Per-edge-type head bias: un vettore [H] per relazione (più espressivo del tuo scalare).
+      - Time bias per head e per relazione: beta_h^(r) * (-log(1 + dt / tau^(r))).
+      - Spatial bias cheap:
+          * multirel(s,d): quante altre relazioni collegano la stessa (s,d) nel batch.
+          * reciprocity: esiste un arco d->s in QUALSIASI relazione nel batch.
+        Entrambi sono per-head (gamma_h^(r), delta_h^(r)).
+      - Degree centrality leggera (opzionale): somma scalari ai valori dopo l’aggregazione (come avevi).
+    Complessità: O(E*H); nessuna struttura N×N densa; niente NetworkX.
     """
-    def __init__(
-        self,
-        channels: int,
-        node_types,
-        edge_types,
-        device: str = "cuda",
-        num_heads: int = 4,
-        dropout: float = 0.1,
-        # degree encodings:
-        use_degree_input: bool = True,
-        use_degree_bias: bool = True,
-        deg_max_bucket: int = 8,
-    ):
+    def __init__(self, channels, edge_types, device, num_heads=4, dropout=0.1,
+                 use_degree_bias=True):
         super().__init__()
         self.device = torch.device(device)
-        self.C = channels
-        self.H = num_heads
-        self.Dh = channels // num_heads
-        assert channels % num_heads == 0, "channels must be divisible by num_heads"
+        self.num_heads = num_heads
+        self.channels = channels
+        self.head_dim = channels // num_heads
+        assert self.channels % num_heads == 0, "channels must be divisible by num_heads"
 
-        # --- Q/K/V projection per node type (heterogeneous) ---
-        self.q_lin = nn.ModuleDict({nt: Linear(self.C, self.C) for nt in node_types})
-        self.k_lin = nn.ModuleDict({nt: Linear(self.C, self.C) for nt in node_types})
-        self.v_lin = nn.ModuleDict({nt: Linear(self.C, self.C) for nt in node_types})
-        self.out_lin = Linear(self.C, self.C)
-
-        # --- Transformer FFN ---
-        self.ffn = nn.Sequential(
-            nn.Linear(self.C, 4 * self.C),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(4 * self.C, self.C),
-            nn.Dropout(dropout),
-        )
-
-        # --- Norms (pre-LN) ---
-        self.norm1 = nn.LayerNorm(self.C)
-        self.norm2 = nn.LayerNorm(self.C)
+        # Proiezioni (condivise fra tipi di nodo, come nella tua versione)
+        self.q_lin = Linear(channels, channels)
+        self.k_lin = Linear(channels, channels)
+        self.v_lin = Linear(channels, channels)
+        self.out_lin = Linear(channels, channels)
 
         self.attn_dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(channels)
 
-        # --- Per-edge-type head bias (learnable) ---
+        # --- Bias per relazione / head ---
+        # edge_type bias per-head (=> vector [H])
         self.rel_head_bias = nn.ParameterDict({
-            _etype_key(et): nn.Parameter(torch.zeros(self.H)) for et in edge_types
+            _etype_key(et): nn.Parameter(torch.zeros(num_heads))
+            for et in edge_types
         })
 
-        # --- Per (src_type, dst_type) head bias (learnable) ---
-        self.typepair_head_bias = nn.ParameterDict()
-        type_pairs = {(s, d) for (s, _, d) in edge_types}
-        for (s, d) in type_pairs:
-            self.typepair_head_bias[f"{s}__{d}"] = nn.Parameter(torch.zeros(self.H))
+        # --- Time bias per head per relazione ---
+        # beta^(r)_h e tau^(r) (tau parametrizzato con softplus per positività)
+        self.time_beta = nn.ParameterDict({
+            _etype_key(et): nn.Parameter(torch.zeros(num_heads))
+            for et in edge_types
+        })
+        self.time_tau_raw = nn.ParameterDict({
+            _etype_key(et): nn.Parameter(torch.tensor(1.0))  # softplus -> tau > 0
+            for et in edge_types
+        })
 
-        # --- Degree encodings (shared across types; cheap & effective) ---
-        self.use_degree_input = use_degree_input
-        self.use_degree_bias  = use_degree_bias
-        self.deg_max_bucket   = int(deg_max_bucket)
-        if self.use_degree_input:
-            self.in_deg_emb  = nn.Embedding(self.deg_max_bucket + 1, self.C)
-            self.out_deg_emb = nn.Embedding(self.deg_max_bucket + 1, self.C)
-            nn.init.normal_(self.in_deg_emb.weight,  std=0.02)
-            nn.init.normal_(self.out_deg_emb.weight, std=0.02)
+        # --- Spatial bias cheap per head per relazione ---
+        self.gamma_multirel = nn.ParameterDict({
+            _etype_key(et): nn.Parameter(torch.zeros(num_heads))
+            for et in edge_types
+        })
+        self.delta_recip = nn.ParameterDict({
+            _etype_key(et): nn.Parameter(torch.zeros(num_heads))
+            for et in edge_types
+        })
 
-        if self.use_degree_bias:
-            # global per-head coefficients for src out-degree / dst in-degree
-            self.alpha_head = nn.Parameter(torch.zeros(self.H))
-            self.beta_head  = nn.Parameter(torch.zeros(self.H))
+        # Degree (come avevi): opzionale
+        self.use_degree_bias = bool(use_degree_bias)
 
         self.to(self.device)
 
-    # ---------- utils ----------
-    @staticmethod
-    def _bucket_degree(d: Tensor, max_bucket: int) -> Tensor:
-        d = d.to(torch.float32).clamp_min_(0)
-        b = torch.floor(torch.log2(d + 1.0))
-        return torch.clamp(b, 0, max_bucket).to(torch.long)
-
-    @torch.no_grad()
-    def _compute_in_out_degree(self, x_dict: Dict[str, Tensor], edge_index_dict):
-        in_deg  = {nt: torch.zeros(x_dict[nt].size(0), device=x_dict[nt].device) for nt in x_dict}
-        out_deg = {nt: torch.zeros(x_dict[nt].size(0), device=x_dict[nt].device) for nt in x_dict}
+    # -------- utils: total degrees ----------
+    def compute_total_degrees(self, x_dict, edge_index_dict):
+        in_deg = {nt: torch.zeros(x_dict[nt].size(0), device=self.device) for nt in x_dict}
+        out_deg = {nt: torch.zeros(x_dict[nt].size(0), device=self.device) for nt in x_dict}
         for (src_t, _, dst_t), edge_index in edge_index_dict.items():
-            if edge_index.numel() == 0:
+            if edge_index.numel() == 0: 
                 continue
             src, dst = edge_index
             in_deg[dst_t]  += degree(dst, num_nodes=x_dict[dst_t].size(0), dtype=torch.float32)
             out_deg[src_t] += degree(src, num_nodes=x_dict[src_t].size(0), dtype=torch.float32)
-        return in_deg, out_deg
+        # somma in+out come nel tuo codice originale
+        return {nt: in_deg[nt] + out_deg[nt] for nt in x_dict}
 
-    # ---------- forward ----------
-    def forward(self, x_dict: Dict[str, Tensor], edge_index_dict) -> Dict[str, Tensor]:
-        # ensure device
+    # -------- utils: cheap spatial features built once per batch ----------
+    @torch.no_grad()
+    def _build_pair_counters(self, edge_index_dict):
+        """
+        Costruisce:
+          - pair_count[(src_t,dst_t)][(s,d)] = numero di edge types che collegano s->d
+          - has_reverse[(src_t,dst_t)][(s,d)] = True se esiste qualche relazione con d->s
+        Implementato con set/hash per O(E).
+        """
+        pair_count = {}
+        has_reverse = {}
+        # map per reverse lookup: for ogni (dst_t, src_t) mantieni set di (d,s) presenti
+        reverse_maps = {}
+
+        # 1) costruisci mappe (s,d) per TUTTI gli edge types
+        for (src_t, rel, dst_t), edge_index in edge_index_dict.items():
+            if edge_index.numel() == 0:
+                continue
+            src, dst = edge_index
+            key_sd = (src_t, dst_t)
+            if key_sd not in pair_count:
+                pair_count[key_sd] = {}
+            if (dst_t, src_t) not in reverse_maps:
+                reverse_maps[(dst_t, src_t)] = set()
+
+            # scorri una sola volta gli edge
+            s_list = src.tolist()
+            d_list = dst.tolist()
+            rev_set = reverse_maps[(dst_t, src_t)]
+            for s, d in zip(s_list, d_list):
+                # count multi-relazioni su stessa coppia (s,d)
+                pair_count[key_sd][(s, d)] = pair_count[key_sd].get((s, d), 0) + 1
+                # prepara reverse (d,s)
+                rev_set.add((d, s))
+
+        # 2) costruisci has_reverse usando le reverse_maps
+        for (src_t, rel, dst_t), edge_index in edge_index_dict.items():
+            key_sd = (src_t, dst_t)
+            if key_sd not in has_reverse:
+                has_reverse[key_sd] = set()
+            rev_lookup = reverse_maps.get((src_t, dst_t), set())
+            if edge_index.numel() == 0:
+                continue
+            src, dst = edge_index
+            for s, d in zip(src.tolist(), dst.tolist()):
+                if (s, d) in rev_lookup:
+                    has_reverse[key_sd].add((s, d))
+
+        return pair_count, has_reverse
+
+    def forward(self, x_dict: Dict[str, Tensor], edge_index_dict, time_dict: Dict[str, Tensor] = None):
+        # x_dict devices
         for nt in x_dict:
             if x_dict[nt].device != self.device:
                 x_dict[nt] = x_dict[nt].to(self.device)
 
-        # (0) degree embeddings in input (optional)
-        if self.use_degree_input or self.use_degree_bias:
-            in_deg, out_deg = self._compute_in_out_degree(x_dict, edge_index_dict)
-        x_in = {}
-        for nt, x in x_dict.items():
-            if self.use_degree_input:
-                in_b  = self._bucket_degree(in_deg[nt],  self.deg_max_bucket)
-                out_b = self._bucket_degree(out_deg[nt], self.deg_max_bucket)
-                x_in[nt] = x + self.in_deg_emb(in_b) + self.out_deg_emb(out_b)
-            else:
-                x_in[nt] = x
+        out_dict = {k: torch.zeros_like(v, device=self.device) for k, v in x_dict.items()}
 
-        # (1) Pre-LN for attention
-        x_norm = {nt: self.norm1(x_in[nt]) for nt in x_in}
+        # Precompute cheap spatial counters
+        pair_count, has_reverse = self._build_pair_counters(edge_index_dict)
 
-        # (2) attention per edge type (sparse)
-        out_attn = {nt: torch.zeros_like(x_dict[nt], device=self.device) for nt in x_dict}
+        # opzionale: degree bias come nel tuo codice
+        total_deg = self.compute_total_degrees(x_dict, edge_index_dict) if self.use_degree_bias else None
 
-        for etype, edge_index in edge_index_dict.items():
+        for edge_type, edge_index in edge_index_dict.items():
+            src_type, _, dst_type = edge_type
             if edge_index.numel() == 0:
                 continue
-            src_t, _, dst_t = etype
+
+            x_src, x_dst = x_dict[src_type], x_dict[dst_type]
             src, dst = edge_index
             src = src.to(torch.long).to(self.device)
             dst = dst.to(torch.long).to(self.device)
 
-            N_src = x_norm[src_t].size(0)
-            N_dst = x_norm[dst_t].size(0)
-            if src.numel() == 0:
-                continue
-            if src.max().item() >= N_src or dst.max().item() >= N_dst:
-                raise RuntimeError(f"indices out of range in {etype}")
+            # Proiezioni e reshape heads
+            Q = self.q_lin(x_dst).view(-1, self.num_heads, self.head_dim)  # [N_dst,H,d]
+            K = self.k_lin(x_src).view(-1, self.num_heads, self.head_dim)  # [N_src,H,d]
+            V = self.v_lin(x_src).view(-1, self.num_heads, self.head_dim)  # [N_src,H,d]
 
-            # type-specific projections
-            Q = self.q_lin[dst_t](x_norm[dst_t]).view(N_dst, self.H, self.Dh)  # [N_dst,H,dh]
-            K = self.k_lin[src_t](x_norm[src_t]).view(N_src, self.H, self.Dh)  # [N_src,H,dh]
-            V = self.v_lin[src_t](x_norm[src_t]).view(N_src, self.H, self.Dh)  # [N_src,H,dh]
+            Qe = Q[dst]  # [E,H,d]
+            Ke = K[src]  # [E,H,d]
+            Ve = V[src]  # [E,H,d]
 
-            Qe = Q[dst]            # [E,H,dh]
-            Ke = K[src]            # [E,H,dh]
-            Ve = V[src]            # [E,H,dh]
+            attn_scores = (Qe * Ke).sum(dim=-1) / (self.head_dim**0.5)  # [E,H]
 
-            attn_scores = (Qe * Ke).sum(dim=-1) / (self.Dh ** 0.5)  # [E,H]
+            # --- per-edge-type head bias ---
+            et_key = _etype_key(edge_type)
+            attn_scores = attn_scores + self.rel_head_bias[et_key]  # broadcast [H]
 
-            # per-edge-type head bias
-            attn_scores = attn_scores + self.rel_head_bias[_etype_key(etype)]  # broadcast [H] -> [E,H]
-            # per (src_type, dst_type) head bias
-            attn_scores = attn_scores + self.typepair_head_bias[f"{src_t}__{dst_t}"]
+            # --- time bias (se disponibile per i due tipi) ---
+            if time_dict is not None and (src_type in time_dict) and (dst_type in time_dict):
+                t_src_full = time_dict[src_type].to(self.device)  # [N_src]
+                t_dst_full = time_dict[dst_type].to(self.device)  # [N_dst]
+                # Assumo tensori numerici (es. unix time o step). Se sono datetime64, converti a float fuori.
+                dt = (t_dst_full[dst] - t_src_full[src]).abs().to(torch.float32) + 1e-6  # [E]
+                tau = torch.nn.functional.softplus(self.time_tau_raw[et_key]) + 1e-6     # scalar >0
+                time_term = -torch.log1p(dt / tau)                                       # [E]
+                # per-head beta^(r)
+                beta = self.time_beta[et_key].view(1, self.num_heads)                    # [1,H]
+                attn_scores = attn_scores + time_term.unsqueeze(1) * beta               # [E,H]
 
-            # optional per-head degree bias
-            if self.use_degree_bias:
-                src_out = out_deg[src_t][src]  # [E]
-                dst_in  = in_deg[dst_t][dst]   # [E]
-                log_src = torch.log1p(src_out).unsqueeze(1)  # [E,1]
-                log_dst = torch.log1p(dst_in).unsqueeze(1)   # [E,1]
-                deg_bias = log_src * self.alpha_head.view(1, self.H) + \
-                           log_dst * self.beta_head.view(1, self.H)    # [E,H]
-                attn_scores = attn_scores + deg_bias
+            # --- spatial bias cheap: multirel e reciprocità ---
+            key_sd = (src_type, dst_type)
+            # counts quante relazioni collegano la coppia (s,d) nel batch
+            counts = []
+            recips = []
+            local_pairs = pair_count.get(key_sd, {})
+            local_rec  = has_reverse.get(key_sd, set())
+            for s_i, d_i in zip(src.tolist(), dst.tolist()):
+                counts.append(local_pairs.get((s_i, d_i), 1) - 1)  # escludi la relazione corrente
+                recips.append(1 if (s_i, d_i) in local_rec else 0)
+            counts = torch.tensor(counts, dtype=torch.float32, device=self.device)  # [E]
+            recips = torch.tensor(recips, dtype=torch.float32, device=self.device)  # [E]
+
+            gamma = self.gamma_multirel[et_key].view(1, self.num_heads)  # [1,H]
+            delta = self.delta_recip[et_key].view(1, self.num_heads)     # [1,H]
+
+            if counts.numel() > 0:
+                attn_scores = attn_scores + torch.log1p(counts).unsqueeze(1) * gamma
+            if recips.numel() > 0:
+                attn_scores = attn_scores + recips.unsqueeze(1) * delta
 
             # softmax per nodo di destinazione
-            attn_weights = torch_geometric.utils.softmax(attn_scores, dst)  # [E,H]
+            attn_weights = softmax(attn_scores, dst)  # [E,H]
             attn_weights = self.attn_dropout(attn_weights)
 
             # messaggi
-            msg = Ve * attn_weights.unsqueeze(-1)      # [E,H,dh]
-            msg = msg.reshape(msg.size(0), self.C)     # concat heads
-            msg = self.out_lin(msg)                    # out projection
+            out = Ve * attn_weights.unsqueeze(-1)  # [E,H,d]
+            out = out.view(-1, self.channels)
+            out = self.out_lin(out)
 
-            out_attn[dst_t].index_add_(0, dst, msg)
+            out_dict[dst_type].index_add_(0, dst, out)
 
-        # (3) residuo + FFN + residuo
-        y_dict  = {nt: x_dict[nt] + out_attn[nt] for nt in x_dict}
-        y_norm  = {nt: self.norm2(y_dict[nt]) for nt in x_dict}
-        z_dict  = {nt: self.ffn(y_norm[nt]) for nt in x_dict}
-        out_dict = {nt: y_dict[nt] + z_dict[nt] for nt in x_dict}
+        # Degree "add-on" (come nel tuo) — opzionale e leggero
+        if self.use_degree_bias:
+            for node_type in out_dict:
+                deg_embed = total_deg[node_type].view(-1, 1).expand(-1, self.channels)
+                out_dict[node_type] += deg_embed
+
+        # Residual + layer norm
+        for node_type in out_dict:
+            out_dict[node_type] = self.norm(out_dict[node_type] + x_dict[node_type])
+
         return out_dict
 
 
 class HeteroGraphormer(nn.Module):
     def __init__(self, node_types, edge_types, channels, num_layers=2, device="cuda",
-                 num_heads=4, dropout=0.1,
-                 use_degree_input=True, use_degree_bias=True, deg_max_bucket=8):
+                 num_heads=4, dropout=0.1, use_degree_bias=True):
         super().__init__()
         self.layers = nn.ModuleList([
-            HeteroGraphormerHeteroLite(
+            HeteroGraphormerLayerComplete(
                 channels=channels,
-                node_types=node_types,
                 edge_types=edge_types,
                 device=device,
                 num_heads=num_heads,
                 dropout=dropout,
-                use_degree_input=use_degree_input,
                 use_degree_bias=use_degree_bias,
-                deg_max_bucket=deg_max_bucket,
-            )
-            for _ in range(num_layers)
+            ) for _ in range(num_layers)
         ])
 
-    def forward(self, x_dict, edge_index_dict, *args, **kwargs):
+    def forward(self, x_dict, edge_index_dict, time_dict=None, *args, **kwargs):
         for layer in self.layers:
-            x_dict = layer(x_dict, edge_index_dict)
+            x_dict = layer(x_dict, edge_index_dict, time_dict=time_dict)
         return x_dict
 
     def reset_parameters(self):
-        for m in self.modules():
-            if hasattr(m, "reset_parameters"):
-                try: m.reset_parameters()
-                except: pass
-
-
+        for layer in self.layers:
+            if hasattr(layer, "reset_parameters"):
+                try:
+                    layer.reset_parameters()
+                except:
+                    pass
 
 
 class Model(torch.nn.Module):
