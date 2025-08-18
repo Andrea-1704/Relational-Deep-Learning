@@ -380,11 +380,11 @@ class Model(torch.nn.Module):
             x_dict[node_type] = x_dict[node_type] + embedding(batch[node_type].n_id)
 
         x_dict = self.gnn(
-            x_dict,#feature of nodes
+            x_dict,  # node features
             batch.edge_index_dict,
-            batch.num_sampled_nodes_dict,
-            batch.num_sampled_edges_dict,
-        )#apply the gnn
+            time_dict=getattr(batch, "time_dict", None),  # <<<<<< aggiunto
+            # batch.num_sampled_nodes_dict, batch.num_sampled_edges_dict non servono qui
+        )
 
         return self.head(x_dict[entity_table][: seed_time.size(0)])#final prediction
 
