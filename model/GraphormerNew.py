@@ -323,9 +323,7 @@ class Model(torch.nn.Module):
             device="cuda",
             num_heads=4,
             dropout=0.1,
-            use_degree_input=True,
             use_degree_bias=True,
-            deg_max_bucket=8,
         )
 
         self.head = MLP(
