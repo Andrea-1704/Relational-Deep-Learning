@@ -125,8 +125,8 @@ early_stopping = EarlyStopping(
 )
 
 loader_dict = loader_dict_fn(
-    batch_size=64, 
-    num_neighbours=32, 
+    batch_size=512, 
+    num_neighbours=256, 
     data=data, 
     task=task,
     train_table=train_table, 
