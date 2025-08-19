@@ -79,56 +79,6 @@ class HeteroGraphormerLayerComplete(nn.Module):
         return spd  # [nD, nS] long
 
 
-    # def _attention_block(self, x_dict, edge_index_dict):
-    #     """
-    #     Multi-Head Attention 'sparse su archi':
-    #     - Proietta Q/K/V
-    #     - Aggiunge bias (spaziale + tipo di relazione) ai logit
-    #     - Softmax per-dst
-    #     - Aggrega V pesati e applica W_O (out_lin) + dropout
-    #     Ritorna un dict {node_type: [N_type, channels]} con l'output dell'attenzione.
-    #     """
-    #     H, D = self.num_heads, self.head_dim
-    #     out_dict = {nt: torch.zeros_like(x, device=self.device) for nt, x in x_dict.items()}
-
-    #     for edge_type, edge_index in edge_index_dict.items():
-    #         src_type, _, dst_type = edge_type
-    #         x_src, x_dst = x_dict[src_type], x_dict[dst_type]
-    #         src, dst = edge_index  # [E], [E]
-
-    #         # Q, K, V: [N, C] -> [N, H, D]
-    #         Q = self.q_lin(x_dst).view(-1, H, D)
-    #         K = self.k_lin(x_src).view(-1, H, D)
-    #         V = self.v_lin(x_src).view(-1, H, D)
-
-    #         # Logits: [E, H]
-    #         attn_scores = (Q[dst] * K[src]).sum(dim=-1) / (D ** 0.5)
-
-    #         # Bias spaziale (batch-local) -> [E] -> [E,1] -> broadcast su H
-    #         print(f"computing the batch spatial bias")
-    #         spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
-    #         print(f"The result of the SB è {spatial_bias_tensor}")
-    #         attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
-
-    #         # Bias per tipo di relazione (broadcast su H se scalare)
-    #         bias_name = "__".join(edge_type)
-    #         attn_scores = attn_scores + self.edge_type_bias[bias_name]
-
-    #         # Softmax per-dst e dropout
-    #         attn_weights = softmax(attn_scores, dst)        # [E, H]
-    #         attn_weights = self.dropout(attn_weights)
-
-    #         # Aggregazione: [E,H,D] -> flatten heads -> [E, C] e somma su dst
-    #         out_e = (V[src] * attn_weights.unsqueeze(-1)).view(-1, self.channels)  # [E, C]
-    #         out_dict[dst_type].index_add_(0, dst, out_e)
-
-    #     # Proiezione W_O e dropout su ogni tipo di nodo
-    #     for nt in out_dict:
-    #         out_dict[nt] = self.dropout(self.out_lin(out_dict[nt]))  # [N_nt, C]
-
-    #     return out_dict
-
-
     def forward(self, x_dict, edge_index_dict, batch_dict=None, vnode_idx_dict=None):
         """
         Pre-LN → MHA → Residual → Pre-LN → FFN → Residual
@@ -184,9 +134,9 @@ class HeteroGraphormerLayerComplete(nn.Module):
             rel_bias = self.edge_type_bias["__".join(edge_type)]  # shape [1] (scalare)
 
             # SPD bucket per tutte le coppie (dst, src): [nD, nS]
-            # spd_idx = self.compute_spd_buckets_allpairs(edge_index, nS, nD, K=self.allpairs_K)
-            # # Embedding SPD per-head: [nD, nS, H]
-            # spd_b = self.spd_bias(spd_idx).to(Q.dtype)
+            spd_idx = self.compute_spd_buckets_allpairs(edge_index, nS, nD, K=self.allpairs_K)
+            # Embedding SPD per-head: [nD, nS, H]
+            spd_b = self.spd_bias(spd_idx).to(Q.dtype)
 
             # Processa i dst a blocchi per ridurre picchi di memoria
             chunk = self.dst_chunk_size if self.dst_chunk_size is not None else nD
@@ -198,7 +148,7 @@ class HeteroGraphormerLayerComplete(nn.Module):
 
                 # Aggiungi bias relazione e SPD
                 logits = logits + rel_bias.view(1, 1, 1)          # [d, nS, H]
-                #logits = logits + spd_b[d0:d1]                    # [d, nS, H]
+                logits = logits + spd_b[d0:d1]                    # [d, nS, H]
 
                 # Flatten in lista di coppie (dst_all, src_all)
                 d = d1 - d0
