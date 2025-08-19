@@ -479,10 +479,7 @@ class GraphormerBlock(nn.Module):
         return X
 
 
-# --------------------------------------
-# Hetero Graphormer (multi-layer, shared
-# structural bias across layers)
-# --------------------------------------
+
 
 class HeteroGraphormer(nn.Module):
     def __init__(self,
@@ -526,7 +523,7 @@ class HeteroGraphormer(nn.Module):
                 seed_count: int) -> Dict[str, Tensor]:
         device = next(self.parameters()).device
 
-        # 1) I preprocess graph structure once (indices & caches)
+        #preprocess graph structure once (indices & caches)
         cache = self.bias.preprocess(
             x_dict=x_dict,
             edge_index_dict=edge_index_dict,
@@ -535,18 +532,18 @@ class HeteroGraphormer(nn.Module):
             seed_count=seed_count,
         )
 
-        # 2) I fuse nodes to a single token sequence
+        #fuse nodes to a single token sequence
         type2id = self.bias.type2id
         X, token_type, slices = fuse_x_dict(x_dict, type2id)  # [N, C], [N]
         X = X.to(device)
         token_type = token_type.to(device)
         N = X.size(0)
 
-        # 3) I attach TypeTokens (optional)
+        #attach TypeTokens (optional)
         attach_masks = None
         if self.use_type_tokens:
             T = len(self.bias.node_types)
-            # I append T tokens; their "type id" is the actual type they represent
+            #append T tokens; their "type id" is the actual type they represent
             type_ids = torch.arange(T, device=device, dtype=torch.long)
             TT = self.type_token_emb(type_ids)             # [T, C]
             X = torch.cat([X, TT], dim=0)                  # [N+T, C]
