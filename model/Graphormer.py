@@ -74,7 +74,9 @@ class HeteroGraphormerLayerComplete(nn.Module):
             attn_scores = (Q[dst] * K[src]).sum(dim=-1) / (D ** 0.5)
 
             # Bias spaziale (batch-local) -> [E] -> [E,1] -> broadcast su H
+            print(f"computing the batch spatial bias")
             spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
+            print(f"The result of the SB è {spatial_bias_tensor}")
             attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
 
             # Bias per tipo di relazione (broadcast su H se scalare)
@@ -167,48 +169,6 @@ class HeteroGraphormerLayerComplete(nn.Module):
         # Costruzione tensor di bias dallo spatial_bias
         bias_vals = [spatial_bias.get((d, s), -1.0) for s, d in zip(src.tolist(), dst.tolist())]
         return torch.tensor(bias_vals, dtype=torch.float32, device=self.device)
-
-    # def forward(self, x_dict, edge_index_dict):
-    #     out_dict = {k: torch.zeros_like(v) for k, v in x_dict.items()}
-
-    #     for edge_type, edge_index in edge_index_dict.items():
-    #         src_type, _, dst_type = edge_type
-    #         x_src, x_dst = x_dict[src_type], x_dict[dst_type]
-    #         src, dst = edge_index
-
-    #         Q = self.q_lin(x_dst).view(-1, self.num_heads, self.head_dim)
-    #         K = self.k_lin(x_src).view(-1, self.num_heads, self.head_dim)
-    #         V = self.v_lin(x_src).view(-1, self.num_heads, self.head_dim)
-
-    #         attn_scores = (Q[dst] * K[src]).sum(dim=-1) / self.head_dim**0.5
-
-    #         # Nuovo spatial bias (batch-local)
-    #         spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
-    #         attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
-
-    #         bias_name = "__".join(edge_type)
-    #         attn_scores = attn_scores + self.edge_type_bias[bias_name]
-
-    #         attn_weights = softmax(attn_scores, dst)
-    #         attn_weights = self.dropout(attn_weights)
-
-    #         out = V[src] * attn_weights.unsqueeze(-1)
-    #         out = out.view(-1, self.channels)
-
-    #         out_dict[dst_type].index_add_(0, dst, out)
-
-    #     # Aggiunta degree centrality
-    #     total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
-    #     for node_type in out_dict:
-    #         deg_embed = total_deg[node_type].view(-1, 1).expand(-1, self.channels)
-    #         out_dict[node_type] += deg_embed
-
-    #     # Residual + layer norm
-    #     for node_type in out_dict:
-    #         out_dict[node_type] = self.norm(out_dict[node_type] + x_dict[node_type])
-
-    #     return out_dict
-
 
 
 
