@@ -43,89 +43,188 @@ class HeteroGraphormerLayerComplete(nn.Module):
         self.pre_ln_attn = nn.LayerNorm(channels)
         self.pre_ln_ffn  = nn.LayerNorm(channels)
 
+        self.allpairs_K = 3  # raggio SPD (0..K, INF=K+1)
+        self.spd_bias = nn.Embedding(self.allpairs_K + 2, self.num_heads)  # per-head bias SPD
+        self.dst_chunk_size = 2048  #processa i dst a blocchi
+
+
         self.edge_type_bias = nn.ParameterDict({
             "__".join(edge_type): nn.Parameter(torch.randn(1))
             for edge_type in edge_types
         })
 
+    def compute_spd_buckets_allpairs(self, edge_index, n_src, n_dst, K=None):
+        """
+        Ritorna una matrice [n_dst, n_src] di indici SPD bucketizzati in {0..K, K+1=INF}.
+        Usa NetworkX per chiarezza. Per produzione: precompute o scrivere BFS torch-based.
+        """
+        if K is None:
+            K = self.allpairs_K
+        src, dst = edge_index
+        G = nx.Graph()
+        G.add_nodes_from(range(n_src + n_dst))
+        # connetti src_i <-> dst_j (non diretto) con offset sui dst
+        for s, d in zip(src.tolist(), dst.tolist()):
+            G.add_edge(s, n_src + d)
+
+        INF_BUCKET = K + 1
+        spd = torch.full((n_dst, n_src), INF_BUCKET, dtype=torch.long, device=self.device)
+        # BFS da ciascun dst
+        for d in range(n_dst):
+            # cutoff=K limita i cammini → costo ridotto
+            lengths = nx.single_source_shortest_path_length(G, n_src + d, cutoff=K)
+            for node, dist in lengths.items():
+                if node < n_src:  # è un nodo src
+                    spd[d, node] = min(dist, K)
+        return spd  # [nD, nS] long
+
+
+    # def _attention_block(self, x_dict, edge_index_dict):
+    #     """
+    #     Multi-Head Attention 'sparse su archi':
+    #     - Proietta Q/K/V
+    #     - Aggiunge bias (spaziale + tipo di relazione) ai logit
+    #     - Softmax per-dst
+    #     - Aggrega V pesati e applica W_O (out_lin) + dropout
+    #     Ritorna un dict {node_type: [N_type, channels]} con l'output dell'attenzione.
+    #     """
+    #     H, D = self.num_heads, self.head_dim
+    #     out_dict = {nt: torch.zeros_like(x, device=self.device) for nt, x in x_dict.items()}
+
+    #     for edge_type, edge_index in edge_index_dict.items():
+    #         src_type, _, dst_type = edge_type
+    #         x_src, x_dst = x_dict[src_type], x_dict[dst_type]
+    #         src, dst = edge_index  # [E], [E]
+
+    #         # Q, K, V: [N, C] -> [N, H, D]
+    #         Q = self.q_lin(x_dst).view(-1, H, D)
+    #         K = self.k_lin(x_src).view(-1, H, D)
+    #         V = self.v_lin(x_src).view(-1, H, D)
+
+    #         # Logits: [E, H]
+    #         attn_scores = (Q[dst] * K[src]).sum(dim=-1) / (D ** 0.5)
+
+    #         # Bias spaziale (batch-local) -> [E] -> [E,1] -> broadcast su H
+    #         print(f"computing the batch spatial bias")
+    #         spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
+    #         print(f"The result of the SB è {spatial_bias_tensor}")
+    #         attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
+
+    #         # Bias per tipo di relazione (broadcast su H se scalare)
+    #         bias_name = "__".join(edge_type)
+    #         attn_scores = attn_scores + self.edge_type_bias[bias_name]
+
+    #         # Softmax per-dst e dropout
+    #         attn_weights = softmax(attn_scores, dst)        # [E, H]
+    #         attn_weights = self.dropout(attn_weights)
+
+    #         # Aggregazione: [E,H,D] -> flatten heads -> [E, C] e somma su dst
+    #         out_e = (V[src] * attn_weights.unsqueeze(-1)).view(-1, self.channels)  # [E, C]
+    #         out_dict[dst_type].index_add_(0, dst, out_e)
+
+    #     # Proiezione W_O e dropout su ogni tipo di nodo
+    #     for nt in out_dict:
+    #         out_dict[nt] = self.dropout(self.out_lin(out_dict[nt]))  # [N_nt, C]
+
+    #     return out_dict
+
+
+    # def forward(self, x_dict, edge_index_dict, batch_dict=None, vnode_idx_dict=None):
+    #     """
+    #     Pre-LN → MHA → Residual → Pre-LN → FFN → Residual
+    #     Mantiene il tuo 'degree centrality' additivo tra MHA e residuo (come avevi),
+    #     ma ora l'attenzione è seguita da W_O + dropout. LN finale (post) non serve più
+    #     perché usiamo schema Pre-LN prima di MHA e prima di FFN.
+    #     """
+    #     # 1) Pre-LN prima del blocco di attenzione (per stabilità stile Graphormer/Pre-LN)
+    #     x_norm = {t: self.pre_ln_attn(x) for t, x in x_dict.items()}
+
+    #     # 2) MHA con bias strutturali (ritorna già proiettato con W_O)
+    #     attn_out = self._attention_block(x_norm, edge_index_dict)  # {t: [N_t, C]}
+
+    #     # 2b) (opzionale) Degree centrality additivo come nel tuo codice originale
+    #     total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
+    #     for t in attn_out:
+    #         deg_embed = total_deg[t].view(-1, 1).expand(-1, self.channels)
+    #         attn_out[t] = attn_out[t] + deg_embed
+
+    #     # 3) Residual dopo MHA
+    #     x_res = {t: x_dict[t] + attn_out[t] for t in x_dict}
+
+    #     # 4) Pre-LN prima della FFN, poi FFN + residual
+    #     x_ffn_in = {t: self.pre_ln_ffn(x_res[t]) for t in x_res}
+    #     ffn_out  = {t: self.ffn(x_ffn_in[t]) for t in x_ffn_in}
+    #     x_out    = {t: x_res[t] + ffn_out[t] for t in x_res}
+
+    #     return x_out
+
     def _attention_block(self, x_dict, edge_index_dict):
         """
-        Multi-Head Attention 'sparse su archi':
-        - Proietta Q/K/V
-        - Aggiunge bias (spaziale + tipo di relazione) ai logit
-        - Softmax per-dst
-        - Aggrega V pesati e applica W_O (out_lin) + dropout
-        Ritorna un dict {node_type: [N_type, channels]} con l'output dell'attenzione.
+        All-pairs attention per blocco (src_type, ->, dst_type):
+        - genera TUTTE le coppie (dst, src) (o chunk di dst per memoria)
+        - logits = <Q_dst, K_src>/sqrt(d) + bias_rel + bias_SPD
+        - softmax per-dst su TUTTE le sorgenti
+        - aggrega V_src pesati su ogni dst
+        - out_lin + dropout
         """
-        H, D = self.num_heads, self.head_dim
+        H, D, C = self.num_heads, self.head_dim, self.channels
         out_dict = {nt: torch.zeros_like(x, device=self.device) for nt, x in x_dict.items()}
 
         for edge_type, edge_index in edge_index_dict.items():
             src_type, _, dst_type = edge_type
             x_src, x_dst = x_dict[src_type], x_dict[dst_type]
-            src, dst = edge_index  # [E], [E]
+            nS, nD = x_src.size(0), x_dst.size(0)
 
-            # Q, K, V: [N, C] -> [N, H, D]
-            Q = self.q_lin(x_dst).view(-1, H, D)
-            K = self.k_lin(x_src).view(-1, H, D)
-            V = self.v_lin(x_src).view(-1, H, D)
+            # Proiezioni: [N, C] -> [N, H, D]
+            K = self.k_lin(x_src).view(nS, H, D)
+            V = self.v_lin(x_src).view(nS, H, D)
+            Q = self.q_lin(x_dst).view(nD, H, D)
 
-            # Logits: [E, H]
-            attn_scores = (Q[dst] * K[src]).sum(dim=-1) / (D ** 0.5)
+            # Bias relazione (broadcast su H se scalare)
+            rel_bias = self.edge_type_bias["__".join(edge_type)]  # shape [1] (scalare)
 
-            # Bias spaziale (batch-local) -> [E] -> [E,1] -> broadcast su H
-            print(f"computing the batch spatial bias")
-            spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
-            print(f"The result of the SB è {spatial_bias_tensor}")
-            attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
+            # SPD bucket per tutte le coppie (dst, src): [nD, nS]
+            # spd_idx = self.compute_spd_buckets_allpairs(edge_index, nS, nD, K=self.allpairs_K)
+            # # Embedding SPD per-head: [nD, nS, H]
+            # spd_b = self.spd_bias(spd_idx).to(Q.dtype)
 
-            # Bias per tipo di relazione (broadcast su H se scalare)
-            bias_name = "__".join(edge_type)
-            attn_scores = attn_scores + self.edge_type_bias[bias_name]
+            # Processa i dst a blocchi per ridurre picchi di memoria
+            chunk = self.dst_chunk_size if self.dst_chunk_size is not None else nD
+            for d0 in range(0, nD, chunk):
+                d1 = min(d0 + chunk, nD)
+                Qc = Q[d0:d1]                         # [d, H, D]
+                # logits densi all-pairs: [d, nS, H] = einsum_i,j,h (Q⋅K)
+                logits = torch.einsum("i h d, j h d -> i j h", Qc, K) / (D ** 0.5)
 
-            # Softmax per-dst e dropout
-            attn_weights = softmax(attn_scores, dst)        # [E, H]
-            attn_weights = self.dropout(attn_weights)
+                # Aggiungi bias relazione e SPD
+                logits = logits + rel_bias.view(1, 1, 1)          # [d, nS, H]
+                #logits = logits + spd_b[d0:d1]                    # [d, nS, H]
 
-            # Aggregazione: [E,H,D] -> flatten heads -> [E, C] e somma su dst
-            out_e = (V[src] * attn_weights.unsqueeze(-1)).view(-1, self.channels)  # [E, C]
-            out_dict[dst_type].index_add_(0, dst, out_e)
+                # Flatten in lista di coppie (dst_all, src_all)
+                d = d1 - d0
+                # Ordine: per ogni dst (d0..d1), tutti i src (0..nS-1)
+                dst_all = torch.arange(d0, d1, device=self.device).repeat_interleave(nS)  # [d*nS]
+                src_all = torch.arange(nS, device=self.device).repeat(d)                  # [d*nS]
 
-        # Proiezione W_O e dropout su ogni tipo di nodo
+                logits_flat = logits.reshape(d * nS, H)     # [d*nS, H]
+
+                # Softmax per-dst su tutte le sorgenti
+                attn = softmax(logits_flat, dst_all)        # [d*nS, H]
+                attn = self.dropout(attn)
+
+                # Aggregazione: V[src_all]: [d*nS, H, D] → pesa con attn → [d*nS, C]
+                V_pairs = V[src_all]                        # [d*nS, H, D]
+                out_e = (V_pairs * attn.unsqueeze(-1)).reshape(-1, C)  # [d*nS, C]
+
+                # Somma su ciascun dst (index_add_)
+                out_dict[dst_type].index_add_(0, dst_all, out_e)
+
+        # Proiezione W_O + dropout finale per ogni type
         for nt in out_dict:
             out_dict[nt] = self.dropout(self.out_lin(out_dict[nt]))  # [N_nt, C]
 
         return out_dict
 
-
-    def forward(self, x_dict, edge_index_dict, batch_dict=None, vnode_idx_dict=None):
-        """
-        Pre-LN → MHA → Residual → Pre-LN → FFN → Residual
-        Mantiene il tuo 'degree centrality' additivo tra MHA e residuo (come avevi),
-        ma ora l'attenzione è seguita da W_O + dropout. LN finale (post) non serve più
-        perché usiamo schema Pre-LN prima di MHA e prima di FFN.
-        """
-        # 1) Pre-LN prima del blocco di attenzione (per stabilità stile Graphormer/Pre-LN)
-        x_norm = {t: self.pre_ln_attn(x) for t, x in x_dict.items()}
-
-        # 2) MHA con bias strutturali (ritorna già proiettato con W_O)
-        attn_out = self._attention_block(x_norm, edge_index_dict)  # {t: [N_t, C]}
-
-        # 2b) (opzionale) Degree centrality additivo come nel tuo codice originale
-        total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
-        for t in attn_out:
-            deg_embed = total_deg[t].view(-1, 1).expand(-1, self.channels)
-            attn_out[t] = attn_out[t] + deg_embed
-
-        # 3) Residual dopo MHA
-        x_res = {t: x_dict[t] + attn_out[t] for t in x_dict}
-
-        # 4) Pre-LN prima della FFN, poi FFN + residual
-        x_ffn_in = {t: self.pre_ln_ffn(x_res[t]) for t in x_res}
-        ffn_out  = {t: self.ffn(x_ffn_in[t]) for t in x_ffn_in}
-        x_out    = {t: x_res[t] + ffn_out[t] for t in x_res}
-
-        return x_out
 
 
     def compute_total_degrees(self, x_dict, edge_index_dict):
