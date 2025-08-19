@@ -32,6 +32,17 @@ class HeteroGraphormerLayerComplete(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(channels)
 
+        self.ffn = nn.Sequential(
+            nn.LayerNorm(channels),
+            nn.Linear(channels, channels),
+            nn.GELU(),
+            nn.Linear(channels, channels),
+            nn.Dropout(dropout),
+        )
+
+        self.pre_ln_attn = nn.LayerNorm(channels)
+        self.pre_ln_ffn  = nn.LayerNorm(channels)
+
         self.edge_type_bias = nn.ParameterDict({
             "__".join(edge_type): nn.Parameter(torch.randn(1))
             for edge_type in edge_types
