@@ -129,34 +129,34 @@ class HeteroGraphormerLayerComplete(nn.Module):
     #     return out_dict
 
 
-    # def forward(self, x_dict, edge_index_dict, batch_dict=None, vnode_idx_dict=None):
-    #     """
-    #     Pre-LN → MHA → Residual → Pre-LN → FFN → Residual
-    #     Mantiene il tuo 'degree centrality' additivo tra MHA e residuo (come avevi),
-    #     ma ora l'attenzione è seguita da W_O + dropout. LN finale (post) non serve più
-    #     perché usiamo schema Pre-LN prima di MHA e prima di FFN.
-    #     """
-    #     # 1) Pre-LN prima del blocco di attenzione (per stabilità stile Graphormer/Pre-LN)
-    #     x_norm = {t: self.pre_ln_attn(x) for t, x in x_dict.items()}
+    def forward(self, x_dict, edge_index_dict, batch_dict=None, vnode_idx_dict=None):
+        """
+        Pre-LN → MHA → Residual → Pre-LN → FFN → Residual
+        Mantiene il tuo 'degree centrality' additivo tra MHA e residuo (come avevi),
+        ma ora l'attenzione è seguita da W_O + dropout. LN finale (post) non serve più
+        perché usiamo schema Pre-LN prima di MHA e prima di FFN.
+        """
+        # 1) Pre-LN prima del blocco di attenzione (per stabilità stile Graphormer/Pre-LN)
+        x_norm = {t: self.pre_ln_attn(x) for t, x in x_dict.items()}
 
-    #     # 2) MHA con bias strutturali (ritorna già proiettato con W_O)
-    #     attn_out = self._attention_block(x_norm, edge_index_dict)  # {t: [N_t, C]}
+        # 2) MHA con bias strutturali (ritorna già proiettato con W_O)
+        attn_out = self._attention_block(x_norm, edge_index_dict)  # {t: [N_t, C]}
 
-    #     # 2b) (opzionale) Degree centrality additivo come nel tuo codice originale
-    #     total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
-    #     for t in attn_out:
-    #         deg_embed = total_deg[t].view(-1, 1).expand(-1, self.channels)
-    #         attn_out[t] = attn_out[t] + deg_embed
+        # 2b) (opzionale) Degree centrality additivo come nel tuo codice originale
+        total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
+        for t in attn_out:
+            deg_embed = total_deg[t].view(-1, 1).expand(-1, self.channels)
+            attn_out[t] = attn_out[t] + deg_embed
 
-    #     # 3) Residual dopo MHA
-    #     x_res = {t: x_dict[t] + attn_out[t] for t in x_dict}
+        # 3) Residual dopo MHA
+        x_res = {t: x_dict[t] + attn_out[t] for t in x_dict}
 
-    #     # 4) Pre-LN prima della FFN, poi FFN + residual
-    #     x_ffn_in = {t: self.pre_ln_ffn(x_res[t]) for t in x_res}
-    #     ffn_out  = {t: self.ffn(x_ffn_in[t]) for t in x_ffn_in}
-    #     x_out    = {t: x_res[t] + ffn_out[t] for t in x_res}
+        # 4) Pre-LN prima della FFN, poi FFN + residual
+        x_ffn_in = {t: self.pre_ln_ffn(x_res[t]) for t in x_res}
+        ffn_out  = {t: self.ffn(x_ffn_in[t]) for t in x_ffn_in}
+        x_out    = {t: x_res[t] + ffn_out[t] for t in x_res}
 
-    #     return x_out
+        return x_out
 
     def _attention_block(self, x_dict, edge_index_dict):
         """
