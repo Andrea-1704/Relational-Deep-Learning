@@ -51,6 +51,10 @@ def train2():
     val_table = task.get_table("val") #date  driverId  qualifying
     test_table = task.get_table("test") # date  driverId
 
+    print(train_table)
+    target_table = "studies"
+    
+
     out_channels = 1
     loss_fn = L1Loss()
     tune_metric = "mae"
