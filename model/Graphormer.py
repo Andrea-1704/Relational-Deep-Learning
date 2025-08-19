@@ -48,6 +48,84 @@ class HeteroGraphormerLayerComplete(nn.Module):
             for edge_type in edge_types
         })
 
+    def _attention_block(self, x_dict, edge_index_dict):
+        """
+        Multi-Head Attention 'sparse su archi':
+        - Proietta Q/K/V
+        - Aggiunge bias (spaziale + tipo di relazione) ai logit
+        - Softmax per-dst
+        - Aggrega V pesati e applica W_O (out_lin) + dropout
+        Ritorna un dict {node_type: [N_type, channels]} con l'output dell'attenzione.
+        """
+        H, D = self.num_heads, self.head_dim
+        out_dict = {nt: torch.zeros_like(x, device=self.device) for nt, x in x_dict.items()}
+
+        for edge_type, edge_index in edge_index_dict.items():
+            src_type, _, dst_type = edge_type
+            x_src, x_dst = x_dict[src_type], x_dict[dst_type]
+            src, dst = edge_index  # [E], [E]
+
+            # Q, K, V: [N, C] -> [N, H, D]
+            Q = self.q_lin(x_dst).view(-1, H, D)
+            K = self.k_lin(x_src).view(-1, H, D)
+            V = self.v_lin(x_src).view(-1, H, D)
+
+            # Logits: [E, H]
+            attn_scores = (Q[dst] * K[src]).sum(dim=-1) / (D ** 0.5)
+
+            # Bias spaziale (batch-local) -> [E] -> [E,1] -> broadcast su H
+            spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
+            attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
+
+            # Bias per tipo di relazione (broadcast su H se scalare)
+            bias_name = "__".join(edge_type)
+            attn_scores = attn_scores + self.edge_type_bias[bias_name]
+
+            # Softmax per-dst e dropout
+            attn_weights = softmax(attn_scores, dst)        # [E, H]
+            attn_weights = self.dropout(attn_weights)
+
+            # Aggregazione: [E,H,D] -> flatten heads -> [E, C] e somma su dst
+            out_e = (V[src] * attn_weights.unsqueeze(-1)).view(-1, self.channels)  # [E, C]
+            out_dict[dst_type].index_add_(0, dst, out_e)
+
+        # Proiezione W_O e dropout su ogni tipo di nodo
+        for nt in out_dict:
+            out_dict[nt] = self.dropout(self.out_lin(out_dict[nt]))  # [N_nt, C]
+
+        return out_dict
+
+
+    def forward(self, x_dict, edge_index_dict, batch_dict=None, vnode_idx_dict=None):
+        """
+        Pre-LN → MHA → Residual → Pre-LN → FFN → Residual
+        Mantiene il tuo 'degree centrality' additivo tra MHA e residuo (come avevi),
+        ma ora l'attenzione è seguita da W_O + dropout. LN finale (post) non serve più
+        perché usiamo schema Pre-LN prima di MHA e prima di FFN.
+        """
+        # 1) Pre-LN prima del blocco di attenzione (per stabilità stile Graphormer/Pre-LN)
+        x_norm = {t: self.pre_ln_attn(x) for t, x in x_dict.items()}
+
+        # 2) MHA con bias strutturali (ritorna già proiettato con W_O)
+        attn_out = self._attention_block(x_norm, edge_index_dict)  # {t: [N_t, C]}
+
+        # 2b) (opzionale) Degree centrality additivo come nel tuo codice originale
+        total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
+        for t in attn_out:
+            deg_embed = total_deg[t].view(-1, 1).expand(-1, self.channels)
+            attn_out[t] = attn_out[t] + deg_embed
+
+        # 3) Residual dopo MHA
+        x_res = {t: x_dict[t] + attn_out[t] for t in x_dict}
+
+        # 4) Pre-LN prima della FFN, poi FFN + residual
+        x_ffn_in = {t: self.pre_ln_ffn(x_res[t]) for t in x_res}
+        ffn_out  = {t: self.ffn(x_ffn_in[t]) for t in x_ffn_in}
+        x_out    = {t: x_res[t] + ffn_out[t] for t in x_res}
+
+        return x_out
+
+
     def compute_total_degrees(self, x_dict, edge_index_dict):
         device = self.device
         in_deg = defaultdict(lambda: torch.zeros(0, device=device))
@@ -90,46 +168,46 @@ class HeteroGraphormerLayerComplete(nn.Module):
         bias_vals = [spatial_bias.get((d, s), -1.0) for s, d in zip(src.tolist(), dst.tolist())]
         return torch.tensor(bias_vals, dtype=torch.float32, device=self.device)
 
-    def forward(self, x_dict, edge_index_dict):
-        out_dict = {k: torch.zeros_like(v) for k, v in x_dict.items()}
+    # def forward(self, x_dict, edge_index_dict):
+    #     out_dict = {k: torch.zeros_like(v) for k, v in x_dict.items()}
 
-        for edge_type, edge_index in edge_index_dict.items():
-            src_type, _, dst_type = edge_type
-            x_src, x_dst = x_dict[src_type], x_dict[dst_type]
-            src, dst = edge_index
+    #     for edge_type, edge_index in edge_index_dict.items():
+    #         src_type, _, dst_type = edge_type
+    #         x_src, x_dst = x_dict[src_type], x_dict[dst_type]
+    #         src, dst = edge_index
 
-            Q = self.q_lin(x_dst).view(-1, self.num_heads, self.head_dim)
-            K = self.k_lin(x_src).view(-1, self.num_heads, self.head_dim)
-            V = self.v_lin(x_src).view(-1, self.num_heads, self.head_dim)
+    #         Q = self.q_lin(x_dst).view(-1, self.num_heads, self.head_dim)
+    #         K = self.k_lin(x_src).view(-1, self.num_heads, self.head_dim)
+    #         V = self.v_lin(x_src).view(-1, self.num_heads, self.head_dim)
 
-            attn_scores = (Q[dst] * K[src]).sum(dim=-1) / self.head_dim**0.5
+    #         attn_scores = (Q[dst] * K[src]).sum(dim=-1) / self.head_dim**0.5
 
-            # Nuovo spatial bias (batch-local)
-            spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
-            attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
+    #         # Nuovo spatial bias (batch-local)
+    #         spatial_bias_tensor = self.compute_batch_spatial_bias(edge_index, x_dst.size(0))
+    #         attn_scores = attn_scores + spatial_bias_tensor.unsqueeze(-1)
 
-            bias_name = "__".join(edge_type)
-            attn_scores = attn_scores + self.edge_type_bias[bias_name]
+    #         bias_name = "__".join(edge_type)
+    #         attn_scores = attn_scores + self.edge_type_bias[bias_name]
 
-            attn_weights = softmax(attn_scores, dst)
-            attn_weights = self.dropout(attn_weights)
+    #         attn_weights = softmax(attn_scores, dst)
+    #         attn_weights = self.dropout(attn_weights)
 
-            out = V[src] * attn_weights.unsqueeze(-1)
-            out = out.view(-1, self.channels)
+    #         out = V[src] * attn_weights.unsqueeze(-1)
+    #         out = out.view(-1, self.channels)
 
-            out_dict[dst_type].index_add_(0, dst, out)
+    #         out_dict[dst_type].index_add_(0, dst, out)
 
-        # Aggiunta degree centrality
-        total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
-        for node_type in out_dict:
-            deg_embed = total_deg[node_type].view(-1, 1).expand(-1, self.channels)
-            out_dict[node_type] += deg_embed
+    #     # Aggiunta degree centrality
+    #     total_deg = self.compute_total_degrees(x_dict, edge_index_dict)
+    #     for node_type in out_dict:
+    #         deg_embed = total_deg[node_type].view(-1, 1).expand(-1, self.channels)
+    #         out_dict[node_type] += deg_embed
 
-        # Residual + layer norm
-        for node_type in out_dict:
-            out_dict[node_type] = self.norm(out_dict[node_type] + x_dict[node_type])
+    #     # Residual + layer norm
+    #     for node_type in out_dict:
+    #         out_dict[node_type] = self.norm(out_dict[node_type] + x_dict[node_type])
 
-        return out_dict
+    #     return out_dict
 
 
 
