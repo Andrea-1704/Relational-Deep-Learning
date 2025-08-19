@@ -94,7 +94,7 @@ data, col_stats_dict = make_pkey_fkey_graph(
 
 
 # pre training phase with the VGAE
-channels = 128
+channels = 32
 
 model = Model(
     data=data,
@@ -125,8 +125,8 @@ early_stopping = EarlyStopping(
 )
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=16, 
+    num_neighbours=8, 
     data=data, 
     task=task,
     train_table=train_table, 

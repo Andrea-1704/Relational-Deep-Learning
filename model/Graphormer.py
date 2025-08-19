@@ -47,8 +47,6 @@ class HeteroGraphormerLayerComplete(nn.Module):
         self.spd_bias = nn.Embedding(self.allpairs_K + 2, self.num_heads)  # per-head bias SPD
         self.dst_chunk_size = 2048  #processa i dst a blocchi
 
-        self.num_random_src = 256
-        self.spd_bias = nn.Embedding(2, self.num_heads)
 
         self.edge_type_bias = nn.ParameterDict({
             "__".join(edge_type): nn.Parameter(torch.randn(1))
@@ -161,88 +159,69 @@ class HeteroGraphormerLayerComplete(nn.Module):
         return x_out
 
     def _attention_block(self, x_dict, edge_index_dict):
+        """
+        All-pairs attention per blocco (src_type, ->, dst_type):
+        - genera TUTTE le coppie (dst, src) (o chunk di dst per memoria)
+        - logits = <Q_dst, K_src>/sqrt(d) + bias_rel + bias_SPD
+        - softmax per-dst su TUTTE le sorgenti
+        - aggrega V_src pesati su ogni dst
+        - out_lin + dropout
+        """
         H, D, C = self.num_heads, self.head_dim, self.channels
-        device = self.device
-        out_dict = {nt: torch.zeros_like(x, device=device) for nt, x in x_dict.items()}
+        out_dict = {nt: torch.zeros_like(x, device=self.device) for nt, x in x_dict.items()}
 
         for edge_type, edge_index in edge_index_dict.items():
             src_type, _, dst_type = edge_type
             x_src, x_dst = x_dict[src_type], x_dict[dst_type]
             nS, nD = x_src.size(0), x_dst.size(0)
-            if nS == 0 or nD == 0:
-                continue
 
-            # Proiezioni
-            K = self.k_lin(x_src).view(nS, H, D)  # [nS,H,D]
+            # Proiezioni: [N, C] -> [N, H, D]
+            K = self.k_lin(x_src).view(nS, H, D)
             V = self.v_lin(x_src).view(nS, H, D)
-            Q = self.q_lin(x_dst).view(nD, H, D)  # [nD,H,D]
+            Q = self.q_lin(x_dst).view(nD, H, D)
 
-            rel_bias = self.edge_type_bias["__".join(edge_type)].to(Q.dtype)  # scalare
+            # Bias relazione (broadcast su H se scalare)
+            rel_bias = self.edge_type_bias["__".join(edge_type)]  # shape [1] (scalare)
 
-            # Costruisci vicini per-dst (ordinando per dst)
-            src, dst = edge_index
-            perm = torch.argsort(dst)
-            dst_sorted = dst[perm]
-            src_sorted = src[perm]
-            uniq, counts = torch.unique_consecutive(dst_sorted, return_counts=True)
-            ptr = torch.cumsum(counts, dim=0)
-            ptr0 = torch.cat([torch.zeros(1, dtype=torch.long, device=ptr.device), ptr[:-1]])
+            # SPD bucket per tutte le coppie (dst, src): [nD, nS]
+            # spd_idx = self.compute_spd_buckets_allpairs(edge_index, nS, nD, K=self.allpairs_K)
+            # # Embedding SPD per-head: [nD, nS, H]
+            # spd_b = self.spd_bias(spd_idx).to(Q.dtype)
 
-            # per ogni dst effettivo, prepara il set candidati: vicini + negativi random
-            # NB: iteriamo solo sui dst che compaiono in edge_index; per gli altri campiona solo negativi
-            # (puoi includere tutti i dst con 0 vicini se vuoi "vero" all-pairs campionato)
-            valid_dst = uniq
-            for di, d_idx in enumerate(valid_dst.tolist()):
-                start, end = ptr0[di].item(), ptr[di].item()
-                neigh = src_sorted[start:end]                 # tensor [deg(d)]
-                deg_d = neigh.numel()
+            # Processa i dst a blocchi per ridurre picchi di memoria
+            chunk = self.dst_chunk_size if self.dst_chunk_size is not None else nD
+            for d0 in range(0, nD, chunk):
+                d1 = min(d0 + chunk, nD)
+                Qc = Q[d0:d1]                         # [d, H, D]
+                # logits densi all-pairs: [d, nS, H] = einsum_i,j,h (Q⋅K)
+                logits = torch.einsum("i h d, j h d -> i j h", Qc, K) / (D ** 0.5)
 
-                # scelgo negativi senza replacement
-                neg_budget = max(self.num_random_src - deg_d, 0)
-                if neg_budget > 0:
-                    # maschera per escludere i vicini
-                    mask = torch.ones(nS, dtype=torch.bool, device=device)
-                    mask[neigh] = False
-                    # se pochi candidati disponibili, riduci budget
-                    cand = mask.nonzero(as_tuple=False).view(-1)
-                    if cand.numel() > 0:
-                        if cand.numel() <= neg_budget:
-                            neg = cand
-                        else:
-                            idx = torch.randint(0, cand.numel(), (neg_budget,), device=device)
-                            neg = cand[idx]
-                    else:
-                        neg = torch.empty(0, dtype=torch.long, device=device)
-                    cand_src = torch.cat([neigh, neg], dim=0)          # [S_d]
-                    # SPD bucket: 1 per vicini, 0 (INF) per negativi
-                    spd_idx = torch.cat([
-                        torch.ones(deg_d, dtype=torch.long, device=device),
-                        torch.zeros(neg.numel(), dtype=torch.long, device=device)
-                    ], dim=0)
-                else:
-                    cand_src = neigh
-                    spd_idx = torch.ones(deg_d, dtype=torch.long, device=device)
+                # Aggiungi bias relazione e SPD
+                logits = logits + rel_bias.view(1, 1, 1)          # [d, nS, H]
+                #logits = logits + spd_b[d0:d1]                    # [d, nS, H]
 
-                if cand_src.numel() == 0:
-                    continue
+                # Flatten in lista di coppie (dst_all, src_all)
+                d = d1 - d0
+                # Ordine: per ogni dst (d0..d1), tutti i src (0..nS-1)
+                dst_all = torch.arange(d0, d1, device=self.device).repeat_interleave(nS)  # [d*nS]
+                src_all = torch.arange(nS, device=self.device).repeat(d)                  # [d*nS]
 
-                # Logits: [S_d,H] = (Q[d]*K[cand]) dot / sqrt(D)
-                q = Q[d_idx]                              # [H,D]
-                kc = K[cand_src]                          # [S_d,H,D]
-                logits = (q.unsqueeze(0) * kc).sum(-1) / (D ** 0.5)  # [S_d,H]
+                logits_flat = logits.reshape(d * nS, H)     # [d*nS, H]
 
-                # + bias relazione + bias SPD
-                logits = logits + rel_bias.view(1, 1)
-                logits = logits + self.spd_bias(spd_idx)  # [S_d,H]
-
-                # Softmax su cand_src per il singolo dst
-                attn = torch.softmax(logits, dim=0)       # [S_d,H]
+                # Softmax per-dst su tutte le sorgenti
+                attn = softmax(logits_flat, dst_all)        # [d*nS, H]
                 attn = self.dropout(attn)
 
-                # Aggregazione: sum_s attn * V[s]
-                vc = V[cand_src]                           # [S_d,H,D]
-                out_d = (vc * attn.unsqueeze(-1)).sum(dim=0)  # [H,D]
-                out_dict[dst_type][d_idx] += self.dropout(self.out_lin(out_d.reshape(C)))
+                # Aggregazione: V[src_all]: [d*nS, H, D] → pesa con attn → [d*nS, C]
+                V_pairs = V[src_all]                        # [d*nS, H, D]
+                out_e = (V_pairs * attn.unsqueeze(-1)).reshape(-1, C)  # [d*nS, C]
+
+                # Somma su ciascun dst (index_add_)
+                out_dict[dst_type].index_add_(0, dst_all, out_e)
+
+        # Proiezione W_O + dropout finale per ogni type
+        for nt in out_dict:
+            out_dict[nt] = self.dropout(self.out_lin(out_dict[nt]))  # [N_nt, C]
 
         return out_dict
 
