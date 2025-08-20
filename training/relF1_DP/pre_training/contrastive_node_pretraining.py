@@ -130,12 +130,13 @@ loader_dict = loader_dict_fn(
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 hidden_dim = channels
+entity_table = "drivers"
 # 1) PRETRAIN DGI (in-domain, solo train)
 model = utility.pretrain_dgi(
     model=model,
     data=data,
     loader=loader_dict["train"],        # assicurati sia SOLO TRAIN (≤ T_train)
-    entity_table=train_table,
+    entity_table=entity_table,
     hidden_dim=hidden_dim,
     device=device,
     epochs=20,
@@ -151,7 +152,7 @@ val_mae_lp, test_mae_lp = utility.run_linear_probe(
     train_loader=loader_dict["train_eval"],  # loader "eval" senza shuffle, o riusa train con shuffle=False
     val_loader=loader_dict["val"],
     test_loader=loader_dict["test"],
-    entity_table=train_table,
+    entity_table=entity_table,
     hidden_dim=hidden_dim,
     device=device,
     lr=1e-3,
@@ -165,7 +166,7 @@ val_mae_ft, test_mae_ft = utility.fine_tune_supervised(
     train_loader=loader_dict["train"],
     val_loader=loader_dict["val"],
     test_loader=loader_dict["test"],
-    entity_table=train_table,
+    entity_table=entity_table,
     device=device,
     lr=5e-4,
     weight_decay=0.0,
