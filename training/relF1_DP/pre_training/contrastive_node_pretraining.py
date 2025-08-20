@@ -127,17 +127,52 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-
+num_neighbours = 256
+batch_size = 512
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 hidden_dim = channels
 entity_table = "drivers"
+
+#costruzione loader di pre trai
+
+# Recupera i seed del TRAIN, i tempi dei seed e la transform dal task
+input_nodes_tr, input_time_tr, transform_tr = get_node_train_table_input(task)  
+assert isinstance(entity_table, str), f"entity_table must be str, got {type(entity_table)}"
+
+from torch_geometric.loader import NeighborLoader
+
+train_loader_pretrain = NeighborLoader(
+    data,                                        # HeteroData materializzato
+    input_nodes=(entity_table, input_nodes_tr),  # (node_type, tensor di seed ids)
+    input_time=input_time_tr,                    # <-- CRITICO: abilita batch.seed_time
+    transform=transform_tr,                      # <-- CRITICO: annota mapping nodo→seed nel batch
+    time_attr="time",                            # attributo temporale nei NodeStorage
+    temporal_strategy="uniform",                 # sampler time-aware
+    num_neighbors=[num_neighbours, num_neighbours], 
+    batch_size=batch_size,
+    shuffle=True,
+)
+
+
+#per debug:
+batch = next(iter(train_loader_pretrain))
+print("has seed_time:", hasattr(batch, "seed_time"))
+print("seed_time shape:", getattr(batch, "seed_time", None).shape if hasattr(batch, "seed_time") else None)
+print("entity time present:", hasattr(batch[entity_table], "time"))
+# Alcune pipeline aggiungono anche un indice per nodo→seed:
+print("has per-type seed mapping (common names):",
+      hasattr(batch[entity_table], "seed_time_index"),
+      hasattr(batch[entity_table], "batch"))
+
+
+
 # 1) PRETRAIN DGI (in-domain, solo train)
 model = utility.pretrain_dgi(
     model=model,
     data=data,
-    loader=loader_dict["train"],        # assicurati sia SOLO TRAIN (≤ T_train)
+    loader=train_loader_pretrain,        
     entity_table=entity_table,
-    hidden_dim=hidden_dim,
+    hidden_dim=channels,
     device=device,
     epochs=20,
     lr=1e-3,
