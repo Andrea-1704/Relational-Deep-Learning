@@ -108,6 +108,111 @@ def _ensure_temp_adapters(model: nn.Module, x_dict: Dict[str, torch.Tensor],
             rel_time_dict[ntype] = model._temp_adapter[key](rel_time_dict[ntype])
 
 
+
+from typing import Dict, Optional, Tuple
+import torch
+import torch.nn as nn
+
+
+def extract_temporal_inputs(batch, entity_table: str) -> Tuple[torch.Tensor,
+                                                               Dict[str, torch.Tensor],
+                                                               Dict[str, torch.Tensor]]:
+    """
+    Estrae gli argomenti richiesti da HeteroTemporalEncoder:
+      - seed_time: Tensor [B] = tempi dei seed (B = batch_size dei seed)
+      - time_dict: per ntype, Tensor [N_ntype] = tempi dei nodi in mini-batch
+      - batch_dict: per ntype, Tensor [N_ntype] con valori in {0..B-1} che mappa
+                    ogni nodo al seed di riferimento per il calcolo del tempo relativo.
+
+    Solleva errori espliciti se non trova gli attributi necessari, così evitiamo
+    errori silenti e comportamenti non riproducibili.
+    """
+    # 1) seed_time: prima prova attributi standard, poi fallback deterministico.
+    seed_time = getattr(batch, "seed_time", None)
+    if seed_time is None:
+        seed_time = getattr(batch, "input_time", None)
+    if seed_time is None:
+        # Proviamo il fallback con "i primi B tempi" del tipo target,
+        # dove B = numero di seed. Questo richiede che il loader metta i seed
+        # all'inizio del NodeStorage del tipo target (comportamento standard PyG).
+        B = getattr(batch, "batch_size", None)
+        if B is None:
+            B = getattr(getattr(batch, entity_table, None), "batch_size", None)
+        if B is None:
+            raise RuntimeError(
+                "Cannot locate 'seed_time' in batch. "
+                "Make sure your NeighborLoader was created with 'input_time' "
+                "from get_node_train_table_input(...)."
+            )
+        node_time = getattr(batch[entity_table], "time", None)
+        if node_time is None or node_time.shape[0] < int(B):
+            raise RuntimeError(
+                "Cannot derive 'seed_time' by slicing: missing 'time' on entity_table "
+                "or not enough nodes. Ensure `time_attr='time'` and pass `input_time`."
+            )
+        seed_time = node_time[:int(B)]
+
+    # 2) time_dict: per ogni tipo con attributo 'time'
+    time_dict: Dict[str, torch.Tensor] = {}
+    for ntype in batch.node_types:
+        t = getattr(batch[ntype], "time", None)
+        if t is not None:
+            time_dict[ntype] = t
+    if not time_dict:
+        raise RuntimeError(
+            "No per-type 'time' tensors found in batch.*.time. "
+            "Ensure your graph has a 'time' attribute and the loader keeps it."
+        )
+
+    # 3) batch_dict: cerchiamo un mapping per-type verso {0..B-1}.
+    #   Caso A: esiste un attributo standard come '.seed_time_index'
+    ok = True
+    batch_dict: Dict[str, torch.Tensor] = {}
+    for ntype in time_dict.keys():
+        idx = getattr(batch[ntype], "seed_time_index", None)
+        if idx is None:
+            ok = False
+            break
+        if idx.dtype != torch.long:
+            raise RuntimeError(f"Expected integer indices for batch_dict['{ntype}'], got {idx.dtype}")
+        if idx.numel() != time_dict[ntype].numel():
+            raise RuntimeError(f"Length mismatch for '{ntype}': seed_time_index vs time")
+        batch_dict[ntype] = idx
+    if ok:
+        return seed_time, time_dict, batch_dict
+
+    #   Caso B: usiamo '.batch' come assegnazione al seed (spesso presente con NeighborLoader)
+    ok = True
+    batch_dict = {}
+    for ntype in time_dict.keys():
+        idx = getattr(batch[ntype], "batch", None)
+        if idx is None:
+            ok = False
+            break
+        if idx.dtype != torch.long:
+            raise RuntimeError(f"Expected integer indices for batch_dict['{ntype}'], got {idx.dtype}")
+        batch_dict[ntype] = idx
+    if ok:
+        # Validazione: gli indici non devono superare la lunghezza di seed_time
+        max_idx = max(int(v.max()) for v in batch_dict.values() if v.numel() > 0)
+        if max_idx >= int(seed_time.shape[0]):
+            raise RuntimeError(
+                "batch_dict indices exceed 'seed_time' length. "
+                "This suggests the loader did not keep seed assignment per node-type. "
+                "Pass the 'transform' from get_node_train_table_input(...)."
+            )
+        return seed_time, time_dict, batch_dict
+
+    # Nessun mapping trovato → errore esplicito e istruzioni.
+    raise RuntimeError(
+        "Cannot locate a per-type mapping from nodes to seed indices "
+        "(neither '.seed_time_index' nor '.batch' present). "
+        "Fix your NeighborLoader: pass BOTH 'input_time' and the 'transform' "
+        "returned by get_node_train_table_input(...), so each node gets assigned "
+        "to a seed index in the mini-batch."
+    )
+
+
 def pretrain_forward_embeddings(model: nn.Module,
                                 batch,
                                 entity_table: str,
@@ -115,28 +220,33 @@ def pretrain_forward_embeddings(model: nn.Module,
                                 override_n_id: Optional[Dict[str, torch.Tensor]] = None):
     """
     Vista 'encoder -> temporal -> (shallow) -> backbone' SENZA testa supervisionata.
-    Ritorna (z_dict, x_dict_before_gnn).
+    Invoca HeteroTemporalEncoder con la firma:
+        forward(seed_time, time_dict, batch_dict)
+    e fallisce con messaggi chiari se i prerequisiti del batch non sono soddisfatti.
     """
     # 1) Feature encoding (TorchFrame)
     x_dict = model.encoder(batch.tf_dict)  # Dict[ntype, Tensor[N, D]]
 
-    # 2) Temporal encoding: la tua versione richiede time_dict e batch_dict
+    # 2) Temporal encoding (firma ex-ante)
     if hasattr(model, "temporal_encoder") and model.temporal_encoder is not None:
-        time_dict, batch_dict = build_time_and_batch_dict(batch)
-        # chiamata nella firma attesa dalla tua HeteroTemporalEncoder
-        rel_time_dict = model.temporal_encoder(time_dict, batch_dict)
-        print(f"in pretrain rel time dict è {rel_time_dict}")
-        if rel_time_dict is not None:
-            # Se serve, adatta la dimensionalità (es. D_t != channels)
-            _ensure_temp_adapters(model, x_dict, rel_time_dict)
-            # somma contributo temporale
-            for ntype in x_dict.keys():
-                if ntype in rel_time_dict and rel_time_dict[ntype] is not None:
-                    x_dict[ntype] = x_dict[ntype] + rel_time_dict[ntype]
+        seed_time, time_dict, batch_dict = extract_temporal_inputs(batch, entity_table)
+        rel_time_dict = model.temporal_encoder(seed_time, time_dict, batch_dict)
+
+        # Controllo e somma (verifica dimensioni)
+        for ntype, x in x_dict.items():
+            if ntype in rel_time_dict and rel_time_dict[ntype] is not None:
+                if rel_time_dict[ntype].shape[-1] != x.shape[-1]:
+                    raise RuntimeError(
+                        f"Temporal encoder dim mismatch for '{ntype}': "
+                        f"{rel_time_dict[ntype].shape[-1]} vs {x.shape[-1]}. "
+                        "Initialize HeteroTemporalEncoder(channels=<backbone channels>) "
+                        "or add an explicit linear adapter."
+                    )
+                x_dict[ntype] = x + rel_time_dict[ntype]
 
     x_dict_before_gnn = {k: v for k, v in x_dict.items()}
 
-    # 3) Shallow embeddings per rendere efficace la corruzione via n_id
+    # 3) Shallow embeddings (abilitano la corruzione via permuta di n_id)
     if use_shallow:
         if not hasattr(model, "shallow_embeddings") or len(model.shallow_embeddings) == 0:
             raise RuntimeError(
@@ -156,6 +266,7 @@ def pretrain_forward_embeddings(model: nn.Module,
     # 4) Backbone eterogeneo
     z_dict = model.gnn(x_dict, batch.edge_index_dict)
     return z_dict, x_dict_before_gnn
+
 
 
 
