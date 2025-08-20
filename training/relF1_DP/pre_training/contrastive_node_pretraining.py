@@ -136,22 +136,29 @@ entity_table = "drivers"
 #costruzione loader di pre trai
 
 # Recupera i seed del TRAIN, i tempi dei seed e la transform dal task
-input_nodes_tr, input_time_tr, transform_tr = get_node_train_table_input(train_table, task)  
+#input_nodes_tr, input_time_tr, transform_tr = get_node_train_table_input(train_table, task)  
+nti = get_node_train_table_input(train_table, task)  # NodeTrainTableInput
+entity_table = nti.nodes[0]                          # es. "driver" (stringa)
+input_nodes_tr = nti.nodes                           # <-- già nel formato (entity_table, seed_ids)
+input_time_tr = nti.time                             # <-- Tensor o None
+transform_tr = nti.transform                         # <-- può essere None
+
 assert isinstance(entity_table, str), f"entity_table must be str, got {type(entity_table)}"
 
 from torch_geometric.loader import NeighborLoader
 
 train_loader_pretrain = NeighborLoader(
-    data,                                        # HeteroData materializzato
-    input_nodes=(entity_table, input_nodes_tr),  # (node_type, tensor di seed ids)
-    input_time=input_time_tr,                    # <-- CRITICO: abilita batch.seed_time
-    transform=transform_tr,                      # <-- CRITICO: annota mapping nodo→seed nel batch
-    time_attr="time",                            # attributo temporale nei NodeStorage
-    temporal_strategy="uniform",                 # sampler time-aware
-    num_neighbors=[num_neighbours, num_neighbours], 
+    data,
+    input_nodes=input_nodes_tr,   # <-- usa la tupla (entity_table, seed_ids) restituita da nti.nodes
+    input_time=input_time_tr,     # <-- CRITICO: abilita batch.seed_time per il temporal encoder
+    transform=transform_tr,       # <-- opzionale; se disponibile lo passi
+    time_attr="time",
+    temporal_strategy="uniform",
+    num_neighbors=[num_neighbours, num_neighbours],
     batch_size=batch_size,
     shuffle=True,
 )
+
 
 
 #per debug:
