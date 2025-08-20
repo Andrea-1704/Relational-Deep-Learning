@@ -129,7 +129,7 @@ loader_dict = loader_dict_fn(
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-hidden_dim = 64
+hidden_dim = channels
 # 1) PRETRAIN DGI (in-domain, solo train)
 model = utility.pretrain_dgi(
     model=model,
