@@ -136,7 +136,7 @@ entity_table = "drivers"
 #costruzione loader di pre trai
 
 # Recupera i seed del TRAIN, i tempi dei seed e la transform dal task
-input_nodes_tr, input_time_tr, transform_tr = get_node_train_table_input(task)  
+input_nodes_tr, input_time_tr, transform_tr = get_node_train_table_input(train_table, task)  
 assert isinstance(entity_table, str), f"entity_table must be str, got {type(entity_table)}"
 
 from torch_geometric.loader import NeighborLoader
