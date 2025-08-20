@@ -64,6 +64,48 @@ def compute_summary_from_z_dict(z_dict: Dict[str, torch.Tensor]) -> torch.Tensor
     summary = torch.stack(per_type, dim=0).mean(dim=0)  # [D]
     return torch.tanh(summary)
 
+from typing import Dict, Optional, Tuple
+
+def build_time_and_batch_dict(batch) -> Tuple[Dict[str, torch.Tensor], Dict[str, object]]:
+    """
+    Estrae:
+      time_dict[ntype]  = batch[ntype].time (se presente)
+      batch_dict[ntype] = batch[ntype]      (sub-batch PyG per ntype)
+    """
+    time_dict: Dict[str, torch.Tensor] = {}
+    batch_dict: Dict[str, object] = {}
+    for ntype in batch.node_types:
+        sub = batch[ntype]
+        batch_dict[ntype] = sub
+        t = getattr(sub, "time", None)
+        print(f"time attribute in build time and batch dict is {t}")
+        if t is not None:
+            time_dict[ntype] = t
+    return time_dict, batch_dict
+
+
+def _ensure_temp_adapters(model: nn.Module, x_dict: Dict[str, torch.Tensor],
+                          rel_time_dict: Dict[str, torch.Tensor]):
+    """
+    Se l'encoder temporale restituisce una dimensionalità D_t diversa da 'channels',
+    aggiunge (una volta sola) un adattatore lineare per ntype: R^{D_t} -> R^{channels}.
+    """
+    if not hasattr(model, "_temp_adapter"):
+        model._temp_adapter = nn.ModuleDict()
+
+    for ntype, x in x_dict.items():
+        if ntype not in rel_time_dict or rel_time_dict[ntype] is None:
+            continue
+        D_x = x.shape[-1]
+        D_t = rel_time_dict[ntype].shape[-1]
+        if D_x != D_t:
+            key = f"{ntype}__{D_t}_to_{D_x}"
+            if key not in model._temp_adapter:
+                adapter = nn.Linear(D_t, D_x, bias=False)
+                nn.init.xavier_uniform_(adapter.weight)
+                model._temp_adapter[key] = adapter.to(x.device)
+            # applica l'adattatore sul posto
+            rel_time_dict[ntype] = model._temp_adapter[key](rel_time_dict[ntype])
 
 
 def pretrain_forward_embeddings(model: nn.Module,
@@ -72,36 +114,29 @@ def pretrain_forward_embeddings(model: nn.Module,
                                 use_shallow: bool = True,
                                 override_n_id: Optional[Dict[str, torch.Tensor]] = None):
     """
-    Produce le embedding per ogni tipo di nodo, SENZA passare dalla testa supervisionata.
-    - Usa l'encoder TorchFrame (batch.tf_dict)
-    - Somma il temporal encoding (se disponibile)
-    - Somma shallow embeddings (se richiesto)
-    - Passa il tutto attraverso il backbone GNN/Graphormer
-    Ritorna:
-      - z_dict: Dict[ntype, Tensor [N_ntype, D]]
-      - x_dict_before_gnn: rappresentazioni input per debug/analisi
+    Vista 'encoder -> temporal -> (shallow) -> backbone' SENZA testa supervisionata.
+    Ritorna (z_dict, x_dict_before_gnn).
     """
     # 1) Feature encoding (TorchFrame)
     x_dict = model.encoder(batch.tf_dict)  # Dict[ntype, Tensor[N, D]]
 
-    # 2) Temporal encoding (senza keyword x_dict: la tua HeteroTemporalEncoder non lo supporta)
+    # 2) Temporal encoding: la tua versione richiede time_dict e batch_dict
     if hasattr(model, "temporal_encoder") and model.temporal_encoder is not None:
-        rel_time_dict = model.temporal_encoder(batch)  # <-- FIX: niente x_dict=...
+        time_dict, batch_dict = build_time_and_batch_dict(batch)
+        # chiamata nella firma attesa dalla tua HeteroTemporalEncoder
+        rel_time_dict = model.temporal_encoder(time_dict, batch_dict)
+        print(f"in pretrain rel time dict è {rel_time_dict}")
         if rel_time_dict is not None:
+            # Se serve, adatta la dimensionalità (es. D_t != channels)
+            _ensure_temp_adapters(model, x_dict, rel_time_dict)
+            # somma contributo temporale
             for ntype in x_dict.keys():
                 if ntype in rel_time_dict and rel_time_dict[ntype] is not None:
-                    # Controllo dimensioni per evitare somma con D diversi
-                    if rel_time_dict[ntype].shape[-1] != x_dict[ntype].shape[-1]:
-                        raise RuntimeError(
-                            f"Temporal encoder dim mismatch for '{ntype}': "
-                            f"{rel_time_dict[ntype].shape[-1]} vs {x_dict[ntype].shape[-1]}. "
-                            "Initialize HeteroTemporalEncoder with out_channels == channels (hidden_dim)."
-                        )
                     x_dict[ntype] = x_dict[ntype] + rel_time_dict[ntype]
 
     x_dict_before_gnn = {k: v for k, v in x_dict.items()}
 
-    # 3) Shallow embeddings (per rendere effettiva la corruzione via n_id)
+    # 3) Shallow embeddings per rendere efficace la corruzione via n_id
     if use_shallow:
         if not hasattr(model, "shallow_embeddings") or len(model.shallow_embeddings) == 0:
             raise RuntimeError(
@@ -118,8 +153,8 @@ def pretrain_forward_embeddings(model: nn.Module,
             shallow = model.shallow_embeddings[ntype](n_id.to(x.device))  # [N, D]
             x_dict[ntype] = x + shallow
 
-    # 4) Backbone GNN/Graphormer
-    z_dict = model.gnn(x_dict, batch.edge_index_dict)  # Dict[ntype, Tensor[N, D]]
+    # 4) Backbone eterogeneo
+    z_dict = model.gnn(x_dict, batch.edge_index_dict)
     return z_dict, x_dict_before_gnn
 
 
