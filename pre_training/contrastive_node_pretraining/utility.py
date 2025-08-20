@@ -84,39 +84,44 @@ def pretrain_forward_embeddings(model: nn.Module,
     # 1) Feature encoding (TorchFrame)
     x_dict = model.encoder(batch.tf_dict)  # Dict[ntype, Tensor[N, D]]
 
-    # 2) Temporal encoding (se disponibile)
+    # 2) Temporal encoding (senza keyword x_dict: la tua HeteroTemporalEncoder non lo supporta)
     if hasattr(model, "temporal_encoder") and model.temporal_encoder is not None:
-        rel_time_dict = model.temporal_encoder(
-            batch,  # deve usare batch[ntype].time o attributo equivalente
-            x_dict=x_dict
-        )
-        # somma (broadcast corretta per ntype)
-        for ntype in x_dict.keys():
-            if ntype in rel_time_dict and rel_time_dict[ntype] is not None:
-                x_dict[ntype] = x_dict[ntype] + rel_time_dict[ntype]
+        rel_time_dict = model.temporal_encoder(batch)  # <-- FIX: niente x_dict=...
+        if rel_time_dict is not None:
+            for ntype in x_dict.keys():
+                if ntype in rel_time_dict and rel_time_dict[ntype] is not None:
+                    # Controllo dimensioni per evitare somma con D diversi
+                    if rel_time_dict[ntype].shape[-1] != x_dict[ntype].shape[-1]:
+                        raise RuntimeError(
+                            f"Temporal encoder dim mismatch for '{ntype}': "
+                            f"{rel_time_dict[ntype].shape[-1]} vs {x_dict[ntype].shape[-1]}. "
+                            "Initialize HeteroTemporalEncoder with out_channels == channels (hidden_dim)."
+                        )
+                    x_dict[ntype] = x_dict[ntype] + rel_time_dict[ntype]
 
     x_dict_before_gnn = {k: v for k, v in x_dict.items()}
 
-    # 3) Shallow embeddings (consigliate per rendere effettiva la corruzione via n_id)
+    # 3) Shallow embeddings (per rendere effettiva la corruzione via n_id)
     if use_shallow:
         if not hasattr(model, "shallow_embeddings") or len(model.shallow_embeddings) == 0:
-            raise RuntimeError("Shallow embeddings not found. "
-                               "Call build_shallow_embeddings_if_missing(...) before pretraining.")
+            raise RuntimeError(
+                "Shallow embeddings not found. "
+                "Call build_shallow_embeddings_if_missing(...) before pretraining."
+            )
         for ntype, x in x_dict.items():
-            # batch[ntype].n_id: indici globali per lookup
             if override_n_id is not None and ntype in override_n_id:
                 n_id = override_n_id[ntype]
             else:
                 n_id = getattr(batch[ntype], "n_id", None)
             if n_id is None:
                 raise RuntimeError(f"batch['{ntype}'].n_id not found; cannot use shallow embeddings.")
-
             shallow = model.shallow_embeddings[ntype](n_id.to(x.device))  # [N, D]
             x_dict[ntype] = x + shallow
 
     # 4) Backbone GNN/Graphormer
     z_dict = model.gnn(x_dict, batch.edge_index_dict)  # Dict[ntype, Tensor[N, D]]
     return z_dict, x_dict_before_gnn
+
 
 
 @torch.no_grad()
