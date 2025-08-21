@@ -480,7 +480,7 @@ Main differences with respect to the original paper work:
 4. MetapathGNN only consider nodes that are considered for a certain path. This 
    not only make sense logically: when considering a certain path we should not
    change the node embeddings of nodes that are of the type "src", but never 
-   connected through the path to "dst", but it also did show improvement in the 
+   connected through the path to "dst"; but it also did show improvement in the 
    performance. The original paper did not discuss about this point, but in the 
    official documentation on GitHub we did not find this check.
 5. Interpret_attention, which is possible only thanks to point 3, is implemented 

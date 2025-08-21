@@ -58,7 +58,7 @@ from typing import Dict, Optional
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from model.Original_Atomic_Routes import RelGNNConv, RelGNN_HeteroConv, RelGNN, RelGNN_Model, get_atomic_routes
+from model.others.Original_Atomic_Routes import RelGNNConv, RelGNN_HeteroConv, RelGNN, RelGNN_Model, get_atomic_routes
 
 
 

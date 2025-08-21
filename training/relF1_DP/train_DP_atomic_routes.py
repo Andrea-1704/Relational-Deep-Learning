@@ -53,7 +53,7 @@ import torch.nn.functional as F
 from torch import nn
 import random
 #from model.HGraphSAGE import Model
-from model.Atomic_routes import AtomicRouteModel
+from model.others.Atomic_routes import AtomicRouteModel
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
