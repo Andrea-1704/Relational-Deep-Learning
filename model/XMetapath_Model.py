@@ -434,9 +434,9 @@ class XMetapath(nn.Module):
                  metapath_counts: Dict[Tuple, int], #statistics of each metapath
                  hidden_channels: int = 64,
                  out_channels: int = 64,
-                 num_heads: int = 16,
+                 num_heads: int = 4,
                  final_out_channels: int = 1,
-                 num_layers: int = 8):
+                 num_layers: int = 4):
         super().__init__()
         
         self.metapath_models = nn.ModuleList([
