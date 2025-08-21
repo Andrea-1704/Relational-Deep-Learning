@@ -11,6 +11,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
+
 """
 In this implementation we are solving one major problem related to the 
 previous version (which is referred to as MPSGNN_Model_old, please check git history),
@@ -117,7 +118,7 @@ class MetaPathGNNLayer(MessagePassing):
 
         self.gate = nn.Parameter(torch.tensor(0.5))
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor, edge_weight: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
         """
         Args:
             x: Original input features of the node (x_v), shape [N_dst, in_channels]
@@ -144,7 +145,7 @@ class MetaPathGNNLayer(MessagePassing):
 
         #return self.w_l(agg) + self.w_0(h) + self.w_1(x)
 
-    def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor | None = None) -> torch.Tensor:
+    def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
         if edge_weight is None:
             return x_j
         return x_j * edge_weight.unsqueeze(-1)
@@ -204,8 +205,8 @@ class MetaPathGNN(nn.Module):
 
 
     def forward(self, x_dict, edge_index_dict,
-                edge_time_dict: dict | None = None,
-                node_time_dict: dict | None = None):
+                edge_time_dict: dict = None,
+                node_time_dict: dict = None):
         #edge_type_dict is the list of edge types
         #edge_index_dict contains for each edge_type the edges
 
