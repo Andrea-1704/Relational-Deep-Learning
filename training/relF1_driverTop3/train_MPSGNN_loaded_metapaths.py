@@ -130,8 +130,8 @@ def train2():
         init_lambda=0.1,
         time_scale=1.0,
     ).to(device)
-    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+    #optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
     warmup_epochs = 10
     epochs = 200
     cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs)
