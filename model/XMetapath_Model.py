@@ -246,13 +246,13 @@ class MetaPathGNN(nn.Module):
             #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
             h_dst = self.convs[conv_idx](
                 x=x_dst_orig,
-                h=x_dst_orig, #UPDATE
+                h=h_dst_curr, #UPDATE
                 edge_index=edge_index_remapped
             )
 
             #since MetaPathGNNLayer is linear, here we apply the activation function:
             h_dst = F.relu(h_dst)
-
+            
             
             #UPDATE: update the h_dict embeddings with just computed ones
             h_dict[dst].index_copy_(0, dst_nodes, h_dst)
