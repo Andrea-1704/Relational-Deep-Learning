@@ -28,12 +28,12 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-from model.XMetapath_Model import MPSGNN
+from model.XMetapath_Model import XMetapath
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
+from utils.XMetapath_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
+from utils.XMetapath_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
 
 
 def train2():
@@ -117,7 +117,7 @@ def train2():
     
     metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
     metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
-    model = MPSGNN(
+    model = XMetapath(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
         metadata=data_official.metadata(),

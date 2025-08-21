@@ -41,12 +41,12 @@ sys.path.append(os.path.abspath("."))
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_extension2 import build_json_for_entity_path
-from model.XMetapath_Model import MPSGNN, interpret_attention
+from utils.XMetapath_extension2 import build_json_for_entity_path
+from model.XMetapath_Model import XMetapath, interpret_attention
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.task_cache import get_task_description, get_task_metric  
-from utils.mpsgnn_extension3 import greedy_metapath_search
-from utils.mpsgnn_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_extension3 import greedy_metapath_search
+from utils.XMetapath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 from relbench.base.task_base import TaskType
 
 task_name = "driver-top3"
@@ -184,7 +184,7 @@ print(f"The final metapath is {metapaths}")
 lr=1e-02
 wd=0
     
-model = MPSGNN(
+model = XMetapath(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
     metadata=data_official.metadata(),

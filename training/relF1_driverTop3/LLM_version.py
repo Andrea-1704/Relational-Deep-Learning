@@ -48,11 +48,11 @@ import os
 sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.mpsgnn_metapath_utils import binarize_targets # binarize_targets sarà usata qui
+from utils.XMetapath_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import greedy_metapath_search_with_bags_learned, greedy_metapath_search_with_bags_learned_2, greedy_metapath_search_with_bags_learned_3, beam_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned_2
-from model.XMetapath_Model import MPSGNN
+from utils.XMetapath_metapath_utils import greedy_metapath_search_with_bags_learned, greedy_metapath_search_with_bags_learned_2, greedy_metapath_search_with_bags_learned_3, beam_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned_2
+from model.XMetapath_Model import XMetapath
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
@@ -210,7 +210,7 @@ higher_is_better= higher_is_better
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 metapath_counts = defaultdict(int)
 metapath_counts[(('drivers', 'rev_f2p_driverId', 'standings'),)] += 1
-model = MPSGNN(
+model = XMetapath(
     data=data,
     col_stats_dict=col_stats_dict,
     metadata=data.metadata(),

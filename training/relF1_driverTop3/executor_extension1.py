@@ -40,8 +40,8 @@ sys.path.append(os.path.abspath("."))
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_extension_1 import greedy_metapath_search
-from model.XMetapath_Model import MPSGNN, interpret_attention
+from utils.XMetapath_extension_1 import greedy_metapath_search
+from model.XMetapath_Model import XMetapath, interpret_attention
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
@@ -153,7 +153,7 @@ print(f"\nmetapaths counts are {metapath_counts}\n")
 lr=1e-02
 wd=0
 
-model = MPSGNN(
+model = XMetapath(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
     metadata=data_official.metadata(),

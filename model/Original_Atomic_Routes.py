@@ -48,7 +48,7 @@ from relbench.tasks import get_task
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from model.MPSGNN_Model_old import MPSGNN
 from utils.EarlyStopping import EarlyStopping
-from utils.mpsgnn_metapath_utils import (
+from utils.XMetapath_metapath_utils import (
     beam_metapath_search_with_bags_learned,
     beam_metapath_search_with_bags_learned_2,
     binarize_targets,
