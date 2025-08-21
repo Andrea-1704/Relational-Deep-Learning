@@ -133,6 +133,7 @@ def train2():
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
     warmup_epochs = 10
+    epochs = 200
     cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs)
     
 
@@ -164,7 +165,7 @@ def train2():
     best_val_metric = -math.inf
     best_test_at_best_val = -math.inf
     test_table = task.get_table("test", mask_input_cols=False)
-    epochs = 500
+
     for epoch in range(0, epochs):
       #warmup:
         if epoch < warmup_epochs:
