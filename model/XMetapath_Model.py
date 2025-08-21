@@ -110,6 +110,17 @@ class MetaPathGNN(nn.Module):
 
     Here, we use MetaPathGNNLayer as GNN layer, which follows the paper 
     implementation.
+
+    We also fixed a bug that was present in the previous versions: 
+
+    self.convs[conv_idx](
+                x=x_dst,
+                h=x_dst,
+                edge_index=edge_index_remapped
+    )
+
+    Here, we were passing to h the current state x, but it is redudant
+    since we were passing it already. This was a minor mistake I forgot.
     """
     def __init__(self, metapath, hidden_channels, out_channels):
         super().__init__()
@@ -123,7 +134,13 @@ class MetaPathGNN(nn.Module):
     def forward(self, x_dict, edge_index_dict):
         #edge_type_dict is the list of edge types
         #edge_index_dict contains for each edge_type the edges
-        h_dict = x_dict.copy()
+
+        #update, instead of this:
+        #h_dict = x_dict.copy()
+        #we store x0_dict for x and h_dict that will be updated path by path:
+        x0_dict = {k: v.detach() for k, v in x_dict.items()}   # freezed original features
+        h_dict  = {k: v.clone()  for k, v in x_dict.items()}   # current state: to update
+
         for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed: follow metapath starting from last path!
             conv_idx = len(self.metapath) - 1 - i
             edge_index = edge_index_dict[(src, rel, dst)]
@@ -178,16 +195,24 @@ class MetaPathGNN(nn.Module):
             edge_index_remapped = tensor([[0, 1, 2],
                                          [0, 1, 2]])
             """
+
+            #UPDATE: take the original x and update h representation:
+            x_dst_orig = x0_dict[dst][dst_nodes]   # ORIGINAL
+            h_dst_curr = h_dict[dst][dst_nodes]    # CURRENT
+
             #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
             h_dst = self.convs[conv_idx](
-                x=x_dst,
-                h=x_dst,
+                x=x_dst_orig,
+                h=h_dst_curr, #UPDATE
                 edge_index=edge_index_remapped
             )
+
+            #since MetaPathGNNLayer is linear, here we apply the activation function:
+            h_dst = F.relu(h_dst)
             
-            new_h = h_dict[dst].clone()
-            new_h[dst_nodes] = F.relu(h_dst)
-            h_dict[dst] = new_h
+            #UPDATE: update the h_dict embeddings with just computed ones
+            h_dict[dst].index_copy_(0, dst_nodes, h_dst)
+
             """
             Change the embeddings of original nodes :
             src_nodes = [3, 4, 5]
