@@ -133,7 +133,7 @@ def train2():
 
     #EPOCHS:
     epochs = 100
-    print("Helloworls")
+    print("Helloworls1")
     test_table = task.get_table("test", mask_input_cols=False)
     best_test_metrics = -math.inf if higher_is_better else math.inf
     for _ in range(0, epochs):
