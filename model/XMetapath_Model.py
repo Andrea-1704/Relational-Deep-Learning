@@ -13,7 +13,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 """
 In this implementation we are solving one major problem related to the 
-previous version (which is referred as MPSGNN_Model_old),
+previous version (which is referred to as MPSGNN_Model_old, please check git history),
 which is that, when we used the full x_dict[nodetype]
 tensors without checking which nodes were actually connected by the 
 relation. This means we were doing message passing over all nodes, 
@@ -410,7 +410,7 @@ def interpret_attention(
     Interpret metapath self-attention scores for each target node in a batch.
 
     Args:
-        model: A trained instance of MPSGNN.
+        model: A trained instance of XMetapath.
         batch: A torch_geometric HeteroData batch containing the current data.
         metapath_names: List of human-readable names of metapaths.
         entity_table: The target node type (e.g., "drivers").
