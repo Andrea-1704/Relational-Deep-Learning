@@ -112,6 +112,8 @@ class MetaPathGNNLayer(MessagePassing):
         self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
         self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
 
+        self.gate = nn.Parameter(torch.tensor(0.5))
+
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -128,7 +130,10 @@ class MetaPathGNNLayer(MessagePassing):
         deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
         agg = agg/deg
 
-        return self.w_l(agg) + self.w_0(h) + self.w_1(x)
+        return self.w_l(agg) + (1 - torch.sigmoid(self.gate)) * self.w_0(h) + torch.sigmoid(self.gate) * self.w_1(x)
+        
+
+        #return self.w_l(agg) + self.w_0(h) + self.w_1(x)
 
     def message(self, x_j: torch.Tensor) -> torch.Tensor:
         return x_j
