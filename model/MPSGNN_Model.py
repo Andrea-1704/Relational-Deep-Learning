@@ -274,8 +274,9 @@ class MetaPathSelfAttention(nn.Module):
     relevance contribution of every metapath to the final result.
     It was not present in the original paper.
     """
-    def __init__(self, dim, num_heads=4):
+    def __init__(self, dim, num_heads=4, out_dim=1):
         super().__init__()
+        self.out_dim = out_dim
         self.attn_encoder = TransformerEncoder(
             TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
             num_layers=4
@@ -288,7 +289,7 @@ class MetaPathSelfAttention(nn.Module):
             nn.Linear(dim * 2, dim),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(dim, 1)
+            nn.Linear(dim, out_dim)
         )
 
     def forward(self, metapath_embeddings: torch.Tensor, return_attention=False):  # [N, M, D]
@@ -355,7 +356,7 @@ class MPSGNN(nn.Module):
         self.metapath_models = nn.ModuleList([
             MetaPathGNN(mp, hidden_channels, out_channels)
             for mp in metapaths
-        ]) # we construct a MetaPathGNN for each metapath
+        ]) # we construct a specific MetaPathGNN for each metapath
 
         weights = torch.tensor(
             [metapath_counts.get(tuple(mp), 1) for mp in metapaths], dtype=torch.float
@@ -363,7 +364,7 @@ class MPSGNN(nn.Module):
         weights = weights/weights.sum() #normalization of count
         self.register_buffer("metapath_weights_tensor", weights) 
 
-        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads)
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
