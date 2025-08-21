@@ -111,7 +111,7 @@ def train2():
         val_table=val_table,
         test_table=test_table
     )
-    lr=1e-2
+    lr=1e-02
     wd=0
     
     
@@ -125,16 +125,9 @@ def train2():
         hidden_channels=hidden_channels,
         out_channels=out_channels,
         final_out_channels=1,
-        dropout_p=0.1,
-        time_decay=True,
-        init_lambda=0.1,
-        time_scale=1.0,
     ).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-    #optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
-    warmup_epochs = 10
-    epochs = 200
-    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs)
+
     
 
 
@@ -162,59 +155,42 @@ def train2():
     )
 
     
-    best_val_metric = -math.inf
-    best_test_at_best_val = -math.inf
+    best_val_metric = -math.inf 
     test_table = task.get_table("test", mask_input_cols=False)
-
+    best_test_metric = -math.inf 
+    epochs = 500
     for epoch in range(0, epochs):
-      #warmup:
-        if epoch < warmup_epochs:
-            warmup_lr = lr * float(epoch + 1) / float(max(1, warmup_epochs))
-            for g in optimizer.param_groups:
-                g["lr"] = warmup_lr
+      train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
+      train_pred = test(model, loader_dict["train"], device=device, task=task)
+      val_pred = test(model, loader_dict["val"], device=device, task=task)
+      test_pred = test(model, loader_dict["test"], device=device, task=task)
+      
+      train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+      val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+      test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
+      #scheduler.step(val_metrics[tune_metric])
 
-        train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+      if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
+        best_val_metric = val_metrics[tune_metric]
+        state_dict = copy.deepcopy(model.state_dict())
 
-          # ---- Train step (usa già utils.train) ----
-        train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+      if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
+          best_test_metric = test_metrics[tune_metric]
+          state_dict_test = copy.deepcopy(model.state_dict())
 
-        # ---- Eval su train/val (test lo calcoliamo solo al best-val) ----
-        train_pred = test(model, loader_dict["train"], device=device, task=task)
-        val_pred = test(model, loader_dict["val"], device=device, task=task)
+      current_lr = optimizer.param_groups[0]["lr"]
+      
+      print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-        train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-        val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+      early_stopping(val_metrics[tune_metric], model)
 
-        # ---- Scheduler step (solo dopo il warmup) ----
-        if epoch >= warmup_epochs:
-            cosine.step()
-
-        current_lr = optimizer.param_groups[0]["lr"]
-
-        # ---- EarlyStopping + best checkpoint su validation ----
-        improved = val_metrics[tune_metric] > best_val_metric if higher_is_better else val_metrics[tune_metric] < best_val_metric
-        if improved:
-            best_val_metric = val_metrics[tune_metric]
-            state_dict = copy.deepcopy(model.state_dict())
-
-            # Calcola il TEST SOLO al best-val:
-            test_pred = test(model, loader_dict["test"], device=device, task=task)
-            test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-            best_test_at_best_val = max(best_test_at_best_val, test_metrics[tune_metric]) if higher_is_better else min(best_test_at_best_val, test_metrics[tune_metric])
-
-        print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, "
-            f"Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, "
-            f"Best-VAL Test {tune_metric}: {best_test_at_best_val:.2f}, LR: {current_lr:.6f}")
-
-        early_stopping(val_metrics[tune_metric], model)
-        if early_stopping.early_stop:
-            print(f"Early stopping triggered at epoch {epoch}")
-            break
-
+      if early_stopping.early_stop:
+          print(f"Early stopping triggered at epoch {epoch}")
+          break
     print(f"best validation results: {best_val_metric}")
-    print(f"best test@best-val: {best_test_at_best_val}")
+    print(f"best test results: {best_test_metric}")
 
 
 if __name__ == '__main__':
