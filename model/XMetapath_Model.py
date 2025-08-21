@@ -205,7 +205,6 @@ class MetaPathGNN(nn.Module):
 
 
     def forward(self, x_dict, edge_index_dict,
-                edge_time_dict: dict = None,
                 node_time_dict: dict = None):
         #edge_type_dict is the list of edge types
         #edge_index_dict contains for each edge_type the edges
@@ -280,25 +279,17 @@ class MetaPathGNN(nn.Module):
 
             #Δt for edge and weight: exp(-λ Δt)
             edge_weight = None
-            if self.use_time_decay and (edge_time_dict is not None or node_time_dict is not None):
-                lam = pos_lambda(self.raw_lambdas[conv_idx])
-                delta = None
+            if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
+                t_src_all = node_time_dict[src].float()
+                t_dst_all = node_time_dict[dst].float()
+                t_src_e = t_src_all[edge_index[0]]  # [E_rel]
+                t_dst_e = t_dst_all[edge_index[1]]  # [E_rel]
+                delta = (t_dst_e - t_src_e) / float(self.time_scale)
+                delta = delta.clamp(min=0.0)
 
-                if (edge_time_dict is not None) and ((src, rel, dst) in edge_time_dict) and (node_time_dict is not None) and (dst in node_time_dict):
-                    t_edge = edge_time_dict[(src, rel, dst)].float()          
-                    t_dst_all = node_time_dict[dst].float()                    
-                    t_dst_e = t_dst_all[edge_index[1]]                        
-                    delta = (t_dst_e - t_edge) / float(self.time_scale)
-                elif (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
-                    t_src_all = node_time_dict[src].float()
-                    t_dst_all = node_time_dict[dst].float()
-                    t_src_e = t_src_all[edge_index[0]]
-                    t_dst_e = t_dst_all[edge_index[1]]
-                    delta = (t_dst_e - t_src_e) / float(self.time_scale)
-                if delta is not None:
-                    delta = delta.clamp(min=0.0)
-                    z = (-lam * delta).clamp(min=-60.0)  # stabilità numerica
-                    edge_weight = torch.exp(z)
+                lam = pos_lambda(self.raw_lambdas[conv_idx])      # scalare > 0
+                z = (-lam * delta).clamp(min=-60.0)               # stabilità numerica
+                edge_weight = torch.exp(z)    
 
 
             #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
@@ -541,7 +532,6 @@ class XMetapath(nn.Module):
         model(
               x_dict, 
               batch.edge_index_dict,
-              edge_time_dict=getattr(batch, "edge_time_dict", None),
               node_time_dict=batch.time_dict
         )
         for model in self.metapath_models 
