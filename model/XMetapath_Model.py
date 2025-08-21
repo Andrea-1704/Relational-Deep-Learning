@@ -434,8 +434,9 @@ class XMetapath(nn.Module):
                  metapath_counts: Dict[Tuple, int], #statistics of each metapath
                  hidden_channels: int = 64,
                  out_channels: int = 64,
-                 num_heads: int = 8,
-                 final_out_channels: int = 1):
+                 num_heads: int = 16,
+                 final_out_channels: int = 1,
+                 num_layers: int = 8):
         super().__init__()
         
         self.metapath_models = nn.ModuleList([
@@ -449,7 +450,7 @@ class XMetapath(nn.Module):
         weights = weights/weights.sum() #normalization of count
         self.register_buffer("metapath_weights_tensor", weights) 
 
-        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels)
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
