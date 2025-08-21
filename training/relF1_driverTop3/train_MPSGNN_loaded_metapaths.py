@@ -120,7 +120,6 @@ def train2():
     model = XMetapath(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        metadata=data_official.metadata(),
         metapath_counts = metapath_counts,
         metapaths=metapaths,
         hidden_channels=hidden_channels,
