@@ -165,12 +165,16 @@ class MetaPathGNN(nn.Module):
     Here, we were passing to h the current state x, but it is redudant
     since we were passing it already. This was a minor mistake I forgot.
     """
-    def __init__(self, metapath, hidden_channels, out_channels):
+    def __init__(self, metapath, hidden_channels, out_channels, dropout_p: float = 0.1):
         super().__init__()
         self.metapath = metapath
         self.convs = nn.ModuleList()
         for i in range(len(metapath)):
             self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
+        
+        self.norms = nn.ModuleList([nn.LayerNorm(hidden_channels) for _ in range(len(metapath))])
+        self.dropouts = nn.ModuleList([nn.Dropout(p=dropout_p) for _ in range(len(metapath))])
+        
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
 
@@ -252,6 +256,10 @@ class MetaPathGNN(nn.Module):
 
             #since MetaPathGNNLayer is linear, here we apply the activation function:
             h_dst = F.relu(h_dst)
+
+            #normalization + dropout:
+            h_dst = self.norms[conv_idx](h_dst)
+            h_dst = self.dropouts[conv_idx](h_dst)
             
             
             #UPDATE: update the h_dict embeddings with just computed ones
