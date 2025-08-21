@@ -58,9 +58,9 @@ you must remap edge_index to the new local indices. If global → local is
 {3:0, 4:1, 5:2}, then remap edge_index[0] = [0,1,2].
 """
 
-class MetaPathGNNLayer(MessagePassing):  
+class MetaPathGNNLayerOriginal(MessagePassing):  
     """
-    MetaPathGNNLayer implements equation 7 from the MPS-GNN paper.
+    MetaPathGNNLayer implements equation 7 from the MPS-GNN paper (https://arxiv.org/abs/2412.00521).
 
     h'_v = W_l * sum_{u in N(v)} h_u + W_0 * h_v + W_1 * x_v
     where:
@@ -94,6 +94,44 @@ class MetaPathGNNLayer(MessagePassing):
     def message(self, x_j: torch.Tensor) -> torch.Tensor:
         return x_j
 
+
+
+
+class MetaPathGNNLayer(MessagePassing):  
+    """
+    My update: follow original paper, but instead of applying a sum
+    aggregation, normalize the message in order to delete the 
+    bias given by the degree of the node.
+    """
+    def __init__(self, in_channels: int, out_channels: int, relation_index: int):
+        super().__init__(aggr='add', flow='target_to_source')
+        self.relation_index = relation_index
+
+        # Linear layers for each component of equation 7
+        self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
+        self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
+        self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Original input features of the node (x_v), shape [N_dst, in_channels]
+            edge_index: Edge index for this relation, shape [2, num_edges]
+            h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
+        Returns:
+            Updated node representation after applying the layer, shape [N_dst, out_channels]
+        """
+
+        agg = self.propagate(edge_index, x=h)
+
+        row = edge_index[1] #dst-s
+        deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
+        agg = agg/deg
+
+        return self.w_l(agg) + self.w_0(h) + self.w_1(x)
+
+    def message(self, x_j: torch.Tensor) -> torch.Tensor:
+        return x_j
 
 
 
@@ -510,4 +548,5 @@ Main differences with respect to the original paper work:
    official documentation on GitHub we did not find this check.
 5. Interpret_attention, which is possible only thanks to point 3, is implemented 
    above the model to have a fully transparent model.
+6. Normalization in MetaPathGNNLayer.forward
 """
