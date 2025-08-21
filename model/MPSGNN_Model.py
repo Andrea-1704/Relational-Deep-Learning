@@ -344,7 +344,6 @@ class MPSGNN(nn.Module):
     def __init__(self,
                  data: HeteroData,
                  col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
-                 metadata: Tuple[List[str], List[Tuple[str, str, str]]],
                  metapaths: List[List[int]],  # rel_indices
                  metapath_counts: Dict[Tuple, int], #statistics of each metapath
                  hidden_channels: int = 64,
