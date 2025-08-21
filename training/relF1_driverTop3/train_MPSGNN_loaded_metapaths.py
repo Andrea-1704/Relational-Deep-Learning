@@ -112,7 +112,7 @@ def train2():
         test_table=test_table
     )
     lr=1e-3
-    wd=1e-4
+    wd=0
     
     
     metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
