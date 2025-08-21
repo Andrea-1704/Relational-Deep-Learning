@@ -31,7 +31,7 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-from model.MPSGNN_Model import MPSGNN
+from model.XMetapath_Model import MPSGNN
 from data_management.data import loader_dict_fn
 from utils.mpsgnn_metapath_utils import binarize_targets# greedy_metapath_search
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical

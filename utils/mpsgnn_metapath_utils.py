@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-from model.MPSGNN_Model import MPSGNN
+from model.XMetapath_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 

@@ -41,7 +41,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_extension_1 import greedy_metapath_search
-from model.MPSGNN_Model import MPSGNN, interpret_attention
+from model.XMetapath_Model import MPSGNN, interpret_attention
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 

@@ -42,7 +42,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
 from utils.mpsgnn_extension2 import build_json_for_entity_path
-from model.MPSGNN_Model import MPSGNN
+from model.XMetapath_Model import MPSGNN
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.task_cache import get_task_description, get_task_metric  
 from utils.mpsgnn_extension2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm, build_metapath

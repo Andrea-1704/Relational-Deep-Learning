@@ -16,7 +16,7 @@ from typing import List, Tuple, Dict
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
 from utils.utils import evaluate_performance, test, train
-from model.MPSGNN_Model import MPSGNN
+from model.XMetapath_Model import MPSGNN
 
 class RLAgent:
     def __init__(self, tau=1.0, alpha=0.5):
