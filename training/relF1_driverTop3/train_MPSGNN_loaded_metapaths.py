@@ -184,11 +184,11 @@ def train2():
       
       print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-      early_stopping(val_metrics[tune_metric], model)
+    #   early_stopping(val_metrics[tune_metric], model)
 
-      if early_stopping.early_stop:
-          print(f"Early stopping triggered at epoch {epoch}")
-          break
+    #   if early_stopping.early_stop:
+    #       print(f"Early stopping triggered at epoch {epoch}")
+    #       break
     print(f"best validation results: {best_val_metric}")
     print(f"best test results: {best_test_metric}")
 
