@@ -99,13 +99,13 @@ class MetaPathGNNLayer(MessagePassing):
 
 
 
-#version 2 
+#version 2, also the one really used!
 class MetaPathGNN(nn.Module):
     """
     This is the network that express the GNN operations over a meta path.
     We create a GNN layer for each relation in the metapath. Then, we 
     propagate over the metapath using convolutions.
-    Finally we apply a final prejection to the initial node embeddings.
+    Finally we apply a final projection to the initial node embeddings.
 
     So, we generate embeddings considering the metapath "metapath".
     A metapath is passed, and is a list of tuple (src, rel, dst).
@@ -126,12 +126,13 @@ class MetaPathGNN(nn.Module):
         #edge_type_dict is the list of edge types
         #edge_index_dict contains for each edge_type the edges
         h_dict = x_dict.copy()
-        for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
+        for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed: follow metapath starting from last path!
             conv_idx = len(self.metapath) - 1 - i
             edge_index = edge_index_dict[(src, rel, dst)]
 
             #Store the list of the nodes that are used in the 
             #relation "(src, rel, dst)":
+            #this was not mentioned in original paper
             src_nodes = edge_index[0].unique()
             dst_nodes = edge_index[1].unique()
             """
@@ -140,7 +141,7 @@ class MetaPathGNN(nn.Module):
             dst_nodes = [6, 2, 3]
             """
 
-            #To solve the aforementioned problem we use a global->
+            #To solve the problem mentioend at the beginning of this file, we use a global->
             #to local mapping:
             #src_map = {int(i.item()): i for i, n in enumerate(src_nodes)}
             src_map = {int(n.item()): i for i, n in enumerate(src_nodes)}
@@ -165,16 +166,10 @@ class MetaPathGNN(nn.Module):
             x_dst = [emb(6), emb(2), emb(3)]
             """
 
-            # edge_index_remapped = torch.stack([
-            #     torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device),
-            #     torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device)
-            # ])
             edge_index_remapped = torch.stack([
                 torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device, dtype=torch.long),
                 torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()], device=edge_index.device, dtype=torch.long)
             ])
-
-
             """
             Example
             if:
@@ -185,7 +180,7 @@ class MetaPathGNN(nn.Module):
             edge_index_remapped = tensor([[0, 1, 2],
                                          [0, 1, 2]])
             """
-
+            #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
             h_dst = self.convs[conv_idx](
                 x=x_dst,
                 h=x_dst,
