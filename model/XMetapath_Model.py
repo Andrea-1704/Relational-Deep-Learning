@@ -212,7 +212,8 @@ class MetaPathGNN(nn.Module):
         #update, instead of this:
         #h_dict = x_dict.copy()
         #we store x0_dict for x and h_dict that will be updated path by path:
-        x0_dict = {k: v.detach() for k, v in x_dict.items()}   # freezed original features
+        #x0_dict = {k: v.detach() for k, v in x_dict.items()}   # freezed original features
+        x0_dict = {k: v for k, v in x_dict.items()} 
         h_dict  = {k: v.clone()  for k, v in x_dict.items()}   # current state: to update
 
         def pos_lambda(raw):  # λ > 0
@@ -482,11 +483,19 @@ class XMetapath(nn.Module):
                  out_channels: int = 64,
                  num_heads: int = 8,
                  final_out_channels: int = 1,
-                 num_layers: int = 4):
+                 num_layers: int = 4,
+                 dropout_p: float = 0.1,
+                 time_decay: bool = True,
+                 init_lambda: float = 0.1,
+                 time_scale: float = 1.0):
         super().__init__()
         
         self.metapath_models = nn.ModuleList([
-            MetaPathGNN(mp, hidden_channels, out_channels)
+            MetaPathGNN(mp, hidden_channels, out_channels,
+                        dropout_p=dropout_p,
+                        use_time_decay=time_decay,
+                        init_lambda=init_lambda,
+                        time_scale=time_scale)
             for mp in metapaths
         ]) # we construct a specific MetaPathGNN for each metapath
 
@@ -582,8 +591,10 @@ def interpret_attention(
         weighted = concat * model.metapath_weights_tensor.view(1, -1, 1)
 
         #Retrieve output + attention representations
-        _, attn_repr = model.regressor(weighted, return_attention=True)  # [N, M, D]
-        attn_scores = attn_repr.mean(dim=-1).cpu()  # [N, M]
+        # _, attn_repr = model.regressor(weighted, return_attention=True)  # [N, M, D]
+        # attn_scores = attn_repr.mean(dim=-1).cpu()  # [N, M]
+        _, w_true = model.regressor(weighted, return_attention=True)    # [N, M]
+        attn_scores = w_true.cpu()
 
         #Structure the interpretation output
         results = []
