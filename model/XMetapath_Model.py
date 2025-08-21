@@ -58,7 +58,7 @@ you must remap edge_index to the new local indices. If global → local is
 {3:0, 4:1, 5:2}, then remap edge_index[0] = [0,1,2].
 """
 
-class MetaPathGNNLayerOriginal(MessagePassing):  
+class MetaPathGNNLayer(MessagePassing):  
     """
     MetaPathGNNLayer implements equation 7 from the MPS-GNN paper (https://arxiv.org/abs/2412.00521).
 
@@ -97,7 +97,7 @@ class MetaPathGNNLayerOriginal(MessagePassing):
 
 
 
-class MetaPathGNNLayer(MessagePassing):  
+class MetaPathGNNLayerNew(MessagePassing):  
     """
     My update: follow original paper, but instead of applying a sum
     aggregation, normalize the message in order to delete the 
