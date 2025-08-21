@@ -102,6 +102,9 @@ class MetaPathGNNLayer(MessagePassing):
     My update: follow original paper, but instead of applying a sum
     aggregation, normalize the message in order to delete the 
     bias given by the degree of the node.
+
+    We also implemented a temporal decading so that "old" messages
+    will weight less than the recent ones.
     """
     def __init__(self, in_channels: int, out_channels: int, relation_index: int):
         super().__init__(aggr='add', flow='target_to_source')
@@ -114,29 +117,37 @@ class MetaPathGNNLayer(MessagePassing):
 
         self.gate = nn.Parameter(torch.tensor(0.5))
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor, edge_weight: torch.Tensor | None = None) -> torch.Tensor:
         """
         Args:
             x: Original input features of the node (x_v), shape [N_dst, in_channels]
             edge_index: Edge index for this relation, shape [2, num_edges]
             h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
+            edge_weight: weight considering temporal proximity.
         Returns:
             Updated node representation after applying the layer, shape [N_dst, out_channels]
         """
 
-        agg = self.propagate(edge_index, x=h)
+        agg = self.propagate(edge_index, x=h, edge_weight = edge_weight)
 
         row = edge_index[1] #dst-s
-        deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
-        agg = agg/deg
+        if edge_weight is None:
+            deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
+        else:
+            deg = torch.bincount(row, weights=edge_weight, minlength=agg.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
 
-        return self.w_l(agg) + (1 - torch.sigmoid(self.gate)) * self.w_0(h) + torch.sigmoid(self.gate) * self.w_1(x)
+        agg = agg/deg
+        g = torch.sigmoid(self.gate)
+
+        return self.w_l(agg) + (1 - g) * self.w_0(h) + g * self.w_1(x)
         
 
         #return self.w_l(agg) + self.w_0(h) + self.w_1(x)
 
-    def message(self, x_j: torch.Tensor) -> torch.Tensor:
-        return x_j
+    def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor | None = None) -> torch.Tensor:
+        if edge_weight is None:
+            return x_j
+        return x_j * edge_weight.unsqueeze(-1)
 
 
 
@@ -164,8 +175,15 @@ class MetaPathGNN(nn.Module):
 
     Here, we were passing to h the current state x, but it is redudant
     since we were passing it already. This was a minor mistake I forgot.
+
+
+    We also aply a temporal decading weighting for the messages.
     """
-    def __init__(self, metapath, hidden_channels, out_channels, dropout_p: float = 0.1):
+    def __init__(self, metapath, hidden_channels, out_channels,
+                 dropout_p: float = 0.1,
+                 use_time_decay: bool = True,
+                 init_lambda: float = 0.1,
+                 time_scale: float = 1.0):
         super().__init__()
         self.metapath = metapath
         self.convs = nn.ModuleList()
@@ -175,10 +193,19 @@ class MetaPathGNN(nn.Module):
         self.norms = nn.ModuleList([nn.LayerNorm(hidden_channels) for _ in range(len(metapath))])
         self.dropouts = nn.ModuleList([nn.Dropout(p=dropout_p) for _ in range(len(metapath))])
         
+        #UPDATE:
+        self.use_time_decay = use_time_decay
+        self.time_scale = float(time_scale)
+        self.raw_lambdas = nn.ParameterList([
+            nn.Parameter(torch.tensor(float(init_lambda))) for _ in range(len(metapath))
+        ])
+
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
 
-    def forward(self, x_dict, edge_index_dict):
+    def forward(self, x_dict, edge_index_dict,
+                edge_time_dict: dict | None = None,
+                node_time_dict: dict | None = None):
         #edge_type_dict is the list of edge types
         #edge_index_dict contains for each edge_type the edges
 
@@ -187,6 +214,9 @@ class MetaPathGNN(nn.Module):
         #we store x0_dict for x and h_dict that will be updated path by path:
         x0_dict = {k: v.detach() for k, v in x_dict.items()}   # freezed original features
         h_dict  = {k: v.clone()  for k, v in x_dict.items()}   # current state: to update
+
+        def pos_lambda(raw):  # λ > 0
+            return F.softplus(raw) + 1e-8
 
         for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed: follow metapath starting from last path!
             conv_idx = len(self.metapath) - 1 - i
@@ -247,11 +277,35 @@ class MetaPathGNN(nn.Module):
             x_dst_orig = x0_dict[dst][dst_nodes]   # ORIGINAL
             h_dst_curr = h_dict[dst][dst_nodes]    # CURRENT
 
+            #Δt for edge and weight: exp(-λ Δt)
+            edge_weight = None
+            if self.use_time_decay and (edge_time_dict is not None or node_time_dict is not None):
+                lam = pos_lambda(self.raw_lambdas[conv_idx])
+                delta = None
+
+                if (edge_time_dict is not None) and ((src, rel, dst) in edge_time_dict) and (node_time_dict is not None) and (dst in node_time_dict):
+                    t_edge = edge_time_dict[(src, rel, dst)].float()          
+                    t_dst_all = node_time_dict[dst].float()                    
+                    t_dst_e = t_dst_all[edge_index[1]]                        
+                    delta = (t_dst_e - t_edge) / float(self.time_scale)
+                elif (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
+                    t_src_all = node_time_dict[src].float()
+                    t_dst_all = node_time_dict[dst].float()
+                    t_src_e = t_src_all[edge_index[0]]
+                    t_dst_e = t_dst_all[edge_index[1]]
+                    delta = (t_dst_e - t_src_e) / float(self.time_scale)
+                if delta is not None:
+                    delta = delta.clamp(min=0.0)
+                    z = (-lam * delta).clamp(min=-60.0)  # stabilità numerica
+                    edge_weight = torch.exp(z)
+
+
             #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
             h_dst = self.convs[conv_idx](
-                x=x_dst_orig,
-                h=h_dst_curr, #UPDATE
-                edge_index=edge_index_remapped
+                x=x_dst_orig, 
+                edge_index=edge_index_remapped,
+                h=h_dst_curr, 
+                edge_weight=edge_weight
             )
 
             #since MetaPathGNNLayer is linear, here we apply the activation function:
@@ -483,8 +537,13 @@ class XMetapath(nn.Module):
       
       
       embeddings = [#x_dict, edge_index_dict
-          model(x_dict, batch.edge_index_dict)
-          for model in self.metapath_models 
+        model(
+              x_dict, 
+              batch.edge_index_dict,
+              edge_time_dict=getattr(batch, "edge_time_dict", None),
+              node_time_dict=batch.time_dict
+        )
+        for model in self.metapath_models 
       ] #create a list of the embeddings, one for each metapath
       concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
       weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
@@ -580,4 +639,8 @@ Main differences with respect to the original paper work:
 5. Interpret_attention, which is possible only thanks to point 3, is implemented 
    above the model to have a fully transparent model.
 6. Normalization in MetaPathGNNLayer.forward
+7. Weighted messages based on the temporal proximity: the aggregation of the 
+   messages that reach a certain destination should be weighted considering, not
+   only the degree of nodes and their attention, but also how "recent" is the 
+   message.
 """
