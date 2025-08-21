@@ -111,7 +111,7 @@ def train2():
         val_table=val_table,
         test_table=test_table
     )
-    lr=5e-2
+    lr=1e-2
     wd=0
     
     
