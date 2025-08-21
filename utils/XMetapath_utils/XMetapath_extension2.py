@@ -32,7 +32,7 @@ import random
 from typing import Dict, List, Tuple, Sequence
 import pandas as pd
 from torch_geometric.data import HeteroData
-from utils.task_cache import get_task_metric, get_task_description
+from utils.XMetapath_utils.task_cache import get_task_metric, get_task_description
 import openai  #pip install openai==0.28
 import pandas as pd
 import re

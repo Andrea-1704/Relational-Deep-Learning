@@ -34,10 +34,10 @@ import os
 sys.path.append(os.path.abspath("."))
 from model.MPSGNN_Model_old import MPSGNN
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.XMetapath_metapath_utils import binarize_targets # binarize_targets sarà usata qui
+from utils.XMetapath_utils.XMetapath_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.XMetapath_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
+from utils.XMetapath_utils.XMetapath_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
 #from utils.mapping_utils import get_global_to_local_id_map
 import os
 from typing import Any, Dict, NamedTuple, Optional, Tuple

@@ -41,11 +41,11 @@ sys.path.append(os.path.abspath("."))
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.XMetapath_extension2 import build_json_for_entity_path
+from utils.XMetapath_utils.XMetapath_extension2 import build_json_for_entity_path
 from model.XMetapath_Model import XMetapath
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-from utils.task_cache import get_task_description, get_task_metric  
-from utils.XMetapath_extension2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm, build_metapath
+from utils.XMetapath_utils.task_cache import get_task_description, get_task_metric  
+from utils.XMetapath_utils.XMetapath_extension2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm, build_metapath
 from relbench.base.task_base import TaskType
 
 task_name = "driver-top3"
