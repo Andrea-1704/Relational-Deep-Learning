@@ -16,7 +16,7 @@ from typing import List, Tuple, Dict
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
 from utils.utils import evaluate_performance, test, train
-from model.XMetapath_Model import MPSGNN
+from model.XMetapath_Model import XMetapath
 
 class RLAgent:
     def __init__(self, tau=1.0, alpha=0.5):
@@ -186,10 +186,9 @@ def greedy_metapath_search_rl(
         #testing on validation after training the MPS GNN 
         mp_candidate = current_path + [chosen_rel]
         print(f"Passing to model following metapaths: {mp_candidate}")
-        model = MPSGNN(
+        model = XMetapath(
             data=data,
             col_stats_dict=col_stats_dict,
-            metadata=data.metadata(),
             metapaths=[mp_candidate],
             metapath_counts=metapath_counts,
             hidden_channels=hidden_channels,

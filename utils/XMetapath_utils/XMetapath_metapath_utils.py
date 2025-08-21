@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-from model.XMetapath_Model import MPSGNN
+from model.XMetapath_Model import XMetapath
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
@@ -480,10 +480,9 @@ def beam_metapath_search_with_bags_learned_2(
                 loc = [local_path2.copy()]
                 metapath_counts[tuple(local_path2)] += 1
                 print(loc) #[[('drivers', 'rev_f2p_driverId', 'results')]]
-                model = MPSGNN(
+                model = XMetapath(
                     data=data,
                     col_stats_dict=col_stats_dict,
-                    metadata=data.metadata(),
                     metapath_counts = metapath_counts,
                     metapaths=loc,
                     hidden_channels=hidden_channels,
@@ -705,10 +704,9 @@ def greedy_metapath_search_with_bags_learned(
                 #F1, SO HIGHER IS BETTER!
                 loc = [local_path.copy()]
                 print(f"local path to path is {loc}")
-                model = MPSGNN(
+                model = XMetapath(
                     data=data,
                     col_stats_dict=col_stats_dict,
-                    metadata=data.metadata(),
                     metapath_counts = metapath_counts,
                     metapaths=loc,
                     hidden_channels=hidden_channels,
@@ -863,10 +861,9 @@ def greedy_metapath_search_with_bags_learned_2(
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
                 metapath_counts[tuple(local_path2)] += 1
-                model = MPSGNN(
+                model = XMetapath(
                     data=data,
                     col_stats_dict=col_stats_dict,
-                    metadata=data.metadata(),
                     metapath_counts = metapath_counts,
                     metapaths=loc,
                     hidden_channels=hidden_channels,
@@ -1017,10 +1014,9 @@ def greedy_metapath_search_with_bags_learned_3(
 
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
-                model = MPSGNN(
+                model = XMetapath(
                     data=data,
                     col_stats_dict=col_stats_dict,
-                    metadata=data.metadata(),
                     metapath_counts = metapath_counts,
                     metapaths=loc,
                     hidden_channels=hidden_channels,

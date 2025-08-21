@@ -23,7 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-from model.XMetapath_Model import MPSGNN
+from model.XMetapath_Model import XMetapath
 from utils.utils import evaluate_performance, test, train
 
 
@@ -199,10 +199,9 @@ def greedy_metapath_search(
 
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
-                model = MPSGNN(
+                model = XMetapath(
                     data=data,
                     col_stats_dict=col_stats_dict,
-                    metadata=data.metadata(),
                     metapath_counts = metapath_counts,
                     metapaths=loc,
                     hidden_channels=hidden_channels,
