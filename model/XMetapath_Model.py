@@ -635,3 +635,35 @@ Main differences with respect to the original paper work:
    only the degree of nodes and their attention, but also how "recent" is the 
    message.
 """
+
+
+"""
+Short summary:
+The model now builds node representations along each meta-path by iterating the 
+relations in reverse order and, at every hop, extracting the local subgraph, 
+remapping its global node ids to local indices, and updating only the destination
+nodes that are actually touched. For each hop it keeps two streams: the original
+per-node features frozen at the start and the current hidden state that evolves
+through the layers. Messages from neighbors are aggregated on the hidden state 
+and are degree-normalized; when node timestamps are available, each edge message
+is additionally reweighted by an exponential time decay w = exp(−λ Δt) with 
+Δt = max(0, t_dst − t_src), where λ is a learnable, strictly positive per-hop
+parameter obtained via softplus and the exponent is clamped for numerical stability.
+The hop update then combines the normalized neighbor signal with a learnable gated
+residual between the current state and the original features, and applies ReLU, 
+LayerNorm, and Dropout before writing the updated vectors back into the global 
+tensor at the touched indices. After the last hop the representation for the 
+meta-path’s start node type is projected; repeating this for all chosen meta-paths
+yields a tensor [batch, num_paths, dim]. These per-path embeddings can be pre-scaled
+by your static prior (e.g., usage counts) and are then fused by a self-attention 
+regressor that first contextually encodes the path tokens and then applies a final
+multi-head self-attention with need_weights enabled; the resulting true attention
+weights over meta-paths act as a data-dependent gating to weight path embeddings 
+before pooling and passing through an MLP to produce the prediction. The same true
+attention weights are also returned by the interpretation routine so the heatmaps 
+now reflect exactly the weights used in the forward pass. If node times are absent 
+the decay weights are simply not used and the layer reduces to the previous 
+behavior, so training and inference pipelines remain unchanged apart from the added
+stability from degree normalization, the explicit gating between original features 
+and evolving state, and the per-hop regularization (ReLU, LayerNorm, Dropout).
+"""
