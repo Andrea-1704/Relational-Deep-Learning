@@ -1,13 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing
-from torch_geometric.nn import MLP
+from torch_geometric.nn import MessagePassing, SAGEConv
 from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 from torch_geometric.data import HeteroData
 from torch_frame.data.stats import StatType
 from typing import Any, Dict, List, Tuple
-from torch_geometric.nn import SAGEConv
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,7 +13,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 """
 In this implementation we are solving one major problem related to the 
-previous version (which is still in the repo in the file MPSGNN_Model_old),
+previous version (which is referred as MPSGNN_Model_old),
 which is that, when we used the full x_dict[nodetype]
 tensors without checking which nodes were actually connected by the 
 relation. This means we were doing message passing over all nodes, 
@@ -465,3 +463,26 @@ def interpret_attention(
             plt.show()
 
         return results
+    
+
+
+
+"""
+This is my version of meta path model, if you encounter any problem, or mistake please 
+do not hesitate to reach me out! :)
+
+
+
+Main differences with respect to the original paper work:
+1. HeteroEncoder
+2. TemporalHeteroEncoder->the original paper was not designed for temporal graphs
+3. Self attention between metapaths
+4. MetapathGNN only consider nodes that are considered for a certain path. This 
+   not only make sense logically: when considering a certain path we should not
+   change the node embeddings of nodes that are of the type "src", but never 
+   connected through the path to "dst", but it also did show improvement in the 
+   performance. The original paper did not discuss about this point, but in the 
+   official documentation on GitHub we did not find this check.
+5. Interpret_attention, which is possible only thanks to point 3, is implemented 
+   above the model to have a fully transparent model.
+"""
