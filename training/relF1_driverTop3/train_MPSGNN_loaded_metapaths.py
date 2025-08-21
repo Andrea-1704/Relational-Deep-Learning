@@ -146,13 +146,13 @@ def train2():
     # print(f"We obtain F1 test loss equal to {best_test_metrics}")
 
     
-    early_stopping = EarlyStopping(
-        patience=60,
-        delta=0.0,
-        verbose=True,
-        higher_is_better = True,
-        path="best_basic_model.pt"
-    )
+    # early_stopping = EarlyStopping(
+    #     patience=60,
+    #     delta=0.0,
+    #     verbose=True,
+    #     higher_is_better = True,
+    #     path="best_basic_model.pt"
+    # )
 
     
     best_val_metric = -math.inf 
