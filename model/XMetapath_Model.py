@@ -344,13 +344,16 @@ class MetaPathSelfAttention(nn.Module):
     relevance contribution of every metapath to the final result.
     It was not present in the original paper.
     """
-    def __init__(self, dim, num_heads=4, out_dim=1):
+    def __init__(self, dim, num_heads=4, out_dim=1, num_layers=4):
         super().__init__()
         self.out_dim = out_dim
         self.attn_encoder = TransformerEncoder(
             TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
-            num_layers=4
+            num_layers=num_layers
         )
+
+        #UPDATE:
+        self.self_attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
 
         self.output_proj = nn.Sequential(
             nn.Linear(dim, dim * 2),
@@ -362,7 +365,7 @@ class MetaPathSelfAttention(nn.Module):
             nn.Linear(dim, out_dim)
         )
 
-    def forward(self, metapath_embeddings: torch.Tensor, return_attention=False):  # [N, M, D]
+    def forward(self, metapath_embeddings: torch.Tensor, return_attention: bool=False):  # [N, M, D]
         """
         metapath_embeddings: [N, M, D]
         return_attention: if True, returns intermediate attention embeddings as well
@@ -370,12 +373,25 @@ class MetaPathSelfAttention(nn.Module):
         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
 
-        attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
-        pooled = attn_out.mean(dim=1)                      # [N, D]
-        out = self.output_proj(pooled).squeeze(-1)        # [N]
+        #UPDATE:
+        ctx = self.attn_encoder(metapath_embeddings)
+        _, A = self.self_attn(ctx, ctx, ctx, need_weights=True, average_attn_weights=True)
+        w = A.mean(dim=-1)  
+        w = torch.softmax(w, dim=1) 
+        gated = ctx * w.unsqueeze(-1)
+        pooled = gated.sum(dim=1) 
+        out = self.output_proj(pooled).squeeze(-1) 
         if return_attention:
-            return out, attn_out
+            return out, w
         return out
+
+
+        # attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
+        # pooled = attn_out.mean(dim=1)                      # [N, D]
+        # out = self.output_proj(pooled).squeeze(-1)        # [N]
+        # if return_attention:
+        #     return out, attn_out
+        # return out
 
 
 
