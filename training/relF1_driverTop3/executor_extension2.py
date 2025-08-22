@@ -125,15 +125,6 @@ loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 hidden_channels = 128
 out_channels = 128
 
-loader_dict = loader_dict_fn(
-    batch_size=1024,
-    num_neighbours=512,
-    data=data_official,
-    task=task,
-    train_table=train_table,
-    val_table=val_table,
-    test_table=test_table
-)
 lr=1e-02
 wd=0
 node_type="drivers"

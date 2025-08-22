@@ -8,7 +8,7 @@ work of https://arxiv.org/abs/2412.00521, but tries to summer up the
 first implementation I proposed (greedy_metapath_search) and takes
 inspiration from the work https://arxiv.org/abs/2411.11829v1.
 
-In particular, the second implementation (name of the implementation) 
+In particular, the second implementation  
 tries to choose in a similar way of the first version the metapaths 
 but at each iteration it simply considers all the possible relation 
 and for all of them build a JSON file that contains the graph 
@@ -22,6 +22,15 @@ This double implementation could help us to answer to the foundamental
 question raised by https://arxiv.org/abs/2411.11829v1, which is 
 whether a pre trained-LLM could improve the performances obtained by 
 a GNN architecture.
+
+
+In the previous version I forgot to consider a possible form of data 
+leakage: 
+For every in-context example v, we should always garantee that t_v < t_p.
+Where t_p is the one for which we are trackling the prediction.
+This is something we have to manually garantee since we are not using 
+the NeighbourLoader, but the original graph, without any real 
+data leakage check!
 """
 
 import json

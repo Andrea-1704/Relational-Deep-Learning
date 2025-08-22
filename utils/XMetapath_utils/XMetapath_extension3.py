@@ -18,7 +18,7 @@ from utils.XMetapath_utils.XMetapath_extension2 import evaluate_metapath_with_ll
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
     """
-    This function takes the "metadata" of the grafo (which are basicly all the 
+    This function takes the "metadata" of the graph (which are basicly all the 
     relevant informations about the graph, such as edge types, node types, etc.)
     and returns all the edges (in tuple format "(src_type, name of relation, 
     dst_type)") that starts from "current_node_type" as "src_type".
