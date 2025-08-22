@@ -483,21 +483,21 @@ def evaluate_metapath_with_llm(
 
     random.seed(seed)
 
-    target_ntype = metapath[0][0]
-    all_labels = data[target_ntype].y
+    target_ntype = metapath[0][0] # QUESTO E' SEMPRE IL TARGET NODE. PER ESEMPIO NEL CASO DI REL F1, TARGET_NTYPE SARA' SEMPRE DRIVER
+    all_labels = data[target_ntype].y #LABELS 
     task_type = task.task_type
 
-    # val_indices = torch.where(val_mask)[0].tolist()
-    #train_indices = torch.where(train_mask)[0].tolist()
-    #we want to select always at least one class for all of the possible labels
-    #otherwise metrics as roc auc would create errors:
+    # ANDIAMO A CAMPIONARE ID SAMPLES DAL VALIDATION DATASET. QUESTO E' MOLTO IMPORTANTE: IL CAMPIONAMENTO LO DOBBIMO 
+    # FARE DAL VALIDATION SET PERCHE' QUANDO NELLA ESTENSIONE 3 USIAMO QUESTE FUNZIONI PER SCEGLIERE LA SINGOLA r* 
+    # DOBBIAMO FARE LA SCELTA NON CONSIDERANDO IL TEST SET ALTRIMENTI SAREBBE UN PO' COME BARARE!!
     val_indices = sample_val_ids_balanced(
         val_mask=data[target_ntype].val_mask,
         labels=data[target_ntype].y,
         num_val_samples=num_val_samples,
-        seed=42,
+        seed=seed,
     )
 
+    # STESSA IDENTICA CHIAMATA SUL TRAINING SET:
     train_indices = sample_val_ids_balanced(
         val_mask=train_mask,
         labels=data[target_ntype].y,
@@ -517,6 +517,10 @@ def evaluate_metapath_with_llm(
             continue  # skip unlabelled
 
         # Sample examples with valid label
+
+        # NOTA CHE QUI E' NECESSARIO EFFETTUARE IL CONTROLLO PERCHE' STIAMO 
+        # ANDANDO A PRENDERE DEGLI IN-CONTEXT EXAMPLES MA DEVONO ESSERE DI TIME
+        # STAMP PRECEDENTI ALTRIMENTI ANDIAMO INCONTRO A DATA LEAKAGE!
         example_ids = []
         while len(example_ids) < num_examples_per_prompt and train_indices:
             candidate = random.choice(train_indices)
@@ -573,6 +577,8 @@ def evaluate_metapath_with_llm(
 
 
 
+
+# in top down this is the top function:
 
 
 def build_metapath(
