@@ -383,7 +383,7 @@ def parse_prediction(pred: str, task_type: str):
 
 
 
-def sample_val_ids_balanced(val_mask, labels, num_val_samples, seed=42):
+def sample_val_ids_balanced(val_mask, labels, num_val_samples, data, seed=42):
     """
     Sample validation node indices ensuring at least one example per label class.
 
@@ -409,6 +409,9 @@ def sample_val_ids_balanced(val_mask, labels, num_val_samples, seed=42):
     random.seed(seed)
 
     val_indices = torch.where(val_mask)[0].tolist()
+    driver_val = torch.where(data["drivers"].val_mask)[0].cpu().numpy()
+    # print(f"mask è : {val_mask}")
+    # print(f"driver val: {driver_val}")
     label_values = labels[val_mask].tolist()
 
     label_to_indices = defaultdict(list)
@@ -487,6 +490,19 @@ def evaluate_metapath_with_llm(
     all_labels = data[target_ntype].y #LABELS 
     task_type = task.task_type
 
+    # THE WAY WE ACCESS THE LABEL (qualifying) 
+    val_table = task.get_table("val").df
+    train_table = task.get_table("train").df
+
+
+    # print(f"this is entity_df.iloc[3, 2]: {val_table.iloc[3, 2]}")
+    #  QUESTA ISTRUZIONE PRENDE LA QUARTA RIGA, TERZA COLONNA DI val_table CHE E' FATTA COSI':
+    #   date         driverId    qualifying
+    # 2008-03-16         1           0
+
+    #print(f"this is entity_df: {entity_df}")
+    
+
     # ANDIAMO A CAMPIONARE ID SAMPLES DAL VALIDATION DATASET. QUESTO E' MOLTO IMPORTANTE: IL CAMPIONAMENTO LO DOBBIMO 
     # FARE DAL VALIDATION SET PERCHE' QUANDO NELLA ESTENSIONE 3 USIAMO QUESTE FUNZIONI PER SCEGLIERE LA SINGOLA r* 
     # DOBBIAMO FARE LA SCELTA NON CONSIDERANDO IL TEST SET ALTRIMENTI SAREBBE UN PO' COME BARARE!!
@@ -494,14 +510,18 @@ def evaluate_metapath_with_llm(
         val_mask=data[target_ntype].val_mask,
         labels=data[target_ntype].y,
         num_val_samples=num_val_samples,
+        data = data,
         seed=seed,
     )
 
     # STESSA IDENTICA CHIAMATA SUL TRAINING SET:
+    # CONSTRUISCO UN'ALTRA FUNZIOEN CHE FA LA STESA COSA MA CONSIDERA UN ATTRIBUTO TEMPORALE PER PRENDERE DEGLI ESEMPI
+    # SOLO CON TIMESTEMP PRECEDENTE:
     train_indices = sample_val_ids_balanced(
         val_mask=train_mask,
         labels=data[target_ntype].y,
         num_val_samples=num_examples_per_prompt,
+        data = data,
         seed=seed,
     )
 

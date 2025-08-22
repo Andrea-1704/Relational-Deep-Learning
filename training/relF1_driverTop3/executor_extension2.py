@@ -3,50 +3,20 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import os
-import relbench
-import numpy as np
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
-import math
-from tqdm import tqdm
-import torch_geometric
-import torch_frame
 from torch_geometric.seed import seed_everything
 from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-from io import StringIO
-from torch_frame.config.text_embedder import TextEmbedderConfig
 from relbench.modeling.graph import make_pkey_fkey_graph
-import copy
-from typing import Any, Dict, List
-from torch import Tensor
-from torch.nn import Embedding, ModuleDict
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch_frame.data.stats import StatType
 import torch
-import math
-from torch_geometric.data import HeteroData
-from typing import List, Tuple, Dict
 import torch.nn as nn
-import torch.nn.functional as F
-from relbench.modeling.nn import HeteroEncoder
-from collections import defaultdict
-
 
 import sys
 import os
 sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-from utils.EarlyStopping import EarlyStopping
-from utils.XMetapath_utils.XMetapath_extension2 import build_json_for_entity_path
-from model.XMetapath_Model import XMetapath
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-from utils.XMetapath_utils.task_cache import get_task_description, get_task_metric  
-from utils.XMetapath_utils.XMetapath_extension2 import build_llm_prompt, call_llm, parse_prediction, evaluate_metapath_with_llm, build_metapath
-from relbench.base.task_base import TaskType
+from utils.XMetapath_utils.XMetapath_extension2 import build_metapath
 
 task_name = "driver-top3"
 
@@ -60,7 +30,7 @@ test_table = task.get_table("test")
 
 out_channels = 1
 
-#loss_fn = nn.BCEWithLogitsLoss()
+
 tune_metric = "f1"
 higher_is_better = True #is referred to the tune metric
 
@@ -116,6 +86,9 @@ val_driver_ids = val_df_raw["driverId"].to_numpy()
 # Costruisci la mask come boolean mask sul vettore completo
 val_mask = torch.tensor([driver_id in val_driver_ids for driver_id in graph_driver_ids])
 data_official["drivers"].val_mask = val_mask
+val_idx = torch.where(data_official["drivers"].val_mask)[0].cpu().numpy()
+val_driver_ids = graph_driver_ids[val_idx] 
+#print(f"i driver id per cui mask è true: {val_driver_ids}")
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
