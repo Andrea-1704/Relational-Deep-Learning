@@ -12,15 +12,14 @@ computation of the surrogate task, but considers the test results
 obtained from including a possible relation and takes the one that 
 minimize the loss or maximise the accuracy.
 
+A XMetapath model is trained for each possible relation extension.
+
 """
 
-import json
 import torch
 import math
 from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict
-import torch.nn as nn
-import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
 from model.XMetapath_Model import XMetapath
@@ -29,7 +28,7 @@ from utils.utils import evaluate_performance, test, train
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
     """
-    This function takes the "metadata" of the grafo (which are basicly all the 
+    This function takes the "metadata" of the graph (which are basicly all the 
     relevant informations about the graph, such as edge types, node types, etc.)
     and returns all the edges (in tuple format "(src_type, name of relation, 
     dst_type)") that starts from "current_node_type" as "src_type".
