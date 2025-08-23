@@ -183,7 +183,7 @@ warmup_rl_agent(
     col_stats_dict=col_stats_dict_official,
     num_episodes=5,
     L_max=4,
-    epochs=10
+    epochs=2
 )
 
 print(f"\n \n RL warmed up! \n")
