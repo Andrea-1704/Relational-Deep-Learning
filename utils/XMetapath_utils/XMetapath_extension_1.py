@@ -105,6 +105,7 @@ def greedy_metapath_search(
     train_mask: torch.Tensor,
     node_type: str, 
     col_stats_dict: Dict[str, Dict[str, Dict]], 
+    task_name: str = None,
     L_max: int = 3,
     channels : int = 64,
     number_of_metapaths: int = 5,  #number of metapaths to look for
