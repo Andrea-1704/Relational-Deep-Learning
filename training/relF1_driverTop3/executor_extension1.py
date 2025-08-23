@@ -105,11 +105,11 @@ data_official['drivers'].y = target_vector_official
 
 # --- CHECK: do PKs coincide with internal indices for this node type? ---
 import numpy as np
-nt = "drivers"           # il tuo node_type
-pk_col = "driverId"      # la colonna PK nella tabella relazionale
+nt = "drivers"           
+pk_col = "driverId"      
 
 df = db_nuovo.table_dict[nt].df
-idx_to_pk = df[pk_col].to_numpy()                      # PK nell'ordine delle righe (== ordine nodi interni)
+idx_to_pk = df[pk_col].to_numpy()                     
 pk_to_idx = {int(pk): i for i, pk in enumerate(idx_to_pk)}
 
 # size checks

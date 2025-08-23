@@ -206,6 +206,8 @@ def greedy_metapath_search(
                     rel=rel,
                     src_embeddings = node_embeddings_dict[src]
                 )
+
+                print(f"La lunghezza delle bag è {len(bags)}; e il suo contenuto per un indice 3 è {bags[2]}")
                 if len(bags) < 5:
                     continue
 
