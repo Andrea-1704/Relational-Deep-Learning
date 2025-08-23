@@ -197,6 +197,8 @@ def greedy_metapath_search_rl(
     current_bags   = [[int(i)] for i in idxs]              # seed one-node bag per training node
     current_labels = [float(data[node_type].y[i]) for i in idxs]  # keep float to support regression
 
+    #NOTA CHE QUESTA VERIFICA E' INUTILE ALMENO PER F1, QUINDI VOLENDO SI POTEVA USARE ANCHE LA VERSIONE COMMENTATA
+
     metapath_counts = defaultdict(int)
     all_path_info = []
     current_path = []
@@ -209,6 +211,7 @@ def greedy_metapath_search_rl(
     for level in range(L_max):
         print(f"Step {level} - metapath so far: {current_path}")
         last_ntype = node_type if not current_path else current_path[-1][2]
+        print(f"Now we are starting from node type {last_ntype}")
 
         # candidate_rels = [
         #     (src, rel, dst)
@@ -230,7 +233,7 @@ def greedy_metapath_search_rl(
 
         #The agent selects next relation, r* (no surrogate task)
         chosen_rel = agent.select_relation(current_path, candidate_rels)
-        print(f"The current chosen relation by RL is {chosen_rel}")
+        print(f"The RL agent chosen relation {chosen_rel}")
 
         #bags expansion
         bags, labels = construct_bags(
@@ -241,6 +244,8 @@ def greedy_metapath_search_rl(
             src_embeddings=node_embeddings_dict[chosen_rel[0]]
         )
 
+        print(f"The length of bags is {len(bags)}")
+
         if len(bags) < 5:
             agent.update(current_path, chosen_rel, -1.0) #penalty
             print(f"Skipping relation {chosen_rel} (too few valid bags)")
@@ -248,7 +253,8 @@ def greedy_metapath_search_rl(
 
         #testing on validation after training the MPS GNN 
         mp_candidate = current_path + [chosen_rel]
-        print(f"Passing to model following metapaths: {mp_candidate}")
+        print(f"The RL agent chosen relation {chosen_rel} as best one, now we pass to the XMEtapath Model to test it")
+        #print(f"Passing to model following metapaths: {mp_candidate}")
         model = XMetapath(
             data=data,
             col_stats_dict=col_stats_dict,
@@ -273,6 +279,7 @@ def greedy_metapath_search_rl(
                 best_val = min(best_val, val_score)
         
         # NEW: log this candidate metapath’s performance into the agent’s global map
+        print(f"After testing, the result of metapath {mp_candidate} is {best_val} in the validation set.")
         agent.register_path_score(mp_candidate, best_val, higher_is_better)
 
 
@@ -280,6 +287,7 @@ def greedy_metapath_search_rl(
         if higher_is_better:
             if best_val < current_best_val - epsilon * current_best_val:
                 #we should stop here the construction of the metapath:
+                print("We are stopping here because the last path did not improve")
                 agent.update(current_path, chosen_rel, best_val)
                 break
             elif best_val > current_best_val:
