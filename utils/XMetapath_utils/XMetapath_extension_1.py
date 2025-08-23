@@ -24,6 +24,7 @@ from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
 from model.XMetapath_Model import XMetapath
 from utils.utils import evaluate_performance, test, train
+import numpy as np
 
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
@@ -137,8 +138,7 @@ def greedy_metapath_search(
         node_embeddings_dict = encoder(tf_dict)
 
     #test
-    import numpy as np
-    import torch
+    
 
     # 1) Costruisci mapping per drivers (ordine tabellare == ordine nodi interni)
     drivers_df = db.table_dict["drivers"].df.reset_index(drop=True)
