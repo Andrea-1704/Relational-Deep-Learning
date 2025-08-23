@@ -160,6 +160,7 @@ def greedy_metapath_search(
     current_bags2   = [[int(i)] for i in idxs2]              # seed one-node bag per training node
     current_labels2 = [float(data[node_type].y[i]) for i in idxs2]  # keep float to support regression
     print(f"isxs2: {current_bags2}")
+    #by running this text you'll find out it is just the sae thing, so no index error!
 
     current_labels = []
     for i in range(0, len(old_y)):
