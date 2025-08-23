@@ -47,6 +47,10 @@ from utils.utils import evaluate_performance, evaluate_on_full_train, test, trai
 from utils.XMetapath_utils.task_cache import get_task_description, get_task_metric  
 from utils.XMetapath_utils.XMetapath_extension3 import greedy_metapath_search
 from utils.XMetapath_utils.XMetapath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_utils.XMetapath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+# NEW: parallel warm-ups + Top-K merge
+from utils.XMetapath_utils.XMetapath_extension4 import run_warmups_parallel_and_merge
+
 from relbench.base.task_base import TaskType
 
 task_name = "driver-top3"
@@ -162,6 +166,56 @@ warmup_rl_agent(
 
 print(f"\n \n RL warmed up! \n")
 
+# NEW: ---- Parallel independent warm-ups and global Top-K selection ----
+# Build a base argument dict compatible with greedy_metapath_search_rl (the agent will be injected per-run)
+base_args = dict(
+    data=data_official,
+    db=db_nuovo,
+    node_id='driverId',
+    loader_dict=loader_dict,
+    task=task,
+    loss_fn=loss_fn,
+    tune_metric=tune_metric,
+    higher_is_better=higher_is_better,
+    train_mask=train_mask_full,
+    node_type='drivers',
+    col_stats_dict=col_stats_dict_official,
+    # Search/eval knobs for warm-up (short, cheap)
+    L_max=4,
+    number_of_metapaths=5,
+    hidden_channels=hidden_channels,
+    out_channels=out_channels,
+    final_out_channels=1,
+    epochs=5,        # few epochs per candidate during warm-up
+    lr=1e-3,
+    wd=0.0,
+    epsilon=0.02
+)
+
+# NEW: agent factory for independent runs
+def make_agent():
+    return RLAgent(tau=1.0, alpha=0.5)
+
+# NEW: seeds for independent runs (one per run)
+warmup_seeds = [11, 22, 33, 44, 55, 66]
+
+# NEW: run N independent warm-ups in parallel threads and merge all candidate metapaths
+K = 5  # how many meta-paths you want to keep globally
+topK_paths, topK_scores, global_best_map = run_warmups_parallel_and_merge(
+    base_args=base_args,
+    make_agent_fn=make_agent,
+    seeds=warmup_seeds,
+    number_of_runs=len(warmup_seeds),
+    number_of_metapaths=K,
+    higher_is_better=higher_is_better,
+    max_workers=len(warmup_seeds),
+)
+
+print("\nGlobal Top-K metapaths from parallel warm-ups:")
+for s, p in zip(topK_scores, topK_paths):
+    print(f"  score={s:.4f}  path={p}")
+
+
 #metapath selection through greedy algotithm
 metapaths, metapath_count = final_metapath_search_with_rl(
     agent=agent,
@@ -178,7 +232,11 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     col_stats_dict=col_stats_dict_official,
 )
 
-print(f"The final metapath is {metapaths}")
+print(f"The final metapath are {metapaths}")
+
+# NEW: use the global Top-K for training (override the single path)
+metapaths = topK_paths  # list of metapaths (each is a list of (src, rel, dst))
+
 
 #train the final model on the chosen paths
 lr=1e-02
@@ -188,12 +246,13 @@ model = XMetapath(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
     metadata=data_official.metadata(),
-    metapath_counts = metapath_count,
-    metapaths=[metapaths],
+    metapath_counts = metapath_count,  # keep your existing counts
+    metapaths=metapaths,               # NEW: train with global Top-K
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
 ).to(device)
+
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
     
