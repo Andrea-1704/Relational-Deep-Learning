@@ -137,6 +137,41 @@ def greedy_metapath_search(
         }
         node_embeddings_dict = encoder(tf_dict)
 
+    
+
+    assert data[node_type].y.numel() == data[node_type].num_nodes, f"y size mismatch for {node_type}"
+    assert train_mask.numel() == data[node_type].num_nodes, f"train_mask size mismatch for {node_type}"
+    # (optional) verify edge index ranges once
+    for (src, rel, dst), (edge_src, edge_dst) in data.edge_index_dict.items():
+        assert edge_src.min().item() >= 0 and edge_src.max().item() < data[src].num_nodes, f"edge_src out of range for {(src,rel,dst)}"
+        assert edge_dst.min().item() >= 0 and edge_dst.max().item() < data[dst].num_nodes, f"edge_dst out of range for {(src,rel,dst)}"
+    
+
+    metapath_counts = defaultdict(int) 
+    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
+    
+    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
+    print(f"driver ids df: {current_bags}")
+    old_y = data[node_type].y.int().tolist()    #be carefull: in this version we are going to consider only 
+    #regression or in general numerical labels!
+    #this depends on the task.
+    #print(f"we got to change this old_y: {data[node_type].y}")
+    
+    idxs2 = torch.where(train_mask)[0].tolist()             # internal indices 0..num_nodes-1
+    current_bags2   = [[int(i)] for i in idxs2]              # seed one-node bag per training node
+    current_labels2 = [float(data[node_type].y[i]) for i in idxs2]  # keep float to support regression
+    print(f"isxs2: {current_bags2}")
+    #by running this text you'll find out it is just the sae thing, so no index error!
+
+    current_labels = []
+    for i in range(0, len(old_y)):
+        if train_mask[i]:
+            current_labels.append(old_y[i])
+    assert len(current_bags) == len(current_labels)
+    all_path_info = [] 
+    local_path = []
+
+
     #test
     
 
@@ -186,38 +221,6 @@ def greedy_metapath_search(
         verify_one_driver(v)
 
     #test: to be removed
-
-    assert data[node_type].y.numel() == data[node_type].num_nodes, f"y size mismatch for {node_type}"
-    assert train_mask.numel() == data[node_type].num_nodes, f"train_mask size mismatch for {node_type}"
-    # (optional) verify edge index ranges once
-    for (src, rel, dst), (edge_src, edge_dst) in data.edge_index_dict.items():
-        assert edge_src.min().item() >= 0 and edge_src.max().item() < data[src].num_nodes, f"edge_src out of range for {(src,rel,dst)}"
-        assert edge_dst.min().item() >= 0 and edge_dst.max().item() < data[dst].num_nodes, f"edge_dst out of range for {(src,rel,dst)}"
-    
-
-    metapath_counts = defaultdict(int) 
-    driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
-    
-    current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
-    print(f"driver ids df: {current_bags}")
-    old_y = data[node_type].y.int().tolist()    #be carefull: in this version we are going to consider only 
-    #regression or in general numerical labels!
-    #this depends on the task.
-    #print(f"we got to change this old_y: {data[node_type].y}")
-    
-    idxs2 = torch.where(train_mask)[0].tolist()             # internal indices 0..num_nodes-1
-    current_bags2   = [[int(i)] for i in idxs2]              # seed one-node bag per training node
-    current_labels2 = [float(data[node_type].y[i]) for i in idxs2]  # keep float to support regression
-    print(f"isxs2: {current_bags2}")
-    #by running this text you'll find out it is just the sae thing, so no index error!
-
-    current_labels = []
-    for i in range(0, len(old_y)):
-        if train_mask[i]:
-            current_labels.append(old_y[i])
-    assert len(current_bags) == len(current_labels)
-    all_path_info = [] 
-    local_path = []
     
     current_paths = [[]] 
     for level in range(L_max):
