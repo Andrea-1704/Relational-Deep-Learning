@@ -103,6 +103,24 @@ num_neg = (y_full[train_mask_full] == 0).sum()
 pos_weight = torch.tensor([num_neg / num_pos], device=device)
 data_official['drivers'].y = target_vector_official
 
+# --- CHECK: do PKs coincide with internal indices for this node type? ---
+import numpy as np
+nt = "drivers"           # il tuo node_type
+pk_col = "driverId"      # la colonna PK nella tabella relazionale
+
+df = db_nuovo.table_dict[nt].df
+idx_to_pk = df[pk_col].to_numpy()                      # PK nell'ordine delle righe (== ordine nodi interni)
+pk_to_idx = {int(pk): i for i, pk in enumerate(idx_to_pk)}
+
+# size checks
+assert len(idx_to_pk) == data_official[nt].num_nodes, \
+    f"Size mismatch: table rows={len(idx_to_pk)} vs num_nodes={data_official[nt].num_nodes}"
+
+# identity test: vero solo se PK == 0..N-1 nello stesso ordine
+identity_ok = np.array_equal(idx_to_pk, np.arange(len(idx_to_pk)))
+print(f"[{nt}] PK==internal-index ? {identity_ok}")
+
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
