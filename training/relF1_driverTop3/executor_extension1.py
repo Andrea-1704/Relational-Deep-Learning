@@ -146,14 +146,14 @@ wd=0
 #     higher_is_better= higher_is_better
 # )
 
-# metapaths = greedy_metapath_search(
-#     data=data_official,
-#     db=db_nuovo,
-#     task_name = task_name,
-#     task = task,
-#     train_mask = train_mask_full,
-#     node_type='drivers',
-#     node_id='driverId',
-#     higher_is_better=True,
-#     col_stats_dict=col_stats_dict_official
-# # )
+metapaths = greedy_metapath_search(
+    data=data_official,
+    db=db_nuovo,
+    task_name = task_name,
+    task = task,
+    train_mask = train_mask_full,
+    node_type='drivers',
+    node_id='driverId',
+    higher_is_better=True,
+    col_stats_dict=col_stats_dict_official
+)
