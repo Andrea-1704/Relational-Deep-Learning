@@ -171,56 +171,6 @@ def greedy_metapath_search(
     all_path_info = [] 
     local_path = []
 
-
-    #test
-    
-
-    # 1) Costruisci mapping per drivers (ordine tabellare == ordine nodi interni)
-    drivers_df = db.table_dict["drivers"].df.reset_index(drop=True)
-    driver_idx_to_pk = drivers_df["driverId"].to_numpy()
-    driver_pk_to_idx = {int(pk): i for i, pk in enumerate(driver_idx_to_pk)}
-
-    # 2) Carica results e prendi la colonna driverId (stesso ordine del grafo)
-    results_df = db.table_dict["results"].df.reset_index(drop=True)
-    results_driver_col = results_df["driverId"].to_numpy()
-
-    # Sanity: dimensioni coerenti con il grafo
-    assert len(drivers_df) == data["drivers"].num_nodes
-    assert len(results_df) == data["results"].num_nodes
-
-    # 3) Prendi edge_index della relazione che stai usando
-    edge_src, edge_dst = data.edge_index_dict[("drivers","rev_f2p_driverId","results")]
-
-    def verify_one_driver(v_idx: int):
-        """Controlla che i vicini di v_idx (grafo) coincidano con le righe results con driverId=PK(v_idx)."""
-        # vicini nel grafo (indici interni dei nodi results)
-        nbrs = edge_dst[edge_src == v_idx].cpu().numpy()
-
-        # PK del driver
-        v_pk = int(driver_idx_to_pk[v_idx])
-
-        # righe di results con lo stesso driverId (indici di riga == indici interni dei nodi results)
-        rows = np.where(results_driver_col == v_pk)[0]
-
-        ok = np.array_equal(np.sort(nbrs), np.sort(rows))
-        print(f"[driver idx={v_idx}, pk={v_pk}] deg_grafo={len(nbrs)}  deg_df={len(rows)}  match={ok}")
-        if not ok:
-            # diagnostica minima: differenze
-            set_g = set(nbrs.tolist()); set_d = set(rows.tolist())
-            print("  in_graph_not_in_df (prime 10):", list(set_g - set_d)[:10])
-            print("  in_df_not_in_graph (prime 10):", list(set_d - set_g)[:10])
-        return ok
-
-    # Esempio: verifica il driver usato nel tuo print
-    # (se "indice 3" era il terzo seed, prendi il suo indice interno)
-    v_idx = current_bags[2][0]   # terzo seed driver nel tuo array di bags
-    verify_one_driver(v_idx)
-
-    # (opzionale) verifica qualche driver a campione
-    for v in [0, 5, 10, v_idx]:
-        verify_one_driver(v)
-
-    #test: to be removed
     
     current_paths = [[]] 
     for level in range(L_max):
