@@ -267,7 +267,6 @@ wd=0
 model = XMetapath(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
-    metadata=data_official.metadata(),
     metapath_counts = metapath_count,  # keep your existing counts
     metapaths=metapaths,               # NEW: train with global Top-K
     hidden_channels=hidden_channels,
