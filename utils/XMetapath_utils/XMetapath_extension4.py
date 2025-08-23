@@ -123,7 +123,7 @@ def greedy_metapath_search_rl(
     train_mask,
     node_type,
     col_stats_dict,
-    agent,  # agente RL esterno
+    agent,  # agente RL esterno: is already warmed up!
     L_max=3,
     number_of_metapaths=5,
     hidden_channels=128,
@@ -150,6 +150,9 @@ def greedy_metapath_search_rl(
     all_path_info = []
     current_path = []
     current_best_val = -math.inf if higher_is_better else math.inf
+
+    
+    val_table = task.get_table("val")
 
     #Building metapath using reinforcement leanring
     for level in range(L_max):
@@ -180,6 +183,7 @@ def greedy_metapath_search_rl(
         )
 
         if len(bags) < 5:
+            agent.update(current_path, chosen_rel, -1.0) #penalty
             print(f"Skipping relation {chosen_rel} (too few valid bags)")
             continue
 
@@ -197,8 +201,8 @@ def greedy_metapath_search_rl(
         ).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
+        #initialize best_val, which keeps track of the performances (best) given by adding the current path to mp:
         best_val = -math.inf if higher_is_better else math.inf
-        val_table = task.get_table("val")
 
         for _ in range(epochs):
             train(model, optimizer, loader_dict, device, task, loss_fn)

@@ -443,8 +443,8 @@ def evaluate_metapath_with_llm(
     train_mask,
     llm_model="llama3-70b-8192",
     max_per_hop=1,
-    num_val_samples=10,
-    num_examples_per_prompt=3,
+    num_val_samples=20,
+    num_examples_per_prompt=5,
     seed=42
 ):
     """
