@@ -148,9 +148,9 @@ def greedy_metapath_search(
 
     metapath_counts = defaultdict(int) 
     driver_ids_df = db.table_dict[node_type].df[node_id].to_numpy()
-    print(f"driver ids df: {driver_ids_df}")
+    
     current_bags =  [[int(i)] for i in driver_ids_df if train_mask[i]]
-
+    print(f"driver ids df: {current_bags}")
     old_y = data[node_type].y.int().tolist()    #be carefull: in this version we are going to consider only 
     #regression or in general numerical labels!
     #this depends on the task.
@@ -159,7 +159,7 @@ def greedy_metapath_search(
     idxs2 = torch.where(train_mask)[0].tolist()             # internal indices 0..num_nodes-1
     current_bags2   = [[int(i)] for i in idxs2]              # seed one-node bag per training node
     current_labels2 = [float(data[node_type].y[i]) for i in idxs2]  # keep float to support regression
-    print(f"isxs2: {idxs2}")
+    print(f"isxs2: {current_bags2}")
 
     current_labels = []
     for i in range(0, len(old_y)):
