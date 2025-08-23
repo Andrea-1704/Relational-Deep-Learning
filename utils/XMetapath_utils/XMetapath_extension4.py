@@ -26,8 +26,11 @@ class RLAgent:
 
     def select_relation(self, state, candidate_rels):
         state_key = tuple(state)
-        q_values = torch.tensor([self.q_table[state_key][r] for r in candidate_rels])
-        probs = torch.softmax(q_values / self.tau, dim=0)
+        q = torch.tensor([self.q_table[state_key][r] for r in candidate_rels], dtype=torch.float32)
+        tau = max(self.tau, 1e-8)
+        logits = q / tau
+        logits -= logits.max()  # stabilità
+        probs = torch.softmax(logits, dim=0)
         idx = torch.multinomial(probs, 1).item()
         return candidate_rels[idx]
 
@@ -40,8 +43,10 @@ class RLAgent:
         torch.save(dict(self.q_table), path)
 
     def load(self, path="rl_agent_qtable.pt"):
-        loaded = torch.load(path)
-        self.q_table = defaultdict(lambda: defaultdict(float), loaded)
+        loaded = torch.load(path, map_location="cpu")
+        self.q_table = defaultdict(lambda: defaultdict(float))
+        for k, v in loaded.items():
+            self.q_table[k] = defaultdict(float, v)
 
 
 
