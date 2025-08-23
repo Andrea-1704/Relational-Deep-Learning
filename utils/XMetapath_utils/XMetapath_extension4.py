@@ -179,9 +179,24 @@ def greedy_metapath_search_rl(
         ).to(device)
         tf_dict = {nt: data[nt].tf.to(device) for nt in data.node_types if 'tf' in data[nt]}
         node_embeddings_dict = encoder(tf_dict)
-    ids = db.table_dict[node_type].df[node_id].to_numpy()
-    current_bags = [[int(i)] for i in ids if train_mask[i]]
-    current_labels = [int(data[node_type].y[i]) for i in range(len(train_mask)) if train_mask[i]]
+
+    # NEW (sanity checks): sizes aligned to internal node count
+    assert data[node_type].y.numel() == data[node_type].num_nodes, f"y size mismatch for {node_type}"
+    assert train_mask.numel() == data[node_type].num_nodes, f"train_mask size mismatch for {node_type}"
+    # (optional) verify edge index ranges once
+    for (src, rel, dst), (edge_src, edge_dst) in data.edge_index_dict.items():
+        assert edge_src.min().item() >= 0 and edge_src.max().item() < data[src].num_nodes, f"edge_src out of range for {(src,rel,dst)}"
+        assert edge_dst.min().item() >= 0 and edge_dst.max().item() < data[dst].num_nodes, f"edge_dst out of range for {(src,rel,dst)}"
+    
+
+    # ids = db.table_dict[node_type].df[node_id].to_numpy()
+    # current_bags = [[int(i)] for i in ids if train_mask[i]]
+    # current_labels = [int(data[node_type].y[i]) for i in range(len(train_mask)) if train_mask[i]]
+    # NEW (fix PK→internal indices): build bags/labels from internal indices aligned with masks/edge_index
+    idxs = torch.where(train_mask)[0].tolist()             # internal indices 0..num_nodes-1
+    current_bags   = [[int(i)] for i in idxs]              # seed one-node bag per training node
+    current_labels = [float(data[node_type].y[i]) for i in idxs]  # keep float to support regression
+
     metapath_counts = defaultdict(int)
     all_path_info = []
     current_path = []
@@ -195,11 +210,19 @@ def greedy_metapath_search_rl(
         print(f"Step {level} - metapath so far: {current_path}")
         last_ntype = node_type if not current_path else current_path[-1][2]
 
+        # candidate_rels = [
+        #     (src, rel, dst)
+        #     for (src, rel, dst) in data.edge_index_dict
+        #     if src == last_ntype and dst != node_type and dst not in [r[0] for r in current_path]
+        # ]
+        # NEW (correct filter): avoid reusing destination types already in the path
+        used_dst = {r[2] for r in current_path}
         candidate_rels = [
             (src, rel, dst)
             for (src, rel, dst) in data.edge_index_dict
-            if src == last_ntype and dst != node_type and dst not in [r[0] for r in current_path]
+            if src == last_ntype and dst != node_type and dst not in used_dst
         ]
+
 
         if not candidate_rels:
             print("No more candidates.")
@@ -284,19 +307,7 @@ def greedy_metapath_search_rl(
                 print(f"For the partial metapath {current_path.copy()} we obtain validation loss {best_val:.6f}; added {chosen_rel}")
 
 
-    #Select final metapaths
-    # best_score_per_path = {}
-    # for score, path in all_path_info:
-    #     path_tuple = tuple(path)
-    #     if path_tuple not in best_score_per_path:
-    #         best_score_per_path[path_tuple] = score
-    # sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
-    # selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
-
-    # sorted_paths = sorted(all_path_info, key=lambda x: x[0], reverse=higher_is_better)
-    # selected_metapaths = [path for _, path in sorted_paths[:number_of_metapaths]]
     return current_path, metapath_counts
-    #return selected_metapaths, metapath_counts
 
 
 #pre training tecnique for the agent of the RL
@@ -380,7 +391,6 @@ def final_metapath_search_with_rl(
 
 
 
-
 # NEW: merge multiple {path->score} dicts keeping the best score per path
 def merge_best_maps(maps: List[Dict[Tuple[Tuple[str,str,str], ...], float]],
                     higher_is_better: bool) -> Dict[Tuple[Tuple[str,str,str], ...], float]:
@@ -391,12 +401,14 @@ def merge_best_maps(maps: List[Dict[Tuple[Tuple[str,str,str], ...], float]],
                 agg[p] = float(s)
     return agg
 
+
 # NEW: take Top-K paths from a {path->score} dict
 def topk_from_best(agg: Dict[Tuple[Tuple[str,str,str], ...], float], K: int, higher_is_better: bool):
     items = sorted(agg.items(), key=lambda kv: kv[1], reverse=higher_is_better)[:K]
     topK_paths  = [list(p) for p, _ in items]
     topK_scores = [s for _, s in items]
     return topK_paths, topK_scores
+
 
 # NEW: seed helper for reproducibility
 def _set_all_seeds(seed: int):
@@ -407,6 +419,7 @@ def _set_all_seeds(seed: int):
             torch.cuda.manual_seed_all(seed)
     except Exception:
         pass
+
 
 # NEW: one independent warm-up run (thread job)
 def _warmup_job(base_args: dict, make_agent_fn: Callable[[], RLAgent], seed: int):
@@ -419,6 +432,7 @@ def _warmup_job(base_args: dict, make_agent_fn: Callable[[], RLAgent], seed: int
     greedy_metapath_search_rl(**args)
     # collect this run’s registry
     return agent.best_score_by_path_global
+
 
 # NEW: run multiple independent warm-ups in parallel threads and return global Top-K
 def run_warmups_parallel_and_merge(

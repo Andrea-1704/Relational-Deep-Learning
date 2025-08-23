@@ -114,6 +114,28 @@ num_neg = (y_full[train_mask_full] == 0).sum()
 pos_weight = torch.tensor([num_neg / num_pos], device=device)
 data_official['drivers'].y = target_vector_official
 
+# --- ONE-TIME index maps
+from dataclasses import dataclass
+
+@dataclass
+class IndexMaps:
+    pk_to_idx: dict            # {PK -> internal index}
+    idx_to_pk: list            # [internal index -> PK] as list/array
+
+def build_index_maps(db, data, node_type: str, node_id_col: str) -> IndexMaps:
+    # 1) Extract PKs in the SAME ORDER used to build the hetero graph
+    pk_series = db.table_dict[node_type].df[node_id_col]
+    idx_to_pk = pk_series.to_numpy().tolist()
+    # 2) Build reverse map
+    pk_to_idx = {int(pk): idx for idx, pk in enumerate(idx_to_pk)}
+    # 3) Sanity: sizes match
+    assert len(idx_to_pk) == data[node_type].num_nodes, \
+        f"Size mismatch for {node_type}: table rows={len(idx_to_pk)} vs num_nodes={data[node_type].num_nodes}"
+    # 4) Sanity: PKs unique
+    assert len(pk_to_idx) == len(idx_to_pk), "Duplicate PKs detected in table order."
+    return IndexMaps(pk_to_idx=pk_to_idx, idx_to_pk=idx_to_pk)
+
+
 # Ricava gli ID dei driver nella validation table
 val_df_raw = val_table.df
 val_driver_ids = val_df_raw["driverId"].to_numpy()
