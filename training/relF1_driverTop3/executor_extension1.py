@@ -110,6 +110,8 @@ loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 hidden_channels = 128
 out_channels = 128
 
+task_name = "driver-top3"
+
 loader_dict = loader_dict_fn(
     batch_size=1024,
     num_neighbours=512,
@@ -144,102 +146,14 @@ wd=0
 #     higher_is_better= higher_is_better
 # )
 
-metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
-metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
-
-print(f"\nfinal metapaths are {metapaths}\n")
-print(f"\nmetapaths counts are {metapath_counts}\n")
-
-lr=1e-02
-wd=0
-
-model = XMetapath(
-    data=data_official,
-    col_stats_dict=col_stats_dict_official,
-    metadata=data_official.metadata(),
-    metapath_counts = metapath_counts,
-    metapaths=metapaths,
-    hidden_channels=hidden_channels,
-    out_channels=out_channels,
-    final_out_channels=1,
-).to(device)
-
-optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-
-
-# results = interpret_attention(
-#     model=my_trained_model,
-#     batch=batch_data,
-#     metapath_names=["driver→race", "driver→race→circuit", "driver→constructor→race"],
-#     entity_table="drivers"
-# )
-
-# save_interpretations(results)
-
-
-scheduler = CosineAnnealingLR(optimizer, T_max=25)
-
-early_stopping = EarlyStopping(
-    patience=60,
-    delta=0.0,
-    verbose=True,
-    higher_is_better = True,
-    path="best_basic_model.pt"
-)
-
-
-best_val_metric = -math.inf 
-test_table = task.get_table("test", mask_input_cols=False)
-best_test_metric = -math.inf 
-epochs = 5
-for epoch in range(0, epochs):
-    train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-
-    train_pred = test(model, loader_dict["train"], device=device, task=task)
-    val_pred = test(model, loader_dict["val"], device=device, task=task)
-    test_pred = test(model, loader_dict["test"], device=device, task=task)
-    
-    train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-    val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-
-    #scheduler.step(val_metrics[tune_metric])
-
-    if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
-        best_val_metric = val_metrics[tune_metric]
-        state_dict = copy.deepcopy(model.state_dict())
-
-    if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
-        best_test_metric = test_metrics[tune_metric]
-        state_dict_test = copy.deepcopy(model.state_dict())
-
-    current_lr = optimizer.param_groups[0]["lr"]
-    
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
-
-    early_stopping(val_metrics[tune_metric], model)
-
-    if early_stopping.early_stop:
-        print(f"Early stopping triggered at epoch {epoch}")
-        break
-meta_names = []
-for m in metapaths:
-  cur_metapath=m[0][0]
-  for metapath in m:
-    source = metapath[0]
-    dst = metapath[2]
-    cur_metapath=cur_metapath+"->"+dst
-  meta_names.append(cur_metapath)
-  
-for batch in loader_dict["test"]:
-    batch.to(device)
-    results = interpret_attention(
-        model=model,
-        batch=batch,
-        metapath_names=meta_names,
-        entity_table="drivers"
-    )
-    print(f"result of interpretability are {results}")
-
-print(f"best validation results: {best_val_metric}")
-print(f"best test results: {best_test_metric}")
+# metapaths = greedy_metapath_search(
+#     data=data_official,
+#     db=db_nuovo,
+#     task_name = task_name,
+#     task = task,
+#     train_mask = train_mask_full,
+#     node_type='drivers',
+#     node_id='driverId',
+#     higher_is_better=True,
+#     col_stats_dict=col_stats_dict_official
+# # )

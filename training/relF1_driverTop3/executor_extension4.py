@@ -219,10 +219,10 @@ def make_agent():
     return RLAgent(tau=1.0, alpha=0.5)
 
 # NEW: seeds for independent runs (one per run)
-warmup_seeds = [11, 22, 33, 44, 55, 66]
+warmup_seeds = [11, 22]
 
 # NEW: run N independent warm-ups in parallel threads and merge all candidate metapaths
-K = 5  # how many meta-paths you want to keep globally
+K = 3 # how many meta-paths you want to keep globally
 topK_paths, topK_scores, global_best_map = run_warmups_parallel_and_merge(
     base_args=base_args,
     make_agent_fn=make_agent,
