@@ -342,12 +342,105 @@ def warmup_rl_agent(
         )
 
 
-#final call with agent already warmed up
+# #final call with agent already warmed up
+# def final_metapath_search_with_rl(
+#     agent,
+#     data,
+#     db,
+#     node_id,
+#     loader_dict,
+#     task,
+#     loss_fn,
+#     tune_metric,
+#     higher_is_better,
+#     train_mask,
+#     node_type,
+#     col_stats_dict,
+#     L_max=3,
+#     epochs=100,
+#     number_of_metapaths=5
+# ):
+#     print("\n\n Launching final metapath search using trained RL agent \n")
+#     selected_metapaths, metapath_counts = greedy_metapath_search_rl(
+#         data=data,
+#         loader_dict=loader_dict,
+#         task=task,
+#         loss_fn=loss_fn,
+#         tune_metric=tune_metric,
+#         higher_is_better=higher_is_better,
+#         train_mask=train_mask,
+#         node_type=node_type,
+#         col_stats_dict=col_stats_dict,
+#         agent=agent,
+#         L_max=L_max,
+#         epochs=epochs,
+#     )
+#     return selected_metapaths, metapath_counts
+
+
+
+
+
+
+
+
+
+
+"""
+Update in order to obtain "number_of_metapaths" metapaths. These metapaths are not
+partial version of the "complete" one. I mean that we do not have a complete 
+metapath A->B->C->E and then some partial metapaths, but different metapaths 
+are returned.
+"""
+
+# XMetapath_extension4.py  — sostituisci la tua final_metapath_search_with_rl
+
+
+def _prefix_overlap(a, b):
+    #simple similarity metric: common prefix 
+    m = min(len(a), len(b))
+    k = 0
+    for i in range(m):
+        if a[i] == b[i]:
+            k += 1
+        else:
+            break
+    return k / m if m > 0 else 0.0
+
+def _is_prefix(a, b):
+    # True if a is prefix of b or viceversa.
+    if len(a) <= len(b):
+        return a == b[:len(a)]
+    else:
+        return b == a[:len(b)]
+
+def _mmr_select_topk(candidates, scores, k, lam=0.5, sim_fn=_prefix_overlap):
+    # candidates: List[Tuple[Triple,...]] ; scores: Dict[path_tuple] -> float
+    items = [(tuple(p), scores[tuple(p)]) for p in candidates]
+    #sort by score
+    items.sort(key=lambda kv: kv[1], reverse=True)
+
+    selected = []
+    while items and len(selected) < k:
+        best_idx = None
+        best_obj = -float("inf")
+        for idx, (p, s) in enumerate(items):
+            # vincolo "no sottoinsiemi/prefissi"
+            if any(_is_prefix(p, q) or _is_prefix(q, p) for q in selected):
+                continue
+            div = 0.0 if not selected else max(sim_fn(p, q) for q in selected)
+            obj = s - lam * div
+            if obj > best_obj:
+                best_obj, best_idx = obj, idx
+        if best_idx is None:
+            break
+        sel_p, _ = items.pop(best_idx)
+        selected.append(sel_p)
+    return [list(p) for p in selected]
+
 def final_metapath_search_with_rl(
     agent,
     data,
-    db,
-    node_id,
     loader_dict,
     task,
     loss_fn,
@@ -358,24 +451,66 @@ def final_metapath_search_with_rl(
     col_stats_dict,
     L_max=3,
     epochs=100,
-    number_of_metapaths=5
+    number_of_metapaths=5,
+    episodes_for_search=None,     #how many episods to run in the final
+    lambda_diversity=0.5,         #trade off: score vs diversity
+    require_full_length=True,     #if True we only require metapths of length L_max
+    reset_registry=True           #remove candidates from the warm up
 ):
     print("\n\n Launching final metapath search using trained RL agent \n")
-    selected_metapaths, metapath_counts = greedy_metapath_search_rl(
-        data=data,
-        loader_dict=loader_dict,
-        task=task,
-        loss_fn=loss_fn,
-        tune_metric=tune_metric,
-        higher_is_better=higher_is_better,
-        train_mask=train_mask,
-        node_type=node_type,
-        col_stats_dict=col_stats_dict,
-        agent=agent,
-        L_max=L_max,
-        epochs=epochs,
+
+    if reset_registry:
+        agent.best_score_by_path_global.clear()
+
+    #We need to executes more episodes to find many candidates
+    if episodes_for_search is None:
+        episodes_for_search = max(3 * number_of_metapaths, 10)
+
+    for ep in range(episodes_for_search):
+        print(f"[Final RL — episode {ep+1}/{episodes_for_search}]")
+        _path, _counts = greedy_metapath_search_rl(
+            data=data,
+            loader_dict=loader_dict,
+            task=task,
+            loss_fn=loss_fn,
+            tune_metric=tune_metric,
+            higher_is_better=higher_is_better,
+            train_mask=train_mask,
+            node_type=node_type,
+            col_stats_dict=col_stats_dict,
+            agent=agent,
+            L_max=L_max,
+            epochs=epochs,
+        )
+        # greedy registers candidates and relative scores in agent.best_score_by_path_global
+
+    #candidates from agent's register
+    best_map = agent.best_score_by_path_global  # Dict[Tuple[Triple,...]] -> float
+
+    #filter full length
+    if require_full_length:
+        candidates = [list(p) for p in best_map.keys() if len(p) == L_max]
+    else:
+        candidates = [list(p) for p in best_map.keys()]
+
+    if not candidates:
+        print("WARNING: no full-length metapaths discovered; falling back to any length.")
+        candidates = [list(p) for p in best_map.keys()]
+        if not candidates:
+            return [], defaultdict(int)
+
+    #Top K selection with filter on length and similarity
+    selected = _mmr_select_topk(
+        candidates=candidates,
+        scores=best_map,
+        k=number_of_metapaths,
+        lam=lambda_diversity,
+        sim_fn=_prefix_overlap
     )
-    return selected_metapaths, metapath_counts
 
+    # counters
+    metapath_counts = defaultdict(int)
+    for p in selected:
+        metapath_counts[tuple(p)] += 1
 
-
+    return selected, metapath_counts
