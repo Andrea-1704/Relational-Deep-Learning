@@ -156,14 +156,6 @@ def greedy_metapath_search_rl(
     epsilon:float = 0.2
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    with torch.no_grad():
-        encoder = HeteroEncoder(
-            channels=hidden_channels,
-            node_to_col_names_dict={nt: data[nt].tf.col_names_dict for nt in data.node_types},
-            node_to_col_stats=col_stats_dict,
-        ).to(device)
-        tf_dict = {nt: data[nt].tf.to(device) for nt in data.node_types if 'tf' in data[nt]}
-        node_embeddings_dict = encoder(tf_dict)
 
     # NEW (sanity checks): sizes aligned to internal node count
     assert data[node_type].y.numel() == data[node_type].num_nodes, f"y size mismatch for {node_type}"
