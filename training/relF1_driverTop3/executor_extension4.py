@@ -46,10 +46,7 @@ from model.XMetapath_Model import XMetapath, interpret_attention
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.XMetapath_utils.task_cache import get_task_description, get_task_metric  
 from utils.XMetapath_utils.XMetapath_extension3 import greedy_metapath_search
-from utils.XMetapath_utils.XMetapath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
-from utils.XMetapath_utils.XMetapath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
-# NEW: parallel warm-ups + Top-K merge
-from utils.XMetapath_utils.XMetapath_extension4 import run_warmups_parallel_and_merge
+from utils.XMetapath_utils.XMetapath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl, topk_from_best
 
 from relbench.base.task_base import TaskType
 
@@ -166,8 +163,11 @@ wd=0
 node_type="drivers"
 
 agent = RLAgent(tau=1.0, alpha=0.5)
+"""
+We build a single agent and perform sequential warmups
+"""
+agent.best_score_by_path_global.clear() #azzera registro punteggi
 
-#warm up: pre training for RL agent
 warmup_rl_agent(
     agent=agent,
     data=data_official,
@@ -181,64 +181,23 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict_official,
-    num_episodes=5,
-    L_max=4,
-    epochs=2
+    num_episodes=5,   
+    L_max=4,          
+    epochs=5         
 )
 
-print(f"\n \n RL warmed up! \n")
+#Extract the Top-K metapaths found out with warmup:
+K = 3
+global_best_map = agent.best_score_by_path_global
+topK_paths, topK_scores = topk_from_best(global_best_map, K, higher_is_better)
 
-# NEW: ---- Parallel independent warm-ups and global Top-K selection ----
-# Build a base argument dict compatible with greedy_metapath_search_rl (the agent will be injected per-run)
-base_args = dict(
-    data=data_official,
-    db=db_nuovo,
-    node_id='driverId',
-    loader_dict=loader_dict,
-    task=task,
-    loss_fn=loss_fn,
-    tune_metric=tune_metric,
-    higher_is_better=higher_is_better,
-    train_mask=train_mask_full,
-    node_type='drivers',
-    col_stats_dict=col_stats_dict_official,
-    # Search/eval knobs for warm-up (short, cheap)
-    L_max=4,
-    number_of_metapaths=5,
-    hidden_channels=hidden_channels,
-    out_channels=out_channels,
-    final_out_channels=1,
-    epochs=5,        # few epochs per candidate during warm-up
-    lr=1e-3,
-    wd=0.0,
-    epsilon=0.02
-)
-
-# NEW: agent factory for independent runs
-def make_agent():
-    return RLAgent(tau=1.0, alpha=0.5)
-
-# NEW: seeds for independent runs (one per run)
-warmup_seeds = [11, 22]
-
-# NEW: run N independent warm-ups in parallel threads and merge all candidate metapaths
-K = 3 # how many meta-paths you want to keep globally
-topK_paths, topK_scores, global_best_map = run_warmups_parallel_and_merge(
-    base_args=base_args,
-    make_agent_fn=make_agent,
-    seeds=warmup_seeds,
-    number_of_runs=len(warmup_seeds),
-    number_of_metapaths=K,
-    higher_is_better=higher_is_better,
-    max_workers=len(warmup_seeds),
-)
-
-print("\nGlobal Top-K metapaths from parallel warm-ups:")
+print("\nGlobal Top-K metapaths from warm-ups:")
 for s, p in zip(topK_scores, topK_paths):
     print(f"  score={s:.4f}  path={p}")
 
+agent.tau = 0.3   # meno esplorazione
+agent.alpha = 0.2 # update più conservativo
 
-#metapath selection through greedy algotithm
 metapaths, metapath_count = final_metapath_search_with_rl(
     agent=agent,
     data=data_official,
@@ -252,12 +211,15 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict_official,
+    L_max=4,                 # matcha il warm-up o come preferisci
+    epochs=100,
+    number_of_metapaths=K    # quanti vuoi finalizzare
 )
+
+
 
 print(f"The final metapath are {metapaths}")
 
-# NEW: use the global Top-K for training (override the single path)
-metapaths = topK_paths  # list of metapaths (each is a list of (src, rel, dst))
 
 
 #train the final model on the chosen paths
