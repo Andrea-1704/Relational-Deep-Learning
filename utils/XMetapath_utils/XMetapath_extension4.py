@@ -153,7 +153,8 @@ def greedy_metapath_search_rl(
     epochs=100,
     lr : float = 0.0001,
     wd=0.0,
-    epsilon:float = 0.2
+    epsilon:float = 0.35,
+    num_improvements_L=3,#number of times we keep running if adding rel did not improve but did not harm the results to stop the learning
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -171,6 +172,7 @@ def greedy_metapath_search_rl(
     current_path = []
     current_best_val = -math.inf if higher_is_better else math.inf
 
+    num_improvements = num_improvements_L
     
     val_table = task.get_table("val")
 
@@ -248,12 +250,7 @@ def greedy_metapath_search_rl(
 
         #now we check if current update in path is harmful:
         if higher_is_better:
-            if best_val < current_best_val - epsilon * current_best_val:
-                #we should stop here the construction of the metapath:
-                print("We are stopping here because the last path did not improve")
-                agent.update(current_path, chosen_rel, best_val)
-                break
-            elif best_val > current_best_val:
+            if best_val > current_best_val:
                 #only if this chosen_rel improve performances on gnn we add it to current path
                 current_best_val = best_val
                 agent.update(current_path, chosen_rel, best_val)
@@ -262,13 +259,21 @@ def greedy_metapath_search_rl(
                 metapath_counts[tuple(current_path)] += 1
                 all_path_info.append((best_val, current_path.copy()))
                 print(f"For the partial metapath {current_path.copy()} we obtain F1 test loss equal to {best_val}, added {chosen_rel}")
+                num_improvements = num_improvements_L
+            else:
+                if best_val < current_best_val - epsilon * current_best_val:
+                    #we should stop here the construction of the metapath:
+                    print("We are stopping here because the last path did not improve")
+                    agent.update(current_path, chosen_rel, best_val)
+                    break
+                else:
+                    num_improvements = num_improvements_L-1
+                    if num_improvements == 0:
+                        print("We are stopping here because the last path did not improve")
+                        break
         else:
             # lower-is-better (es. MAE)
-            if best_val > current_best_val + epsilon * current_best_val:
-                agent.update(current_path, chosen_rel, best_val)
-                print(f"Early stop: {chosen_rel} increases loss from {current_best_val:.6f} to {best_val:.6f} (eps={epsilon:.3f}).")
-                break
-            elif best_val < current_best_val:
+            if best_val < current_best_val:
                 current_best_val = best_val
                 agent.update(current_path, chosen_rel, best_val)
                 current_path.append(chosen_rel)
@@ -276,7 +281,17 @@ def greedy_metapath_search_rl(
                 metapath_counts[tuple(current_path)] += 1
                 all_path_info.append((best_val, current_path.copy()))
                 print(f"For the partial metapath {current_path.copy()} we obtain validation loss {best_val:.6f}; added {chosen_rel}")
-
+                num_improvements = num_improvements_L
+            else:
+                if best_val > current_best_val + epsilon * current_best_val:
+                    agent.update(current_path, chosen_rel, best_val)
+                    print(f"Early stop: {chosen_rel} increases loss from {current_best_val:.6f} to {best_val:.6f} (eps={epsilon:.3f}).")
+                    break
+                else:
+                    num_improvements = num_improvements_L-1
+                    if num_improvements == 0:
+                        print("We are stopping here because the last path did not improve")
+                        break
 
     return current_path, metapath_counts
 
