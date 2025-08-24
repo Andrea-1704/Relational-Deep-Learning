@@ -387,7 +387,7 @@ def _mmr_select_topk(candidates, scores, k, lam=0.5, sim_fn=_prefix_overlap):
     return [list(p) for p in selected]
 
 def final_metapath_search_with_rl(
-    agent,
+    agent:RLAgent,
     data,
     loader_dict,
     task,
@@ -463,4 +463,4 @@ def final_metapath_search_with_rl(
     for p in selected:
         metapath_counts[tuple(p)] += 1
 
-    return selected, metapath_counts
+    return selected, agent.statistics_on_mp
