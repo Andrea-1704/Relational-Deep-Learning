@@ -325,8 +325,6 @@ def warmup_rl_agent(
         print(f"\n[Warmup Episode {i+1}]")
         _ = greedy_metapath_search_rl(
             data=data,
-            db=db,
-            node_id=node_id,
             loader_dict=loader_dict,
             task=task,
             loss_fn=loss_fn,
@@ -338,7 +336,6 @@ def warmup_rl_agent(
             agent=agent,
             L_max=L_max,
             epochs=epochs,
-            number_of_metapaths=1,  # serve solo a raccogliere reward
         )
 
 
