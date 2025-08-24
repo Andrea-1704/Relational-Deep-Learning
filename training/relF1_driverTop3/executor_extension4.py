@@ -163,11 +163,6 @@ warmup_rl_agent(
 #Extract the Top-K metapaths found out with warmup:
 K = 3
 global_best_map = agent.best_score_by_path_global
-topK_paths, topK_scores = topk_from_best(global_best_map, K, higher_is_better)
-
-print("\nGlobal Top-K metapaths from warm-ups:")
-for s, p in zip(topK_scores, topK_paths):
-    print(f"  score={s:.4f}  path={p}")
 
 agent.tau = 0.3   # meno esplorazione
 agent.alpha = 0.2 # update più conservativo

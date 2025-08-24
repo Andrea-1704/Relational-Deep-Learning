@@ -137,8 +137,6 @@ Just after computing the best score for a path we memorize the performances in t
 """
 def greedy_metapath_search_rl(
     data,
-    db,
-    node_id,
     loader_dict,
     task,
     loss_fn,
@@ -149,7 +147,6 @@ def greedy_metapath_search_rl(
     col_stats_dict,
     agent,  # agente RL esterno: is already warmed up!
     L_max=3,
-    number_of_metapaths=5,
     hidden_channels=128,
     out_channels=128,
     final_out_channels=1,
@@ -366,8 +363,6 @@ def final_metapath_search_with_rl(
     print("\n\n Launching final metapath search using trained RL agent \n")
     selected_metapaths, metapath_counts = greedy_metapath_search_rl(
         data=data,
-        db=db,
-        node_id=node_id,
         loader_dict=loader_dict,
         task=task,
         loss_fn=loss_fn,
@@ -379,7 +374,6 @@ def final_metapath_search_with_rl(
         agent=agent,
         L_max=L_max,
         epochs=epochs,
-        number_of_metapaths=number_of_metapaths,
     )
     return selected_metapaths, metapath_counts
 
