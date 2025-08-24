@@ -211,9 +211,9 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict_official,
-    L_max=4,                 # matcha il warm-up o come preferisci
+    L_max=4,                 
     epochs=100,
-    number_of_metapaths=K    # quanti vuoi finalizzare
+    number_of_metapaths=K    
 )
 
 

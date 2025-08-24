@@ -11,16 +11,11 @@ r* at each level.
 
 import torch
 import math
-from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
 from utils.utils import evaluate_performance, test, train
 from model.XMetapath_Model import XMetapath
-# NEW: -------- Top-K merge utilities and parallel warm-ups --------
-from typing import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import copy, random, numpy as np
 
 
 class RLAgent:
@@ -29,23 +24,7 @@ class RLAgent:
         self.tau = tau
         self.alpha = alpha
         # NEW: per-run registry of best scores per metapath
-        self.best_score_by_path_global: Dict[Tuple[Tuple[str,str,str], ...], float] = {}
-
-    # NEW: reset registry at the start of a run
-    def reset_scores(self):
-        self.best_score_by_path_global.clear()
-    
-    # NEW: register/update best score for a metapath
-    def register_path_score(self, path_list, score: float, higher_is_better: bool):
-        key = tuple(path_list)
-        prev = self.best_score_by_path_global.get(key)
-        if prev is None:
-            self.best_score_by_path_global[key] = float(score)
-        else:
-            if higher_is_better and score > prev:
-                self.best_score_by_path_global[key] = float(score)
-            elif (not higher_is_better) and score < prev:
-                self.best_score_by_path_global[key] = float(score)
+        self.best_score_by_path_global: Dict[Tuple[Tuple[str,str,str], ...], float] = {}    
 
     def select_relation(self, state, candidate_rels):
         state_key = tuple(state)
@@ -398,70 +377,3 @@ def final_metapath_search_with_rl(
 
 
 
-
-# NEW: merge multiple {path->score} dicts keeping the best score per path
-def merge_best_maps(maps: List[Dict[Tuple[Tuple[str,str,str], ...], float]],
-                    higher_is_better: bool) -> Dict[Tuple[Tuple[str,str,str], ...], float]:
-    agg: Dict[Tuple[Tuple[str,str,str], ...], float] = {}
-    for m in maps:
-        for p, s in m.items():
-            if (p not in agg) or (higher_is_better and s > agg[p]) or ((not higher_is_better) and s < agg[p]):
-                agg[p] = float(s)
-    return agg
-
-
-# NEW: take Top-K paths from a {path->score} dict
-def topk_from_best(agg: Dict[Tuple[Tuple[str,str,str], ...], float], K: int, higher_is_better: bool):
-    items = sorted(agg.items(), key=lambda kv: kv[1], reverse=higher_is_better)[:K]
-    topK_paths  = [list(p) for p, _ in items]
-    topK_scores = [s for _, s in items]
-    return topK_paths, topK_scores
-
-
-# NEW: seed helper for reproducibility
-def _set_all_seeds(seed: int):
-    random.seed(seed); np.random.seed(seed)
-    try:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-    except Exception:
-        pass
-
-
-# NEW: one independent warm-up run (thread job)
-def _warmup_job(base_args: dict, make_agent_fn: Callable[[], RLAgent], seed: int):
-    args = copy.deepcopy(base_args)
-    _set_all_seeds(seed)
-    agent = make_agent_fn()
-    agent.reset_scores()
-    args["agent"] = agent
-    # run your existing search (unchanged signature/return)
-    greedy_metapath_search_rl(**args)
-    # collect this run’s registry
-    return agent.best_score_by_path_global
-
-
-# NEW: run multiple independent warm-ups in parallel threads and return global Top-K
-def run_warmups_parallel_and_merge(
-    base_args: dict,
-    make_agent_fn: Callable[[], RLAgent],
-    seeds: List[int],
-    number_of_runs: int,
-    number_of_metapaths: int,
-    higher_is_better: bool,
-    max_workers: int = None,
-):
-    """
-    Run multiple independent warm-ups (each with its own agent/seed) in parallel threads,
-    merge all candidate metapaths, and return global Top-K.
-    """
-    assert len(seeds) >= number_of_runs, "Provide at least one seed per run."
-    maps = []
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futs = [ex.submit(_warmup_job, base_args, make_agent_fn, seeds[i]) for i in range(number_of_runs)]
-        for f in as_completed(futs):
-            maps.append(f.result())
-    global_best = merge_best_maps(maps, higher_is_better)
-    topK_paths, topK_scores = topk_from_best(global_best, number_of_metapaths, higher_is_better)
-    return topK_paths, topK_scores, global_best
