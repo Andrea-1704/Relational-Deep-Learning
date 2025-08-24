@@ -70,7 +70,7 @@ def construct_bags(
     previous_labels: List[float],     # list of the "v" nodes
     rel: Tuple[str, str, str],
     src_embeddings,
-) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
+) -> Tuple[List[List[int]], List[float]]:
     """
     Estend the bags through relation "rel"
     Returns:
