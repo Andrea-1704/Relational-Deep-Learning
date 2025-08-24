@@ -35,6 +35,18 @@ class RLAgent:
         probs = torch.softmax(logits, dim=0)
         idx = torch.multinomial(probs, 1).item()
         return candidate_rels[idx]
+    
+    # NEW: register/update best score for a metapath
+    def register_path_score(self, path_list, score: float, higher_is_better: bool):
+        key = tuple(path_list)
+        prev = self.best_score_by_path_global.get(key)
+        if prev is None:
+            self.best_score_by_path_global[key] = float(score)
+        else:
+            if higher_is_better and score > prev:
+                self.best_score_by_path_global[key] = float(score)
+            elif (not higher_is_better) and score < prev:
+                self.best_score_by_path_global[key] = float(score)
 
     def update(self, state, rel, reward):
         state_key = tuple(state)
