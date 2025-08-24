@@ -82,7 +82,8 @@ y_full = data_official['drivers'].y.float()
 train_mask_full = data_official['drivers'].train_mask
 num_pos = (y_full[train_mask_full] == 1).sum()
 num_neg = (y_full[train_mask_full] == 0).sum()
-pos_weight = torch.tensor([num_neg / num_pos], device=device)
+ratio = (num_neg / num_pos) if num_pos > 0 else 1.0
+pos_weight = torch.tensor([ratio], device=device)
 data_official['drivers'].y = target_vector_official
 
 # --- ONE-TIME index maps

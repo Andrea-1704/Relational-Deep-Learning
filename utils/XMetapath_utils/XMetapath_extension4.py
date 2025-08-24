@@ -68,6 +68,21 @@ class RLAgent:
         for k, v in loaded.items():
             self.q_table[k] = defaultdict(float, v)
 
+    def update_q(self, state, rel, r, s_next, legal_actions_next, gamma=1.0):
+        """
+        Aggiornamento Q-learning tabellare con bootstrap:
+        Q(s,a) <- (1 - alpha) * Q(s,a) + alpha * (r + gamma * max_a' Q(s', a'))
+        """
+        s_key  = tuple(state)
+        sn_key = tuple(s_next)
+        old_q  = self.q_table[s_key][rel]
+        if legal_actions_next:
+            max_next = max(self.q_table[sn_key][a2] for a2 in legal_actions_next)
+        else:
+            max_next = 0.0  # stato terminale o nessuna azione legale
+        target = r + gamma * max_next
+        self.q_table[s_key][rel] = (1 - self.alpha) * old_q + self.alpha * target
+
 
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
@@ -80,6 +95,14 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
     return [rel for rel in metadata[1] if rel[0] == current_node_type]
 
 
+def get_legal_relations_for_state(data, node_type, current_path):
+    last_ntype = node_type if not current_path else current_path[-1][2]
+    used_dst = {r[2] for r in current_path}
+    return [
+        (src, rel, dst)
+        for (src, rel, dst) in data.edge_index_dict
+        if src == last_ntype and dst != node_type and dst not in used_dst
+    ]
 
 
 def construct_bags(
@@ -182,18 +205,8 @@ def greedy_metapath_search_rl(
         last_ntype = node_type if not current_path else current_path[-1][2]
         print(f"Now we are starting from node type {last_ntype}")
 
-        # candidate_rels = [
-        #     (src, rel, dst)
-        #     for (src, rel, dst) in data.edge_index_dict
-        #     if src == last_ntype and dst != node_type and dst not in [r[0] for r in current_path]
-        # ]
-        # NEW (correct filter): avoid reusing destination types already in the path
-        used_dst = {r[2] for r in current_path}
-        candidate_rels = [
-            (src, rel, dst)
-            for (src, rel, dst) in data.edge_index_dict
-            if src == last_ntype and dst != node_type and dst not in used_dst
-        ]
+        
+        candidate_rels = get_legal_relations_for_state(data, node_type, current_path)
 
 
         if not candidate_rels:
@@ -211,11 +224,24 @@ def greedy_metapath_search_rl(
             previous_labels=current_labels,
             rel=chosen_rel,
         )
+        
+
 
         if len(bags) < 5:
-            agent.update(current_path, chosen_rel, -1.0) #penalty
+            # penalità e nessuna transizione di stato (resto in s)
+            legal_next = get_legal_relations_for_state(data, node_type, current_path)
+            agent.update_q(
+                state=current_path,
+                rel=chosen_rel,
+                r=-1.0,
+                s_next=current_path,              # non avanziamo
+                legal_actions_next=legal_next,
+                gamma=1.0
+            )
             print(f"Skipping relation {chosen_rel} (too few valid bags)")
             continue
+
+
 
         #testing on validation after training the MPS GNN 
         mp_candidate = current_path + [chosen_rel]
@@ -246,6 +272,27 @@ def greedy_metapath_search_rl(
         # NEW: log this candidate metapath’s performance into the agent’s global map
         print(f"After testing, the result of metapath {mp_candidate} is {best_val} in the validation set.")
         agent.register_path_score(mp_candidate, best_val, higher_is_better)
+
+
+        # --- Reward marginale r e stato successivo s_next ----
+        if math.isinf(current_best_val):
+            # primo passo: non abbiamo uno score "precedente"
+            r = best_val if higher_is_better else -best_val
+        else:
+            r = (best_val - current_best_val) if higher_is_better else (current_best_val - best_val)
+
+        s_next = mp_candidate
+        legal_next = get_legal_relations_for_state(data, node_type, s_next)
+
+        # Update Q-learning con bootstrap sul valore futuro
+        agent.update_q(
+            state=current_path,
+            rel=chosen_rel,
+            r=r,
+            s_next=s_next,
+            legal_actions_next=legal_next,
+            gamma=1.0
+        )
 
 
         #now we check if current update in path is harmful:
