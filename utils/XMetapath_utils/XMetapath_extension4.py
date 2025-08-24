@@ -394,6 +394,8 @@ def final_metapath_search_with_rl(
 
     if reset_registry:
         agent.best_score_by_path_global.clear()
+        agent.statistics_on_mp.clear()
+
 
     #We need to executes more episodes to find many candidates
     if episodes_for_search is None:
