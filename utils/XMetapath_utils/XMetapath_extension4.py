@@ -145,7 +145,7 @@ def greedy_metapath_search_rl(
     train_mask,
     node_type,
     col_stats_dict,
-    agent,  # agente RL esterno: is already warmed up!
+    agent:RLAgent,  # agente RL esterno: is already warmed up!
     L_max=3,
     hidden_channels=128,
     out_channels=128,
@@ -164,7 +164,6 @@ def greedy_metapath_search_rl(
     idxs = torch.where(train_mask)[0].tolist()             # internal indices 0..num_nodes-1
     current_bags   = [[int(i)] for i in idxs]              # seed one-node bag per training node
     current_labels = [float(data[node_type].y[i]) for i in idxs]  # keep float to support regression
-
     #NOTA CHE QUESTA VERIFICA E' INUTILE ALMENO PER F1, QUINDI VOLENDO SI POTEVA USARE ANCHE LA VERSIONE COMMENTATA
 
     metapath_counts = defaultdict(int)
@@ -223,7 +222,7 @@ def greedy_metapath_search_rl(
             data=data,
             col_stats_dict=col_stats_dict,
             metapaths=[mp_candidate],
-            metapath_counts=metapath_counts,
+            metapath_counts=agent.statistics_on_mp,
             hidden_channels=hidden_channels,
             out_channels=out_channels,
             final_out_channels=final_out_channels,
