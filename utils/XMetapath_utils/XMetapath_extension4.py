@@ -23,8 +23,8 @@ class RLAgent:
         self.q_table = defaultdict(lambda: defaultdict(float))
         self.tau = tau
         self.alpha = alpha
-        # NEW: per-run registry of best scores per metapath
-        self.best_score_by_path_global: Dict[Tuple[Tuple[str,str,str], ...], float] = {}    
+        self.best_score_by_path_global: Dict[Tuple[Tuple[str,str,str], ...], float] = {}  #dict {metapath->score}
+        self.statistics_on_mp :  Dict[Tuple[Tuple[str,str,str], ...], int] = {}
 
     def select_relation(self, state, candidate_rels):
         state_key = tuple(state)
@@ -36,13 +36,19 @@ class RLAgent:
         idx = torch.multinomial(probs, 1).item()
         return candidate_rels[idx]
     
-    # NEW: register/update best score for a metapath
+    #to return more than one metapath:
     def register_path_score(self, path_list, score: float, higher_is_better: bool):
         key = tuple(path_list)
-        prev = self.best_score_by_path_global.get(key)
-        if prev is None:
+        prev = self.best_score_by_path_global.get(key) #previous score for same metapath
+      
+        if prev is None:#if it is the first time we encounter that metapath
             self.best_score_by_path_global[key] = float(score)
+            #increment the counter of metapaths:
+            self.statistics_on_mp[key] = 1
         else:
+            #increment the counter of metapaths:
+            self.statistics_on_mp[key] = self.statistics_on_mp[key] + 1
+    
             if higher_is_better and score > prev:
                 self.best_score_by_path_global[key] = float(score)
             elif (not higher_is_better) and score < prev:
@@ -128,13 +134,7 @@ def construct_bags(
 
 
 
-"""
-Update: we return a certain number of metapaths, the best "number_of_metapaths".
-To do so we use a dictionary 'best_score_by_path ' mapping every metapath to the score:
-best_score_by_path = {}  # dict: tuple(path) -> float
 
-Just after computing the best score for a path we memorize the performances in the map.
-"""
 def greedy_metapath_search_rl(
     data,
     loader_dict,
@@ -153,7 +153,7 @@ def greedy_metapath_search_rl(
     epochs=100,
     lr : float = 0.0001,
     wd=0.0,
-    epsilon:float = 0.05
+    epsilon:float = 0.2
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with torch.no_grad():
@@ -218,17 +218,15 @@ def greedy_metapath_search_rl(
 
         #The agent selects next relation, r* (no surrogate task)
         chosen_rel = agent.select_relation(current_path, candidate_rels)
-        print(f"The RL agent chosen relation {chosen_rel}")
+        print(f"The RL agent has chosen the relation {chosen_rel}")
 
-        #bags expansion
+        #bags expansion for chosen relation
         bags, labels = construct_bags(
             data=data,
             previous_bags=current_bags,
             previous_labels=current_labels,
             rel=chosen_rel,
         )
-
-        print(f"The length of bags is {len(bags)}")
 
         if len(bags) < 5:
             agent.update(current_path, chosen_rel, -1.0) #penalty
@@ -237,8 +235,7 @@ def greedy_metapath_search_rl(
 
         #testing on validation after training the MPS GNN 
         mp_candidate = current_path + [chosen_rel]
-        print(f"The RL agent chosen relation {chosen_rel} as best one, now we pass to the XMEtapath Model to test it")
-        #print(f"Passing to model following metapaths: {mp_candidate}")
+        print(f"The RL agent chosen r* {chosen_rel} to be added to metapath {current_path}, now we pass to the XMEtapath Model to test it")
         model = XMetapath(
             data=data,
             col_stats_dict=col_stats_dict,
@@ -306,8 +303,6 @@ def greedy_metapath_search_rl(
 def warmup_rl_agent(
     agent,
     data,
-    db,
-    node_id,
     loader_dict,
     task,
     loss_fn,
@@ -324,6 +319,7 @@ def warmup_rl_agent(
     for i in range(num_episodes):
         print(f"\n[Warmup Episode {i+1}]")
         _ = greedy_metapath_search_rl(
+            agent=agent,
             data=data,
             loader_dict=loader_dict,
             task=task,
@@ -333,52 +329,10 @@ def warmup_rl_agent(
             train_mask=train_mask,
             node_type=node_type,
             col_stats_dict=col_stats_dict,
-            agent=agent,
             L_max=L_max,
             epochs=epochs,
         )
-
-
-# #final call with agent already warmed up
-# def final_metapath_search_with_rl(
-#     agent,
-#     data,
-#     db,
-#     node_id,
-#     loader_dict,
-#     task,
-#     loss_fn,
-#     tune_metric,
-#     higher_is_better,
-#     train_mask,
-#     node_type,
-#     col_stats_dict,
-#     L_max=3,
-#     epochs=100,
-#     number_of_metapaths=5
-# ):
-#     print("\n\n Launching final metapath search using trained RL agent \n")
-#     selected_metapaths, metapath_counts = greedy_metapath_search_rl(
-#         data=data,
-#         loader_dict=loader_dict,
-#         task=task,
-#         loss_fn=loss_fn,
-#         tune_metric=tune_metric,
-#         higher_is_better=higher_is_better,
-#         train_mask=train_mask,
-#         node_type=node_type,
-#         col_stats_dict=col_stats_dict,
-#         agent=agent,
-#         L_max=L_max,
-#         epochs=epochs,
-#     )
-#     return selected_metapaths, metapath_counts
-
-
-
-
-
-
+    print(f"Now the agent is warmed up!!")
 
 
 

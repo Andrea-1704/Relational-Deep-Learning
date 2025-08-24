@@ -145,8 +145,6 @@ agent.best_score_by_path_global.clear() #azzera registro punteggi
 warmup_rl_agent(
     agent=agent,
     data=data_official,
-    db=db_nuovo,
-    node_id='driverId',
     loader_dict=loader_dict,
     task=task,
     loss_fn=loss_fn,
