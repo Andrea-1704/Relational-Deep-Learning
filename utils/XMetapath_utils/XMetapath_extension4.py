@@ -69,7 +69,6 @@ def construct_bags(
     previous_bags: List[List[int]], 
     previous_labels: List[float],     # list of the "v" nodes
     rel: Tuple[str, str, str],
-    src_embeddings,
 ) -> Tuple[List[List[int]], List[float]]:
     """
     Estend the bags through relation "rel"
@@ -218,7 +217,6 @@ def greedy_metapath_search_rl(
             previous_bags=current_bags,
             previous_labels=current_labels,
             rel=chosen_rel,
-            src_embeddings=node_embeddings_dict[chosen_rel[0]]
         )
 
         print(f"The length of bags is {len(bags)}")
