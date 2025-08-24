@@ -176,7 +176,7 @@ def greedy_metapath_search_rl(
 
     #Building metapath using reinforcement leanring
     for level in range(L_max):
-        print(f"Step {level} - metapath so far: {current_path}")
+        print(f"Step {level+1} - metapath so far: {current_path}")
         last_ntype = node_type if not current_path else current_path[-1][2]
         print(f"Now we are starting from node type {last_ntype}")
 
