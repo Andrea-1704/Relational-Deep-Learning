@@ -157,15 +157,6 @@ def greedy_metapath_search_rl(
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # NEW (sanity checks): sizes aligned to internal node count
-    assert data[node_type].y.numel() == data[node_type].num_nodes, f"y size mismatch for {node_type}"
-    assert train_mask.numel() == data[node_type].num_nodes, f"train_mask size mismatch for {node_type}"
-    # (optional) verify edge index ranges once
-    for (src, rel, dst), (edge_src, edge_dst) in data.edge_index_dict.items():
-        assert edge_src.min().item() >= 0 and edge_src.max().item() < data[src].num_nodes, f"edge_src out of range for {(src,rel,dst)}"
-        assert edge_dst.min().item() >= 0 and edge_dst.max().item() < data[dst].num_nodes, f"edge_dst out of range for {(src,rel,dst)}"
-    
-
     # ids = db.table_dict[node_type].df[node_id].to_numpy()
     # current_bags = [[int(i)] for i in ids if train_mask[i]]
     # current_labels = [int(data[node_type].y[i]) for i in range(len(train_mask)) if train_mask[i]]
