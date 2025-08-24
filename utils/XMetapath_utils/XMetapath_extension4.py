@@ -91,7 +91,7 @@ def construct_bags(
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
         print(f"this should not have happened, but the relation was not found.")
-        return [], [], {}
+        return [], []
 
     edge_src, edge_dst = edge_index #tensor [2, #edges]
     bags = [] #the new bags, one for each "v" node.
