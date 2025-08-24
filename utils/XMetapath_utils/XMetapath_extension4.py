@@ -104,8 +104,6 @@ def construct_bags(
                 #could be zero even just because that node simply do not have any of such relations
                 #test to understand if we are managing correctly the global and local mapping:
                 continue
-            
-            x_v = src_embeddings[v]
 
             for u in neighbors_u.tolist():  #consider all the "sons" of node "v" through relation "rel"
                 bag_u.append(u)
