@@ -562,33 +562,58 @@ class XMetaPath(nn.Module):
       return self.regressor(weighted) #finally apply regression
     
 
-    def _encode_features(self, batch, entity_table):
+    def _encode_features_prev(self, batch, entity_table):
         seed_time = batch[entity_table].seed_time
         x_dict = self.encoder(batch.tf_dict)
         rel_time_dict = self.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
         for node_type, rel_time in rel_time_dict.items():
             x_dict[node_type] = x_dict[node_type] + rel_time
         return x_dict
+    
+
+    def _encode_features(self, batch, entity_table):
+        device = next(self.parameters()).device
+
+        # 1) Porta i TensorFrame sul device del modello
+        tf_dict = {nt: tf.to(device) for nt, tf in batch.tf_dict.items()}
+
+        # 2) Encode static features
+        x_dict = self.encoder(tf_dict)
+
+        # 3) Porta tempi e batch sul device
+        seed_time = batch[entity_table].seed_time
+        if torch.is_tensor(seed_time):
+            seed_time = seed_time.to(device)
+
+        time_dict  = {nt: (t.to(device) if torch.is_tensor(t) else t)
+                    for nt, t in batch.time_dict.items()}
+        batch_dict = {nt: b.to(device) for nt, b in batch.batch_dict.items()}
+
+        # 4) Temporal encoder + somma
+        rel_time_dict = self.temporal_encoder(seed_time, time_dict, batch_dict)
+        for node_type, rel_time in rel_time_dict.items():
+            x_dict[node_type] = x_dict[node_type] + rel_time
+        return x_dict
+
 
     @torch.no_grad()
     def predict_with_details(self, batch, entity_table):
-        """
-        Return:
-        - out:            [N]
-        - attn_weights:   [N, M] real weights used to weight the meta-paths (softmax)
-        - weighted:       [N, M, D] embeddings for meta-path 
-        - per_path_emb:   [N, M, D] embeddings for meta-path (before the prior)
-        """
+        device = next(self.parameters()).device
         self.eval()
+
         x_dict = self._encode_features(batch, entity_table)
-        per_path_emb = [
-            m(x_dict, batch.edge_index_dict, node_time_dict=batch.time_dict)
-            for m in self.metapath_models
-        ]  # lista di [N, D]
-        per_path_emb = torch.stack(per_path_emb, dim=1)           # [N, M, D]
+
+        edge_index_dict = {k: v.to(device) for k, v in batch.edge_index_dict.items()}
+        time_dict = {nt: (t.to(device) if torch.is_tensor(t) else t)
+                    for nt, t in batch.time_dict.items()}
+
+        per_path_emb = [m(x_dict, edge_index_dict, node_time_dict=time_dict)
+                        for m in self.metapath_models]
+        per_path_emb = torch.stack(per_path_emb, dim=1)
         weighted = per_path_emb * self.metapath_weights_tensor.view(1, -1, 1)
-        out, attn_weights = self.regressor(weighted, return_attention=True)  # [N], [N, M]
+        out, attn_weights = self.regressor(weighted, return_attention=True)
         return out, attn_weights, weighted, per_path_emb
+
     
     @torch.no_grad()
     def _per_metapath_delta(self, weighted, baseline_out, target_idx):
