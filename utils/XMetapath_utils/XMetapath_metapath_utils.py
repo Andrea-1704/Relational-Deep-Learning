@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-from model.XMetaPath import XMetapath
+from model.XMetaPath import XMetaPath
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
