@@ -442,7 +442,7 @@ class MetaPathSelfAttention(nn.Module):
 
 
 
-class XMetapath(nn.Module):
+class XMetaPath(nn.Module):
     """
     This is the complete Multi META Path model.
     It aggregates multiple metaPathGNN, each of which is dedicated

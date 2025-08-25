@@ -22,7 +22,7 @@ from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-from model.XMetapath_Model import XMetapath
+from model.XMetaPath import XMetapath
 from utils.utils import evaluate_performance, test, train
 import numpy as np
 

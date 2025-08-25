@@ -43,18 +43,12 @@ from utils.XMetapath_utils.XMetapath_metapath_utils import greedy_metapath_searc
 
 
 def train2():
-
-    dataset = get_dataset("rel-trial", download=True)
-    task = get_task("rel-trial", "study-adverse", download=True)
+    dataset = get_dataset("rel-f1", download=True)
+    task = get_task("rel-f1", "driver-position", download=True)
 
     train_table = task.get_table("train") #date  driverId  qualifying
     val_table = task.get_table("val") #date  driverId  qualifying
     test_table = task.get_table("test") # date  driverId
-
-    print(train_table)
-    target_table = "studies"
-    target_column = "num_of_adverse_events"
-    
 
     out_channels = 1
     loss_fn = L1Loss()
@@ -80,20 +74,20 @@ def train2():
         cache_dir=None  # disabled
     )
 
-    graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
+    graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
     train_df = train_table.df
-    driver_labels = train_df[target_column].to_numpy()
-    driver_ids = train_df["nct_id"].to_numpy()
+    driver_labels = train_df["position"].to_numpy()
+    driver_ids = train_df["driverId"].to_numpy()
 
     target_vector = torch.full((len(graph_driver_ids),), float("nan"))
     for i, driver_id in enumerate(driver_ids):
         if driver_id in id_to_idx:
             target_vector[id_to_idx[driver_id]] = driver_labels[i]
 
-    data_official[target_table].y = target_vector
-    data_official[target_table].train_mask = ~torch.isnan(target_vector)
+    data_official['drivers'].y = target_vector
+    data_official['drivers'].train_mask = ~torch.isnan(target_vector)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -106,13 +100,13 @@ def train2():
     data_full = data_full.to(device)
 
     #retrieve the id from the driver nodes
-    graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
+    graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
     #get the labels and the ids of the drivers from the table
     train_df = train_table.df
-    driver_labels = train_df[target_column].to_numpy()
-    driver_ids = train_df["nct_id"].to_numpy()
+    driver_labels = train_df["position"].to_numpy()
+    driver_ids = train_df["driverId"].to_numpy()
 
     #map the correct labels for all drivers node (which are target ones)
     target_vector = torch.full((len(graph_driver_ids),), float("nan")) #inizial
@@ -121,12 +115,12 @@ def train2():
             target_vector[id_to_idx[driver_id]] = driver_labels[i]
 
     
-    data_full[target_table].y = target_vector
-    data_full[target_table].train_mask = ~torch.isnan(target_vector)
+    data_full['drivers'].y = target_vector
+    data_full['drivers'].train_mask = ~torch.isnan(target_vector)
 
     #take y and mask complete for the dataset:
-    y_full = data_full[target_column].y.float()
-    train_mask_full = data_full[target_column].train_mask
+    y_full = data_full['drivers'].y.float()
+    train_mask_full = data_full['drivers'].train_mask
     y_bin_full = binarize_targets(y_full, threshold=10)
     
     hidden_channels = 128

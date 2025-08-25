@@ -28,7 +28,7 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-from model.XMetapath_Model import XMetapath
+from model.XMetaPath import XMetapath
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.XMetapath_utils.XMetapath_metapath_utils import binarize_targets # binarize_targets sarà usata qui
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
