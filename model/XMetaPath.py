@@ -691,6 +691,57 @@ class XMetaPath(nn.Module):
         return results[:top_k_nodes]
 
 
+    @torch.no_grad()
+    def explain_instance(self,
+                        batch: HeteroData,
+                        entity_table: str,
+                        target_idx: int,
+                        metapath_names: list,
+                        top_k_metapaths: int = 3,
+                        top_k_nodes: int = 5):
+        """
+        Spiegazione locale e self-explainable per una singola istanza (nodo target).
+        """
+        self.eval()
+
+        # 1) pred + pesi di attenzione + embeddings
+        out, w, weighted, per_path_emb = self.predict_with_details(batch, entity_table)
+        pred = float(torch.sigmoid(out[int(target_idx)]).item() if out.dim() == 1 else out[int(target_idx)].item())
+
+        # 2) Δ per meta-path (ablation)
+        deltas = self._per_metapath_delta(weighted, out, int(target_idx))  # lista di float
+        ranked = sorted(list(enumerate(deltas)), key=lambda x: x[1], reverse=True)
+
+        # 3) top meta-path + nodi più influenti per ciascuno
+        top_entries = []
+        for m, delta_m in ranked[:top_k_metapaths]:
+            node_contribs = self._neighbor_deltas_for_metapath(
+                batch, entity_table, int(target_idx), m, per_path_emb, weighted, out, top_k_nodes=top_k_nodes
+            )
+            top_entries.append({
+                "metapath_index": int(m),
+                "metapath_name": metapath_names[m] if m < len(metapath_names) else f"mp#{m}",
+                "attention_weight": float(w[int(target_idx), m].item()),
+                "delta_logit": float(delta_m),
+                "top_nodes": node_contribs,  # ciascuno con pretty info
+            })
+
+        # 4) pacchetto finale
+        return {
+            "entity_table": entity_table,
+            "target_index": int(target_idx),
+            "prediction": pred,
+            "attention_per_metapath": {
+                (metapath_names[i] if i < len(metapath_names) else f"mp#{i}"): float(w[int(target_idx), i].item())
+                for i in range(w.size(1))
+            },
+            "contribution_per_metapath": {
+                (metapath_names[i] if i < len(metapath_names) else f"mp#{i}"): float(deltas[i])
+                for i in range(len(deltas))
+            },
+            "top_metapaths": top_entries
+        }
+
 
 
 
@@ -764,56 +815,6 @@ def interpret_attention(
 
 
 
-@torch.no_grad()
-def explain_instance(self,
-                     batch: HeteroData,
-                     entity_table: str,
-                     target_idx: int,
-                     metapath_names: list,
-                     top_k_metapaths: int = 3,
-                     top_k_nodes: int = 5):
-    """
-    Spiegazione locale e self-explainable per una singola istanza (nodo target).
-    """
-    self.eval()
-
-    # 1) pred + pesi di attenzione + embeddings
-    out, w, weighted, per_path_emb = self.predict_with_details(batch, entity_table)
-    pred = float(torch.sigmoid(out[int(target_idx)]).item() if out.dim() == 1 else out[int(target_idx)].item())
-
-    # 2) Δ per meta-path (ablation)
-    deltas = self._per_metapath_delta(weighted, out, int(target_idx))  # lista di float
-    ranked = sorted(list(enumerate(deltas)), key=lambda x: x[1], reverse=True)
-
-    # 3) top meta-path + nodi più influenti per ciascuno
-    top_entries = []
-    for m, delta_m in ranked[:top_k_metapaths]:
-        node_contribs = self._neighbor_deltas_for_metapath(
-            batch, entity_table, int(target_idx), m, per_path_emb, weighted, out, top_k_nodes=top_k_nodes
-        )
-        top_entries.append({
-            "metapath_index": int(m),
-            "metapath_name": metapath_names[m] if m < len(metapath_names) else f"mp#{m}",
-            "attention_weight": float(w[int(target_idx), m].item()),
-            "delta_logit": float(delta_m),
-            "top_nodes": node_contribs,  # ciascuno con pretty info
-        })
-
-    # 4) pacchetto finale
-    return {
-        "entity_table": entity_table,
-        "target_index": int(target_idx),
-        "prediction": pred,
-        "attention_per_metapath": {
-            (metapath_names[i] if i < len(metapath_names) else f"mp#{i}"): float(w[int(target_idx), i].item())
-            for i in range(w.size(1))
-        },
-        "contribution_per_metapath": {
-            (metapath_names[i] if i < len(metapath_names) else f"mp#{i}"): float(deltas[i])
-            for i in range(len(deltas))
-        },
-        "top_metapaths": top_entries
-    }
  
 
 
