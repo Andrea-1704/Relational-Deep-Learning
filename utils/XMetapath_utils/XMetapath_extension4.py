@@ -314,7 +314,7 @@ def greedy_metapath_search_rl(
                     agent.update(current_path, chosen_rel, best_val)
                     break
                 else:
-                    num_improvements = num_improvements_L-1
+                    num_improvements = num_improvements-1
                     if num_improvements == 0:
                         print("We are stopping here because the last path did not improve")
                         break
@@ -335,7 +335,7 @@ def greedy_metapath_search_rl(
                     print(f"Early stop: {chosen_rel} increases loss from {current_best_val:.6f} to {best_val:.6f} (eps={epsilon:.3f}).")
                     break
                 else:
-                    num_improvements = num_improvements_L-1
+                    num_improvements = num_improvements-1
                     if num_improvements == 0:
                         print("We are stopping here because the last path did not improve")
                         break
