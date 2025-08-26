@@ -315,7 +315,7 @@ def greedy_metapath_search_rl(
                     break
                 else:
                     num_improvements = num_improvements-1
-                    if num_improvements == 0:
+                    if num_improvements <= 0:
                         print("We are stopping here because the last path did not improve")
                         break
         else:
@@ -336,7 +336,7 @@ def greedy_metapath_search_rl(
                     break
                 else:
                     num_improvements = num_improvements-1
-                    if num_improvements == 0:
+                    if num_improvements <= 0:
                         print("We are stopping here because the last path did not improve")
                         break
 
