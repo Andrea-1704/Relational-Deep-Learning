@@ -125,13 +125,13 @@ def train2():
     
     metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
     model = XMetaPath(
-        data=data_official,
-        col_stats_dict=col_stats_dict_official,
-        metapath_counts = metapath_counts,
+        #data=data_official,
+        #col_stats_dict=col_stats_dict_official,
+        #metapath_counts = metapath_counts,
         metapaths=metapaths,
         hidden_channels=hidden_channels,
-        out_channels=out_channels,
-        final_out_channels=1,
+        #out_channels=out_channels,
+        #final_out_channels=1,
     ).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
