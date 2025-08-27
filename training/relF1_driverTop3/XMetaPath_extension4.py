@@ -244,22 +244,9 @@ def greedy_metapath_search_rl(
 
 
         #testing on validation after training the MPS GNN 
-
-        # mp_candidate = current_path + [chosen_rel]
-        # print(f"The RL agent chosen r* {chosen_rel} to be added to metapath {current_path}, now we pass to the XMEtapath Model to test it")
         
         mp_candidate = current_path + [chosen_rel]
-        def flip_rel(rel_name: str) -> str:
-            return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
-
-        # CONVERSIONE: fai terminare la path su 'drivers'
-        #  (1) reverse l’ordine scelto dall’RL (che parte dai drivers),
-        #  (2) flip di ogni relazione src<->dst per andare verso i drivers.
-        mp_for_model = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_candidate[::-1]]
-
-        # safety: ultima tripletta deve avere dst='drivers'
-        assert mp_for_model[-1][2] == "drivers", f"Bad metapath: {mp_for_model}"
-        
+        print(f"The RL agent chosen r* {chosen_rel} to be added to metapath {current_path}, now we pass to the XMEtapath Model to test it")
         model = XMetaPath(
             data=data,
             col_stats_dict=col_stats_dict,
@@ -269,8 +256,6 @@ def greedy_metapath_search_rl(
             out_channels=out_channels,
             final_out_channels=final_out_channels,
         ).to(device)
-        
-
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
         #initialize best_val, which keeps track of the performances (best) given by adding the current path to mp:

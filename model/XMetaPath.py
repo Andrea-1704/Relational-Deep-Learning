@@ -626,28 +626,19 @@ class XMetaPath(nn.Module):
         for node_type, rel_time in rel_time_dict.items():
                 x_dict[node_type] = x_dict[node_type] + rel_time
         
-        B = batch["drivers"].y.size(0)                              # seed-first
-        per_path = []
-        for m in self.metapath_models:
-            h_all = m(x_dict, batch.edge_index_dict, node_time_dict=batch.time_dict)  # [N,D]
-            per_path.append(h_all[:B])                              # <-- taglio qui
-        concat   = torch.stack(per_path, dim=1)                     # [B,M,D]
-        weighted = concat * self.metapath_weights_tensor.view(1,-1,1)
-        logits   = self.regressor(weighted).squeeze(-1)             # [B]
-        return logits
-
-        # embeddings = [#x_dict, edge_index_dict
-        #     model(
-        #         x_dict, 
-        #         batch.edge_index_dict,
-        #         node_time_dict=batch.time_dict
-        #     )
-        #     for model in self.metapath_models 
-        # ] #create a list of the embeddings, one for each metapath
-        # concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
-        # weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
         
-        # return self.regressor(weighted) #finally apply regression
+        embeddings = [#x_dict, edge_index_dict
+            model(
+                x_dict, 
+                batch.edge_index_dict,
+                node_time_dict=batch.time_dict
+            )
+            for model in self.metapath_models 
+        ] #create a list of the embeddings, one for each metapath
+        concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
+        weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
+        
+        return self.regressor(weighted) #finally apply regression
      
     
 
