@@ -654,13 +654,10 @@ class XMetaPath(nn.Module):
     def _encode_features(self, batch, entity_table):
         device = next(self.parameters()).device
 
-        # 1) Porta i TensorFrame sul device del modello
         tf_dict = {nt: tf.to(device) for nt, tf in batch.tf_dict.items()}
 
-        # 2) Encode static features
         x_dict = self.encoder(tf_dict)
 
-        # 3) Porta tempi e batch sul device
         seed_time = batch[entity_table].seed_time
         if torch.is_tensor(seed_time):
             seed_time = seed_time.to(device)
@@ -669,7 +666,6 @@ class XMetaPath(nn.Module):
                     for nt, t in batch.time_dict.items()}
         batch_dict = {nt: b.to(device) for nt, b in batch.batch_dict.items()}
 
-        # 4) Temporal encoder + somma
         rel_time_dict = self.temporal_encoder(seed_time, time_dict, batch_dict)
         for node_type, rel_time in rel_time_dict.items():
             x_dict[node_type] = x_dict[node_type] + rel_time
