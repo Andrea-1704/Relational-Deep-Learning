@@ -351,8 +351,7 @@ class MetaPathGNN(nn.Module):
 
 
 
-            # ... tutto invariato sopra (src_nodes, dst_nodes, remap, x_dst_orig, h_dst_curr, edge_weight) ...
-            h_src_curr = h_dict[src][src_nodes]     # <— AGGIUNTO
+            h_src_curr = h_dict[src][src_nodes]   
 
             h_dst = self.convs[conv_idx](
                 h_src=h_src_curr,
@@ -366,8 +365,8 @@ class MetaPathGNN(nn.Module):
             h_dst = self.dropouts[conv_idx](h_dst)
             h_dict[dst].index_copy_(0, dst_nodes, h_dst)
 
-            # --- alla fine del forward, CAMBIA IL RETURN ---
-        target_type = self.metapath[-1][2]      # ultimo dst (== 'drivers')
+           
+        target_type = self.metapath[-1][2]      #last dst (== 'drivers')
         return self.out_proj(h_dict[target_type])
 
 

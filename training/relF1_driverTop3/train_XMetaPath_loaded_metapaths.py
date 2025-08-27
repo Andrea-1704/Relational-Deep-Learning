@@ -90,8 +90,8 @@ def train2():
     out_channels = 128
 
     loader_dict = loader_dict_fn(
-        batch_size=256,
-        num_neighbours=128,
+        batch_size=256,#1025
+        num_neighbours=128,#512
         data=data_official,
         task=task,
         train_table=train_table,
