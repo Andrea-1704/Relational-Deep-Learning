@@ -103,7 +103,26 @@ def train2():
     
     
     #metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
+    #metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
+    
+    metapaths = [
+        # races -> standings -> drivers
+        [('races','rev_f2p_raceId','standings'),
+        ('standings','f2p_driverId','drivers')],
+
+        # races -> constructor_results -> constructors -> qualifying -> drivers
+        [('races','rev_f2p_raceId','constructor_results'),
+        ('constructor_results','f2p_constructorId','constructors'),
+        ('constructors','rev_f2p_constructorId','qualifying'),
+        ('qualifying','f2p_driverId','drivers')],
+
+        # races -> constructor_standings -> constructors -> results -> drivers
+        [('races','rev_f2p_raceId','constructor_standings'),
+        ('constructor_standings','f2p_constructorId','constructors'),
+        ('constructors','rev_f2p_constructorId','results'),
+        ('results','f2p_driverId','drivers')],
+    ]
+    
     metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
     model = XMetaPath(
         data=data_official,
