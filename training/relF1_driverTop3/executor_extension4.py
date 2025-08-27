@@ -20,9 +20,9 @@ sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
-from model.XMetaPath import XMetapath, interpret_attention
+from model.XMetaPath import XMetaPath, interpret_attention
 from utils.utils import evaluate_performance, test, train
-from utils.XMetapath_utils.XMetapath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
 task_name = "driver-top3"
 
@@ -192,7 +192,7 @@ print(f"The final metapath are {metapaths}")
 lr=1e-02
 wd=0
     
-model = XMetapath(
+model = XMetaPath(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
     metapath_counts = metapath_count,  # keep your existing counts
