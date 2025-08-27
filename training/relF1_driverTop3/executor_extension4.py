@@ -15,19 +15,14 @@ import torch.nn as nn
 
 import sys
 import os
-#sys.path.append(os.path.abspath("."))
-import os, sys
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
+sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath import XMetaPath, interpret_attention
 from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
-#from u import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+# from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
 task_name = "driver-top3"
 
