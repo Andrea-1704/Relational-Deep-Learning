@@ -538,30 +538,39 @@ class XMetaPath(nn.Module):
 
     def forward(self, batch: HeteroData, entity_table=None):
 
-      seed_time = batch[entity_table].seed_time
+        seed_time = batch[entity_table].seed_time
       
-      x_dict = self.encoder(batch.tf_dict)
+        x_dict = self.encoder(batch.tf_dict)
 
-      rel_time_dict = self.temporal_encoder(
-            seed_time, batch.time_dict, batch.batch_dict
-      )
-
-      for node_type, rel_time in rel_time_dict.items():
-            x_dict[node_type] = x_dict[node_type] + rel_time
-      
-      
-      embeddings = [#x_dict, edge_index_dict
-        model(
-              x_dict, 
-              batch.edge_index_dict,
-              node_time_dict=batch.time_dict
+        rel_time_dict = self.temporal_encoder(
+                seed_time, batch.time_dict, batch.batch_dict
         )
-        for model in self.metapath_models 
-      ] #create a list of the embeddings, one for each metapath
-      concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
-      weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
+
+        for node_type, rel_time in rel_time_dict.items():
+                x_dict[node_type] = x_dict[node_type] + rel_time
+        
+        
+        embeddings = [#x_dict, edge_index_dict
+            model(
+                x_dict, 
+                batch.edge_index_dict,
+                node_time_dict=batch.time_dict
+            )
+            for model in self.metapath_models 
+        ] #create a list of the embeddings, one for each metapath
+        concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
+        weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
       
-      return self.regressor(weighted) #finally apply regression
+        #return self.regressor(weighted) #finally apply regression
+        logits = self.regressor(weighted)  # [N_total_drivers]
+
+        # Allinea ai soli target del mini-batch:
+        if entity_table is not None and hasattr(batch[entity_table], "y"):
+            B = batch[entity_table].y.size(0)       # es. 1024
+            logits = logits[:B]                     # i seed stanno davanti nel loader di PyG/RelBench
+
+        return logits
+
     
 
     def _encode_features_prev(self, batch, entity_table):
