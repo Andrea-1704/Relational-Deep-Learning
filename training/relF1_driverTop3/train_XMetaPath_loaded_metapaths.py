@@ -110,55 +110,57 @@ def train2():
     ).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
-    for batch in loader_dict["train"]:
-        model.eval()
-        report = model.explain_instance(
-            batch=batch, 
-            entity_table="drivers",
-            target_idx=1,     # l’indice del driver di cui vuoi spiegare la predizione
-            metapath_names=["drv→race→circ→race→drv", "drv→team→race→drv", "..."],
-            top_k_metapaths=3,
-            top_k_nodes=5
-        )
-        print(report)
-        break
+    ### EXPLAINABILITY
+    # for batch in loader_dict["train"]:
+    #     model.eval()
+    #     report = model.explain_instance(
+    #         batch=batch, 
+    #         entity_table="drivers",
+    #         target_idx=1,     # l’indice del driver di cui vuoi spiegare la predizione
+    #         metapath_names=["drv→race→circ→race→drv", "drv→team→race→drv", "..."],
+    #         top_k_metapaths=3,
+    #         top_k_nodes=5
+    #     )
+    #     print(report)
+    #     break
+    ### EXPLAINABILITY
     
-    # best_val_metric = -math.inf 
-    # test_table = task.get_table("test", mask_input_cols=False)
-    # best_test_metric = -math.inf 
-    # epochs = 500
-    # for epoch in range(0, epochs):
-    #   train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+    best_val_metric = -math.inf 
+    test_table = task.get_table("test", mask_input_cols=False)
+    best_test_metric = -math.inf 
+    epochs = 500
+    for epoch in range(0, epochs):
+      train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-    #   train_pred = test(model, loader_dict["train"], device=device, task=task)
-    #   val_pred = test(model, loader_dict["val"], device=device, task=task)
-    #   test_pred = test(model, loader_dict["test"], device=device, task=task)
+      train_pred = test(model, loader_dict["train"], device=device, task=task)
+      val_pred = test(model, loader_dict["val"], device=device, task=task)
+      test_pred = test(model, loader_dict["test"], device=device, task=task)
       
-    #   train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-    #   val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-    #   test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+      train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+      val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+      test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    #   #scheduler.step(val_metrics[tune_metric])
+      #scheduler.step(val_metrics[tune_metric])
 
-    #   if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
-    #     best_val_metric = val_metrics[tune_metric]
-    #     state_dict = copy.deepcopy(model.state_dict())
+      if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
+        best_val_metric = val_metrics[tune_metric]
+        state_dict = copy.deepcopy(model.state_dict())
 
-    #   if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
-    #       best_test_metric = test_metrics[tune_metric]
-    #       state_dict_test = copy.deepcopy(model.state_dict())
+      if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
+          best_test_metric = test_metrics[tune_metric]
+          state_dict_test = copy.deepcopy(model.state_dict())
 
-    #   current_lr = optimizer.param_groups[0]["lr"]
+      current_lr = optimizer.param_groups[0]["lr"]
       
-    #   print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+      print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-    # #   early_stopping(val_metrics[tune_metric], model)
+    #   early_stopping(val_metrics[tune_metric], model)
 
-    # #   if early_stopping.early_stop:
-    # #       print(f"Early stopping triggered at epoch {epoch}")
-    # #       break
-    # print(f"best validation results: {best_val_metric}")
-    # print(f"best test results: {best_test_metric}")
+    #   if early_stopping.early_stop:
+    #       print(f"Early stopping triggered at epoch {epoch}")
+    #       break
+    print(f"best validation results: {best_val_metric}")
+    print(f"best test results: {best_test_metric}")
 
 
 if __name__ == '__main__':
