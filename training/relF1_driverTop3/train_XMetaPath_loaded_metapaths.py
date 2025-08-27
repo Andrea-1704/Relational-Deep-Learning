@@ -98,11 +98,12 @@ def train2():
         val_table=val_table,
         test_table=test_table
     )
-    lr=1e-01
+    lr=1e-02
     wd=0
     
     
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
+    #metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
     metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
     model = XMetaPath(
         data=data_official,
