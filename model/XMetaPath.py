@@ -1003,13 +1003,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
+from typing import Optional, List, Tuple, Dict
 
 
 class MetaPathGNNLayer(MessagePassing):
-    """
-    Un layer che aggiorna i nodi 'dst' aggregando dai 'src' lungo una singola relazione.
-    Eq. (7) style: W_l * agg + (1-g) * W_0 * h_dst + g * W_1 * x_dst_orig.
-    """
     def __init__(self, hidden_channels: int):
         super().__init__(aggr="add", flow="source_to_target")
         self.w_l = nn.Linear(hidden_channels, hidden_channels, bias=True)
@@ -1019,11 +1016,11 @@ class MetaPathGNNLayer(MessagePassing):
 
     def forward(
         self,
-        h_src: torch.Tensor,           # [#src_loc, D]
-        h_dst: torch.Tensor,           # [#dst_loc, D]
-        edge_index: torch.Tensor,      # [2, E] con (src_loc, dst_loc)
-        x_dst_orig: torch.Tensor,      # [#dst_loc, D] (features "grezze" dei dst)
-        edge_weight: torch.Tensor | None = None
+        h_src: torch.Tensor,
+        h_dst: torch.Tensor,
+        edge_index: torch.Tensor,
+        x_dst_orig: torch.Tensor,
+        edge_weight: Optional[torch.Tensor] = None,   # <-- QUI
     ) -> torch.Tensor:
         # propagate: x=(h_src, h_dst) per specificare bipartito e size
         out = self.propagate(
@@ -1044,7 +1041,11 @@ class MetaPathGNNLayer(MessagePassing):
         g = torch.sigmoid(self.gate)
         return self.w_l(out) + (1. - g) * self.w_0(h_dst) + g * self.w_1(x_dst_orig)
 
-    def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor | None):
+    def message(
+        self,
+        x_j: torch.Tensor,
+        edge_weight: Optional[torch.Tensor] = None,   # <-- QUI
+    ) -> torch.Tensor:
         return x_j if edge_weight is None else x_j * edge_weight.unsqueeze(-1)
 
 
