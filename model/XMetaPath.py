@@ -98,57 +98,112 @@ class MetaPathGNNLayerOriginal(MessagePassing):
 
 
 
-class MetaPathGNNLayer(MessagePassing):  
-    """
-    My update: follow original paper, but instead of applying a sum
-    aggregation, normalize the message in order to delete the 
-    bias given by the degree of the node.
+# class MetaPathGNNLayer(MessagePassing):  
+#     """
+#     My update: follow original paper, but instead of applying a sum
+#     aggregation, normalize the message in order to delete the 
+#     bias given by the degree of the node.
 
-    We also implemented a temporal decading so that "old" messages
-    will weight less than the recent ones.
-    """
-    def __init__(self, in_channels: int, out_channels: int, relation_index: int):
-        super().__init__(aggr='add', flow='target_to_source')
-        self.relation_index = relation_index
+#     We also implemented a temporal decading so that "old" messages
+#     will weight less than the recent ones.
+#     """
+#     def __init__(self, in_channels: int, out_channels: int, relation_index: int):
+#         super().__init__(aggr='add', flow='target_to_source')
+#         self.relation_index = relation_index
 
-        # Linear layers for each component of equation 7
-        self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
-        self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
-        self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
+#         # Linear layers for each component of equation 7
+#         self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
+#         self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
+#         self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
 
-        self.gate = nn.Parameter(torch.tensor(0.5))
+#         self.gate = nn.Parameter(torch.tensor(0.5))
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
-        """
-        Args:
-            x: Original input features of the node (x_v), shape [N_dst, in_channels]
-            edge_index: Edge index for this relation, shape [2, num_edges]
-            h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
-            edge_weight: weight considering temporal proximity.
-        Returns:
-            Updated node representation after applying the layer, shape [N_dst, out_channels]
-        """
+#     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
+#         """
+#         Args:
+#             x: Original input features of the node (x_v), shape [N_dst, in_channels]
+#             edge_index: Edge index for this relation, shape [2, num_edges]
+#             h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
+#             edge_weight: weight considering temporal proximity.
+#         Returns:
+#             Updated node representation after applying the layer, shape [N_dst, out_channels]
+#         """
 
-        agg = self.propagate(edge_index, x=h, edge_weight = edge_weight)
+#         agg = self.propagate(edge_index, x=h, edge_weight = edge_weight)
 
-        row = edge_index[1] #dst-s
-        if edge_weight is None:
-            deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
-        else:
-            deg = torch.bincount(row, weights=edge_weight, minlength=agg.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
+#         row = edge_index[1] #dst-s
+#         if edge_weight is None:
+#             deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
+#         else:
+#             deg = torch.bincount(row, weights=edge_weight, minlength=agg.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
 
-        agg = agg/deg
-        g = torch.sigmoid(self.gate)
+#         agg = agg/deg
+#         g = torch.sigmoid(self.gate)
 
-        return self.w_l(agg) + (1 - g) * self.w_0(h) + g * self.w_1(x)
+#         return self.w_l(agg) + (1 - g) * self.w_0(h) + g * self.w_1(x)
         
 
-        #return self.w_l(agg) + self.w_0(h) + self.w_1(x)
+#         #return self.w_l(agg) + self.w_0(h) + self.w_1(x)
 
-    def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
+#     def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
+#         if edge_weight is None:
+#             return x_j
+#         return x_j * edge_weight.unsqueeze(-1)
+
+
+
+
+
+
+
+
+from typing import Optional
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.nn import MessagePassing
+
+class MetaPathGNNLayer(MessagePassing):
+    """
+    Eq. (7) stile paper:
+      h'_v = W_l * agg_{u in N_r(v)} h_u  + (1-g) * W_0 * h_v + g * W_1 * x_v
+    Aggrego da src -> dst (source_to_target) e normalizzo su dst.
+    """
+    def __init__(self, hidden_channels: int):
+        super().__init__(aggr="add", flow="source_to_target")
+        self.w_l = nn.Linear(hidden_channels, hidden_channels)
+        self.w_0 = nn.Linear(hidden_channels, hidden_channels)
+        self.w_1 = nn.Linear(hidden_channels, hidden_channels)
+        self.gate = nn.Parameter(torch.tensor(0.5))
+
+    def forward(
+        self,
+        h_src: torch.Tensor,                 # [#src_loc, D]
+        h_dst: torch.Tensor,                 # [#dst_loc, D]
+        edge_index: torch.Tensor,            # [2, E] con indici locali (src_loc -> dst_loc)
+        x_dst_orig: torch.Tensor,            # [#dst_loc, D]
+        edge_weight: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        out = self.propagate(
+            edge_index,
+            x=(h_src, h_dst),                # bipartito: x_j = h_src, x_i = h_dst
+            edge_weight=edge_weight,
+            size=(h_src.size(0), h_dst.size(0))
+        )                                    # -> [#dst_loc, D]
+
+        row = edge_index[1]                  # dst locali
         if edge_weight is None:
-            return x_j
-        return x_j * edge_weight.unsqueeze(-1)
+            deg = torch.bincount(row, minlength=h_dst.size(0)).clamp(min=1).float().unsqueeze(-1)
+        else:
+            deg = torch.bincount(row, weights=edge_weight, minlength=h_dst.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
+        out = out / deg
+
+        g = torch.sigmoid(self.gate)
+        return self.w_l(out) + (1. - g) * self.w_0(h_dst) + g * self.w_1(x_dst_orig)
+
+    def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor] = None) -> torch.Tensor:
+        return x_j if edge_weight is None else x_j * edge_weight.unsqueeze(-1)
+
 
 
 
@@ -189,7 +244,9 @@ class MetaPathGNN(nn.Module):
         self.metapath = metapath
         self.convs = nn.ModuleList()
         for i in range(len(metapath)):
-            self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
+            #self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
+            self.convs.append(MetaPathGNNLayer(hidden_channels))
+
         
         self.norms = nn.ModuleList([nn.LayerNorm(hidden_channels) for _ in range(len(metapath))])
         self.dropouts = nn.ModuleList([nn.Dropout(p=dropout_p) for _ in range(len(metapath))])
@@ -293,33 +350,56 @@ class MetaPathGNN(nn.Module):
                 edge_weight = torch.exp(z)    
 
 
-            #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
+
+            # ... tutto invariato sopra (src_nodes, dst_nodes, remap, x_dst_orig, h_dst_curr, edge_weight) ...
+            h_src_curr = h_dict[src][src_nodes]     # <— AGGIUNTO
+
             h_dst = self.convs[conv_idx](
-                x=x_dst_orig, 
+                h_src=h_src_curr,
+                h_dst=h_dst_curr,
                 edge_index=edge_index_remapped,
-                h=h_dst_curr, 
+                x_dst_orig=x_dst_orig,
                 edge_weight=edge_weight
             )
-
-            #since MetaPathGNNLayer is linear, here we apply the activation function:
             h_dst = F.relu(h_dst)
-
-            #normalization + dropout:
             h_dst = self.norms[conv_idx](h_dst)
             h_dst = self.dropouts[conv_idx](h_dst)
-            
-            
-            #UPDATE: update the h_dict embeddings with just computed ones
             h_dict[dst].index_copy_(0, dst_nodes, h_dst)
 
-            """
-            Change the embeddings of original nodes :
-            src_nodes = [3, 4, 5]
-            dst_nodes = [6, 2, 3]
-            """
+            # --- alla fine del forward, CAMBIA IL RETURN ---
+        target_type = self.metapath[-1][2]      # ultimo dst (== 'drivers')
+        return self.out_proj(h_dict[target_type])
 
-        start_type = self.metapath[0][0]
-        return self.out_proj(h_dict[start_type])
+
+
+
+        #     #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
+        #     h_dst = self.convs[conv_idx](
+        #         x=x_dst_orig, 
+        #         edge_index=edge_index_remapped,
+        #         h=h_dst_curr, 
+        #         edge_weight=edge_weight
+        #     )
+
+        #     #since MetaPathGNNLayer is linear, here we apply the activation function:
+        #     h_dst = F.relu(h_dst)
+
+        #     #normalization + dropout:
+        #     h_dst = self.norms[conv_idx](h_dst)
+        #     h_dst = self.dropouts[conv_idx](h_dst)
+            
+            
+        #     #UPDATE: update the h_dict embeddings with just computed ones
+        #     h_dict[dst].index_copy_(0, dst_nodes, h_dst)
+
+        #     """
+        #     Change the embeddings of original nodes :
+        #     src_nodes = [3, 4, 5]
+        #     dst_nodes = [6, 2, 3]
+        #     """
+
+        # start_type = self.metapath[0][0] #start from the first node type
+        # return self.out_proj(h_dict[start_type])
 
 
 
