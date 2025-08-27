@@ -97,8 +97,8 @@ def train2():
     wd=0
     
     
-    metapaths = [[('drivers', 'rev_f2p_driverId', 'results')]]
-    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'results'),): 1}
+    metapaths = [[('drivers', 'rev_f2p_driverId', 'standings')]]
+    metapath_counts = {(('drivers', 'rev_f2p_driverId', 'standings'),): 1}
     model = XMetaPath(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
