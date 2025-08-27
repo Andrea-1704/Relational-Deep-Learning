@@ -245,12 +245,23 @@ def greedy_metapath_search_rl(
 
         #testing on validation after training the MPS GNN 
         
+        #mp_candidate = current_path + [chosen_rel]
         mp_candidate = current_path + [chosen_rel]
+
+        def flip_rel(rel_name: str) -> str:
+            return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
+
+        # CONVERSIONE: fai terminare la path su 'drivers'
+        #  (1) inverti l’ordine scelto dall’RL (che parte da drivers),
+        #  (2) flippa ogni relazione src<->dst per “tornare” verso drivers.
+        mp_for_model = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_candidate[::-1]]
+        assert mp_for_model[-1][2] == "drivers", f"Bad metapath (must end on drivers): {mp_for_model}"
+
         print(f"The RL agent chosen r* {chosen_rel} to be added to metapath {current_path}, now we pass to the XMEtapath Model to test it")
         model = XMetaPath(
             data=data,
             col_stats_dict=col_stats_dict,
-            metapaths=[mp_candidate],
+            metapaths=[mp_for_model],
             metapath_counts=agent.statistics_on_mp,
             hidden_channels=hidden_channels,
             out_channels=out_channels,
