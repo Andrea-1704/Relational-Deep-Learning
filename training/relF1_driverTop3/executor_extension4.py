@@ -13,10 +13,14 @@ import torch
 import math
 import torch.nn as nn
 
-
 import sys
 import os
-sys.path.append(os.path.abspath("."))
+#sys.path.append(os.path.abspath("."))
+import os, sys
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
