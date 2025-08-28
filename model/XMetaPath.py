@@ -636,9 +636,9 @@ class XMetaPath(nn.Module):
             for model in self.metapath_models 
         ] #create a list of the embeddings, one for each metapath
         concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
-        #weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
+        #weighted = concat * self.metapath_weights_tensor.view(1, -1, 1) #to consider to add statisitcs
         
-        return self.regressor(concat) #finally apply regression
+        return self.regressor(concat) #finally apply regression; just put weighted instead of concat if statistics
      
     
 
