@@ -335,7 +335,6 @@ def greedy_metapath_search_rl(
         coverage_frac = len(unique_seeds) / max(N_seed_batch, 1)
 
         # Support: foglie uniche per seed (media su seed coperti)
-        from collections import defaultdict
         leaves_per_seed = defaultdict(set)
         for b, s in zip(bags, seed_ids):
             for u in b:
