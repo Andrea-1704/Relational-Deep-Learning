@@ -42,7 +42,7 @@ from utils.utils import evaluate_performance, evaluate_on_full_train, test, trai
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath import XMetaPath
 from utils.XMetapath_utils.XMetaPath_extension1 import greedy_metapath_search
-from model.XMetaPath import XMetapath, interpret_attention
+from model.XMetaPath import XMetaPath, interpret_attention
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
