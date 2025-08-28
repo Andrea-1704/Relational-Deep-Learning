@@ -27,12 +27,13 @@ from utils.utils import evaluate_performance, test, train
 import collections 
 
 
-
 def flip_rel(rel_name: str) -> str:
     """
     Converts the name of the relation to its reversed version.
     """
     return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
+
+
 
 def to_canonical(mp_outward):
     """
@@ -42,10 +43,11 @@ def to_canonical(mp_outward):
     relation gets converted (flip_rel).
     
     It should be verified that mp[-1][2] == target node. 
+    E.g.:
+    [('drivers', 'drives', 'cars'), ('cars', 'drives', 'passengers')] to [('passengers', 'rev_drives', 'cars'), ('cars', 'rev_drives', 'drivers')]
     """
     mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
     # assert mp[-1][2] == "drivers"
-    print(f"changed metapath order from {mp_outward} to {mp}")
     return tuple(mp)
 
 
@@ -61,13 +63,11 @@ def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str,
 
 
 
-
 def construct_bags(
     data,
     previous_bags: List[List[int]], 
     previous_labels: List[float],     # list of the "v" nodes
     rel: Tuple[str, str, str],
-    src_embeddings,
     previous_seed_ids: List[int]
 ) -> Tuple[List[List[int]], List[float], List[int]]:
     """
@@ -105,8 +105,6 @@ def construct_bags(
                 #could be zero even just because that node simply do not have any of such relations
                 #test to understand if we are managing correctly the global and local mapping:
                 continue
-            
-            x_v = src_embeddings[v]
 
             for u in neighbors_u.tolist():  #consider all the "sons" of node "v" through relation "rel"
                 bag_u.append(u)
@@ -230,11 +228,15 @@ def greedy_metapath_search(
     idxs2 = torch.where(train_mask)[0].tolist()
     current_bags    = [[int(i)] for i in idxs2]
     current_labels  = [float(data[node_type].y[i]) for i in idxs2]
-    current_seed_ids = [int(i) for i in idxs2]    # NEW
+    current_seed_ids = [int(i) for i in idxs2]    # NEW|||||||||||||||
+    #seed idx are the target's node id: the one we start to build the 
+    #bags from.
     N_seed_batch    = len(current_seed_ids)
+    #This number represents the maximum number of nodes in the bag list
+    
 
-    metapath_counts = collections.defaultdict(int)  # puoi tenerlo se vuoi contare passaggi
-    metapath_stats  = collections.defaultdict(lambda: {   # NEW: stats ricche
+    metapath_counts = collections.defaultdict(int) #not used anymore. 
+    metapath_stats  = collections.defaultdict(lambda: {   # NEW statistics!
         "cov_sum": 0.0, "sup_sum": 0.0, "q_sum": 0.0,
         "cov_seen": 0, "q_seen": 0,
     })
@@ -274,11 +276,9 @@ def greedy_metapath_search(
                     previous_bags=current_bags,
                     previous_labels=current_labels,
                     rel=rel,
-                    src_embeddings = node_embeddings_dict[src],
                     previous_seed_ids=current_seed_ids,
                 )
 
-                print(f"La lunghezza delle bag è {len(bags)}; e il suo contenuto per un indice 3 è {bags[2]}")
                 if len(bags) < 5:
                     continue
 
@@ -311,26 +311,33 @@ def greedy_metapath_search(
                     if val_metrics[tune_metric] < best_val_metrics and not higher_is_better:
                         best_val_metrics = val_metrics[tune_metric]
                 
-                # path candidato "outward"
+                # candidated path "outward"
                 mp_candidate = local_path2.copy()
                 mp_candidate.append(rel)
 
-                # chiave canonica (termina su 'drivers')
+                # tranform the metapath in the canonical format:
                 mp_key = to_canonical(mp_candidate)
 
-                # Coverage: quanti seed unici sono coperti
+                # COVERAGE: how many unique seed nodes are covered
+                # with respects to the total number of seed nodes
+                # seen at the beginning. 
+                #during the bag expansion process some seed node
+                #may become uncoverd making decreasing this score.
                 unique_seeds = set(seed_ids)
                 coverage_frac = len(unique_seeds) / max(N_seed_batch, 1)
 
-                # Support medio per seed coperto: #foglie uniche / #seed coperti
-                from collections import defaultdict as _dd
-                leaves_per_seed = _dd(set)
+                #suport measurement: 
+                #num = number of leaf nodes reached 
+                #den = number of seed nodes
+                #If 3 driver reach 2, 1 e 2 leaf nodes, then
+                #sup_mean = (2+1+2) / 3 = 1.67
+                leaves_per_seed = defaultdict(set)
                 for b, s in zip(bags, seed_ids):
                     for u in b:
                         leaves_per_seed[s].add(int(u))
                 sup_mean = (sum(len(leaves_per_seed[s]) for s in unique_seeds) / max(len(unique_seeds), 1)) if unique_seeds else 0.0
 
-                # Quality: F1 val del candidato
+                # Quality: F1 val of candidate
                 st = metapath_stats[mp_key]
                 st["cov_sum"]  += float(coverage_frac)
                 st["sup_sum"]  += float(sup_mean)
@@ -365,19 +372,14 @@ def greedy_metapath_search(
             best_score_per_path[path_tuple] = score
     sorted_unique_paths = sorted(best_score_per_path.items(), key=lambda x: x[1], reverse=True)#higher is better
     selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
-    #print(f"\nfinal metapaths are {selected_metapaths}\n")
-
-
-    # return selected_metapaths, metapath_counts
-
-    # dopo aver calcolato selected_metapaths (outward)
+    
     keys, weights = _make_metapath_weights(
         selected_outward_paths=selected_metapaths,
         stats_map=metapath_stats,
-        alpha=0.5, beta=0.0, gamma=1.0,   # semplice: coverage^0.5 * quality
+        alpha=0.5, beta=0.0, gamma=1.0,   #  coverage^0.5 * quality
     )
 
-    final_mps_for_model   = [list(k) for k in keys]  # k è già canonico (...->drivers)
+    final_mps_for_model   = [list(k) for k in keys]
     metapath_weight_dict  = {k: float(w) for k, w in zip(keys, weights.tolist())}
 
     return final_mps_for_model, metapath_weight_dict
