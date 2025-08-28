@@ -283,15 +283,18 @@ def greedy_metapath_search(
                     continue
 
                 local_path2 = local_path.copy()
-                #even if it is not the best one we memorize it because maybe will be selected from beam search:
-
                 local_path2.append(rel)
-                loc = [local_path2.copy()]
+
+                mp_key   = to_canonical(local_path2)        
+                assert mp_key[-1][2] == node_type, \
+                    f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
+
+                loc_canon = [list(mp_key)]
                 model = XMetaPath(
                     data=data,
                     col_stats_dict=col_stats_dict,
                     metapath_counts = metapath_counts,
-                    metapaths=loc,
+                    metapaths=loc_canon,
                     hidden_channels=hidden_channels,
                     out_channels=out_channels,
                     final_out_channels=final_out_channels,
@@ -341,9 +344,10 @@ def greedy_metapath_search(
                 st = metapath_stats[mp_key]
                 st["cov_sum"]  += float(coverage_frac)
                 st["sup_sum"]  += float(sup_mean)
-                st["q_sum"]    += float(best_val_metrics)
-                st["cov_seen"] += 1
-                st["q_seen"]   += 1
+                st["q_sum"]    += float(best_val_metrics) #AS A METRIC WE ALSO CONSIDER THE 
+                #VALIDATION METRIC (E.G. F1) OBTAINED USING THAT METAPATH.
+                st["cov_seen"] += 1 #how many times we have seen that metapath
+                st["q_seen"]   += 1 #how many times we did upload validation score.
 
                 
                 print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_val_metrics}")
