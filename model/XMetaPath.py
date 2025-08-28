@@ -525,11 +525,10 @@ class XMetaPath(nn.Module):
     """
     This is the complete Multi META Path model.
     It aggregates multiple metaPathGNN, each of which is dedicated
-    to a single MetaPath (and, so produces an embeddings based
+    to a single MetaPath (and, so produces embeddings fir target nodes based
     on that metapath). 
     We then compute all the embeddings produced by each metapath, 
-    through MetaPathGNN Model to make a final prediction, which in 
-    our is a regression task (driver position only for now).
+    through MetaPathGNN Model to make a final prediction.
 
     We use a different GNN model for each distinct metapath 
     making the aggregation only considering that metapath
@@ -569,7 +568,7 @@ class XMetaPath(nn.Module):
                  time_scale: float = 1.0):
         super().__init__()
 
-        #####LOCAL INTERPRETABILITY
+        #####LOCAL INTERPRETABILITY ONLY FOR F1, TO BE CHANGED TIME TO TIME 
         self.data = data
         self.pretty_fields = {
             "drivers": ["forename", "surname", "code", "nationality"],

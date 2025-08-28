@@ -1006,6 +1006,12 @@ def greedy_metapath_search_with_bags_learned_3(
                     theta=theta,
                     src_embeddings = node_embeddings_dict[src]
                 )
+                #see if there are embpy bags:
+                for bag in bags:
+                    if len(bag)==0:
+                        print(f"We got an empty bag")
+                    else:
+                        print(f"len bag:"{len(bag)})
                 if len(bags) < 5:
                     continue
 
@@ -1014,7 +1020,7 @@ def greedy_metapath_search_with_bags_learned_3(
 
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
-                model = XMetapath(
+                model = XMetaPath(
                     data=data,
                     col_stats_dict=col_stats_dict,
                     metapath_counts = metapath_counts,
