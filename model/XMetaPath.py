@@ -612,6 +612,7 @@ class XMetaPath(nn.Module):
             ],
             channels=hidden_channels,
         )
+        self.final_head = nn.Linear(out_channels, final_out_channels)
 
     def forward(self, batch: HeteroData, entity_table=None):
 
@@ -639,7 +640,9 @@ class XMetaPath(nn.Module):
         weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
         
         #return self.regressor(weighted) #finally apply regression
-        return weighted
+        pooled = weighted.sum(dim=1)                       # oppure .mean(dim=1)
+        out = self.final_head(pooled).squeeze(-1)          # [N]
+        return out
      
     
 
