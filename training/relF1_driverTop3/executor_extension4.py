@@ -21,7 +21,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath import XMetaPath, interpret_attention
 from utils.utils import evaluate_performance, test, train
-from XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
     #utils.XMetapath_utils.XMetapath_extension4
 # from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 

@@ -115,7 +115,7 @@ def construct_bags(
             bags.append(bag_u) #updates the new list of bags
             labels.append(label) #the label of the current bag is the same 
             #as the one that the father bag had.
-            seed_ids.append(seed_id)
+            seed_ids.append(seed_id)#consider same seed id if and only if we have a bag for it
 
     return bags, labels, seed_ids
 
