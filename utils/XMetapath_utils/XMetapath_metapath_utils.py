@@ -1011,7 +1011,7 @@ def greedy_metapath_search_with_bags_learned_3(
                     if len(bag)==0:
                         print(f"We got an empty bag")
                     else:
-                        print(f"len bag:"{len(bag)})
+                        print(f"len bag:{len(bag)}")
                 if len(bags) < 5:
                     continue
 
