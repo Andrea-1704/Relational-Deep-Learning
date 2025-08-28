@@ -38,13 +38,12 @@ class RLAgent:
         self.statistics_on_mp :  Dict[Tuple[Tuple[str,str,str], ...], int] = {}
         #strongher statistics:
         self.best_score_by_path_global = {}
-        # Nuove statistiche per meta-path (chiave = forma canonica che finisce su 'drivers'):
         self.metapath_stats = defaultdict(lambda: {
-            "cov_sum": 0.0,    # somma coverage_frac sui batch/episodi
-            "sup_sum": 0.0,    # somma sup_mean
-            "q_sum":   0.0,    # somma quality (F1 val)
-            "cov_seen": 0,     # quante volte abbiamo aggiornato coverage/support
-            "q_seen":   0,     # quante volte abbiamo visto una quality per quel path
+            "cov_sum": 0.0,    
+            "sup_sum": 0.0,    
+            "q_sum":   0.0,    
+            "cov_seen": 0,     
+            "q_seen":   0,     
         })
 
     def select_relation(self, state, candidate_rels):
@@ -172,11 +171,11 @@ def _make_metapath_weights(selected_outward_paths, stats_map,
         if st is None or st["cov_seen"] == 0:
             cov = 0.0; sup = 0.0; q = 0.0
         else:
-            cov = (st["cov_sum"] / st["cov_seen"])      # già frazione (0..1) sul batch
-            sup = (st["sup_sum"] / st["cov_seen"])      # media foglie per seed coperto
-            q   = (st["q_sum"]   / max(st["q_seen"],1)) # F1 medio su val
+            cov = (st["cov_sum"] / st["cov_seen"])   
+            sup = (st["sup_sum"] / st["cov_seen"])      
+            q   = (st["q_sum"]   / max(st["q_seen"],1)) 
 
-        # smussamenti
+       
         cov_s = (cov + eps) ** alpha
         sup_s = (sup + eps) ** beta
         q_s   = max(q, 0.0) ** gamma
@@ -200,7 +199,7 @@ def greedy_metapath_search_rl(
     train_mask,
     node_type,
     col_stats_dict,
-    agent:RLAgent,  # agente RL esterno: is already warmed up!
+    agent:RLAgent,  #is already warmed up!
     L_max=3,
     hidden_channels=128,
     out_channels=128,
@@ -272,7 +271,7 @@ def greedy_metapath_search_rl(
 
 
         if len(bags) < 5:
-            # penalità e nessuna transizione di stato (resto in s)
+            
             legal_next = get_legal_relations_for_state(data, node_type, current_path)
             agent.update_q(
                 state=current_path,
@@ -595,18 +594,16 @@ def final_metapath_search_with_rl(
         metapath_counts[tuple(p)] += 1
 
     #new statistics:
-    # 'selected' è la tua lista di metapath outward scelta dal MMR
     keys, weights = _make_metapath_weights(
         selected_outward_paths=selected,
         stats_map=agent.metapath_stats,
-        n_drivers_total=data['drivers'].num_nodes,  # usato solo come info
-        alpha=0.5, beta=0.0, gamma=1.0              # start semplice
+        n_drivers_total=data['drivers'].num_nodes,  
+        alpha=0.5, beta=0.0, gamma=1.0              
     )
 
-    # Converte i path outward in path canonici (come vuole il modello):
-    final_mps_for_model = [list(k) for k in keys]  # 'k' è già canonical tuple
 
-    # Dizionario pesi da passare come 'metapath_counts' (verrà rinormalizzato dentro XMetaPath):
+    final_mps_for_model = [list(k) for k in keys]  
+
     metapath_weight_dict = {k: float(w) for k, w in zip(keys, weights.tolist())}
 
     return final_mps_for_model, metapath_weight_dict
