@@ -612,7 +612,6 @@ class XMetaPath(nn.Module):
             ],
             channels=hidden_channels,
         )
-        self.final_head = nn.Linear(out_channels, final_out_channels)
 
     def forward(self, batch: HeteroData, entity_table=None):
 
@@ -637,12 +636,9 @@ class XMetaPath(nn.Module):
             for model in self.metapath_models 
         ] #create a list of the embeddings, one for each metapath
         concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
-        weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
+        #weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
         
-        #return self.regressor(weighted) #finally apply regression
-        pooled = weighted.sum(dim=1)                       # oppure .mean(dim=1)
-        out = self.final_head(pooled).squeeze(-1)          # [N]
-        return out
+        return self.regressor(concat) #finally apply regression
      
     
 
