@@ -226,11 +226,7 @@ def greedy_metapath_search_rl(
         )
 
         #see if there are embpy bags:
-        for bag in bags:
-            if len(bag)==0:
-                print(f"We got an empty bag")
-            else:
-                print(f"len bag:{len(bag)}")
+        print("Lunghezza bags: {len(bags)}")
         
 
 
