@@ -18,6 +18,17 @@ from utils.utils import evaluate_performance, test, train
 from model.XMetaPath import XMetaPath
 
 
+# utility functions:
+def flip_rel(rel_name: str) -> str:
+    return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
+
+def to_canonical(mp_outward):
+    # mp_outward: [(src, rel, dst), ...] dalla costruzione RL (parte da 'drivers')
+    mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
+    assert mp[-1][2] == "drivers"
+    return tuple(mp)
+
+
 class RLAgent:
     def __init__(self, tau=1.0, alpha=0.5):
         self.q_table = defaultdict(lambda: defaultdict(float))
@@ -25,6 +36,16 @@ class RLAgent:
         self.alpha = alpha
         self.best_score_by_path_global: Dict[Tuple[Tuple[str,str,str], ...], float] = {}  #dict {metapath->score}
         self.statistics_on_mp :  Dict[Tuple[Tuple[str,str,str], ...], int] = {}
+        #strongher statistics:
+        self.best_score_by_path_global = {}
+        # Nuove statistiche per meta-path (chiave = forma canonica che finisce su 'drivers'):
+        self.metapath_stats = defaultdict(lambda: {
+            "cov_sum": 0.0,    # somma coverage_frac sui batch/episodi
+            "sup_sum": 0.0,    # somma sup_mean
+            "q_sum":   0.0,    # somma quality (F1 val)
+            "cov_seen": 0,     # quante volte abbiamo aggiornato coverage/support
+            "q_seen":   0,     # quante volte abbiamo visto una quality per quel path
+        })
 
     def select_relation(self, state, candidate_rels):
         state_key = tuple(state)
@@ -107,54 +128,65 @@ def get_legal_relations_for_state(data, node_type, current_path):
 
 def construct_bags(
     data,
-    previous_bags: List[List[int]], 
-    previous_labels: List[float],     # list of the "v" nodes
+    previous_bags: List[List[int]],
+    previous_labels: List[float],
     rel: Tuple[str, str, str],
-) -> Tuple[List[List[int]], List[float]]:
-    """
-    Estend the bags through relation "rel"
-    Returns:
-    - new bag 
-    - labels associated to nodes v
-    """
+    previous_seed_ids: List[int],             # NEW
+) -> Tuple[List[List[int]], List[float], List[int]]:   # NEW: + seed_ids
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
-        print(f"this should not have happened, but the relation was not found.")
-        return [], []
+        print("this should not have happened, but the relation was not found.")
+        return [], [], []
 
-    edge_src, edge_dst = edge_index #tensor [2, #edges]
-    bags = [] #the new bags, one for each "v" node.
-    labels = [] #for each bag we consider its label, given by the one of the src in relation r.
+    edge_src, edge_dst = edge_index
+    bags, labels, seed_ids = [], [], []
 
-    for bag_v, label in zip(previous_bags, previous_labels):
-        #the previous bag now becomes a "v" node
-
-        bag_u = [] #new bag for the node (bag) "bag_v"
-
-        for v in bag_v: #for each node in the previous bag 
-
-            neighbors_u = edge_dst[edge_src == v] #correct for the first step
-            #we consider all the edge indexes of destination type that are linked to the 
-            #src type through relation "rel", for which the source was exactly the node "v".
-            #  Pratically, here we are going through a 
-            #relation rel, for example the "patient->prescription" relation and we are 
-            # consideringall the prescription that "father" 
-            #node of kind patient had.
-            if len(neighbors_u) == 0:
-                #could be zero even just because that node simply do not have any of such relations
-                #test to understand if we are managing correctly the global and local mapping:
+    for bag_v, label, seed_id in zip(previous_bags, previous_labels, previous_seed_ids):
+        bag_u = []
+        for v in bag_v:
+            neighbors_u = edge_dst[edge_src == v]
+            if neighbors_u.numel() == 0:
                 continue
-
-            for u in neighbors_u.tolist():  #consider all the "sons" of node "v" through relation "rel"
-                bag_u.append(u)
+            bag_u += neighbors_u.tolist()
 
         if len(bag_u) > 0:
-            bags.append(bag_u) #updates the new list of bags
-            labels.append(label) #the label of the current bag is the same 
-            #as the one that the father bag had.
+            # dedup per bag per stabilità (opzionale):
+            bag_u = list(dict.fromkeys(bag_u))
+            bags.append(bag_u)
+            labels.append(label)
+            seed_ids.append(seed_id)          # mantiene tracciamento del driver
 
-    return bags, labels
+    return bags, labels, seed_ids
 
+
+
+#statistics:
+def _make_metapath_weights(selected_outward_paths, stats_map,
+                           n_drivers_total: int,
+                           alpha=0.5, beta=0.25, gamma=1.0, eps=1e-6):
+    scores = []
+    keys   = []
+    for mp_out in selected_outward_paths:
+        key = to_canonical(mp_out)
+        st  = stats_map.get(key, None)
+        if st is None or st["cov_seen"] == 0:
+            cov = 0.0; sup = 0.0; q = 0.0
+        else:
+            cov = (st["cov_sum"] / st["cov_seen"])      # già frazione (0..1) sul batch
+            sup = (st["sup_sum"] / st["cov_seen"])      # media foglie per seed coperto
+            q   = (st["q_sum"]   / max(st["q_seen"],1)) # F1 medio su val
+
+        # smussamenti
+        cov_s = (cov + eps) ** alpha
+        sup_s = (sup + eps) ** beta
+        q_s   = max(q, 0.0) ** gamma
+
+        scores.append(cov_s * sup_s * q_s)
+        keys.append(key)
+
+    w = torch.tensor(scores, dtype=torch.float)
+    w = w / w.sum().clamp_min(eps)
+    return keys, w
 
 
 
@@ -190,6 +222,14 @@ def greedy_metapath_search_rl(
     current_labels = [float(data[node_type].y[i]) for i in idxs]  # keep float to support regression
     #NOTA CHE QUESTA VERIFICA E' INUTILE ALMENO PER F1, QUINDI VOLENDO SI POTEVA USARE ANCHE LA VERSIONE COMMENTATA
 
+    #initilize seeds:
+    idxs = torch.where(train_mask)[0].tolist()
+    current_bags   = [[int(i)] for i in idxs]
+    current_labels = [float(data[node_type].y[i]) for i in idxs]
+    current_seed_ids = [int(i) for i in idxs]   # NEW: un seed per bag iniziale
+    N_seed_batch = len(current_seed_ids)
+
+
     metapath_counts = defaultdict(int)
     all_path_info = []
     current_path = []
@@ -218,15 +258,16 @@ def greedy_metapath_search_rl(
         print(f"The RL agent has chosen the relation {chosen_rel}")
 
         #bags expansion for chosen relation
-        bags, labels = construct_bags(
+        bags, labels, seed_ids = construct_bags(
             data=data,
             previous_bags=current_bags,
             previous_labels=current_labels,
             rel=chosen_rel,
+            previous_seed_ids=current_seed_ids,
         )
 
         #see if there are embpy bags:
-        print(f"Lunghezza bags: {len(bags)}")
+        # printf"Lunghezza bags: {len(bags)}")
         
 
 
@@ -284,7 +325,36 @@ def greedy_metapath_search_rl(
             else:
                 best_val = min(best_val, val_score)
         
-        # NEW: log this candidate metapath’s performance into the agent’s global map
+        #statistics
+        mp_candidate = current_path + [chosen_rel]
+        mp_key = to_canonical(mp_candidate)  # chiave allineata al modello
+
+        # --- Coverage & Support (sul batch corrente)
+        # Coverage: #seed unici coperti / N_seed_batch
+        unique_seeds = set(seed_ids)
+        coverage_frac = len(unique_seeds) / max(N_seed_batch, 1)
+
+        # Support: foglie uniche per seed (media su seed coperti)
+        from collections import defaultdict
+        leaves_per_seed = defaultdict(set)
+        for b, s in zip(bags, seed_ids):
+            for u in b:
+                leaves_per_seed[s].add(int(u))
+        if len(unique_seeds) > 0:
+            sup_mean = sum(len(leaves_per_seed[s]) for s in unique_seeds) / len(unique_seeds)
+        else:
+            sup_mean = 0.0
+
+        # Quality: F1 val (best_val)
+        st = agent.metapath_stats[mp_key]
+        st["cov_sum"]  += float(coverage_frac)
+        st["sup_sum"]  += float(sup_mean)
+        st["q_sum"]    += float(best_val)
+        st["cov_seen"] += 1
+        st["q_seen"]   += 1
+
+
+        
         print(f"After testing, the result of metapath {mp_candidate} is {best_val} in the validation set.")
         agent.register_path_score(mp_candidate, best_val, higher_is_better)
 
@@ -525,4 +595,19 @@ def final_metapath_search_with_rl(
     for p in selected:
         metapath_counts[tuple(p)] += 1
 
-    return selected, agent.statistics_on_mp
+    #new statistics:
+    # 'selected' è la tua lista di metapath outward scelta dal MMR
+    keys, weights = _make_metapath_weights(
+        selected_outward_paths=selected,
+        stats_map=agent.metapath_stats,
+        n_drivers_total=data['drivers'].num_nodes,  # usato solo come info
+        alpha=0.5, beta=0.0, gamma=1.0              # start semplice
+    )
+
+    # Converte i path outward in path canonici (come vuole il modello):
+    final_mps_for_model = [list(k) for k in keys]  # 'k' è già canonical tuple
+
+    # Dizionario pesi da passare come 'metapath_counts' (verrà rinormalizzato dentro XMetaPath):
+    metapath_weight_dict = {k: float(w) for k, w in zip(keys, weights.tolist())}
+
+    return final_mps_for_model, metapath_weight_dict
