@@ -22,7 +22,7 @@ from torch_geometric.data import HeteroData
 from typing import List, Tuple, Dict
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
-from model.XMetaPath import XMetapath
+from model.XMetaPath import XMetaPath
 from utils.utils import evaluate_performance, test, train
 import collections 
 
@@ -287,7 +287,7 @@ def greedy_metapath_search(
 
                 local_path2.append(rel)
                 loc = [local_path2.copy()]
-                model = XMetapath(
+                model = XMetaPath(
                     data=data,
                     col_stats_dict=col_stats_dict,
                     metapath_counts = metapath_counts,
