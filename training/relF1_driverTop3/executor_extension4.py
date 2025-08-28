@@ -126,8 +126,8 @@ hidden_channels = 128
 out_channels = 128
 
 loader_dict = loader_dict_fn(
-    batch_size=256,
-    num_neighbours=128,
+    batch_size=512,
+    num_neighbours=256,
     data=data_official,
     task=task,
     train_table=train_table,
