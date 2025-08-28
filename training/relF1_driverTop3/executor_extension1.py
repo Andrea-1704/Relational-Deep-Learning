@@ -40,7 +40,8 @@ sys.path.append(os.path.abspath("."))
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.XMetapath_utils.XMetapath_extension_1 import greedy_metapath_search
+from model.XMetaPath import XMetaPath
+from utils.XMetapath_utils.XMetaPath_extension_1 import greedy_metapath_search
 from model.XMetaPath import XMetapath, interpret_attention
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
@@ -164,14 +165,82 @@ metapaths, metapath_counts = greedy_metapath_search(
     higher_is_better= higher_is_better
 )
 
-# metapaths = greedy_metapath_search(
-#     data=data_official,
-#     db=db_nuovo,
-#     task_name = task_name,
-#     task = task,
-#     train_mask = train_mask_full,
-#     node_type='drivers',
-#     node_id='driverId',
-#     higher_is_better=True,
-#     col_stats_dict=col_stats_dict_official
-# )
+metapaths, metapath_count = greedy_metapath_search(
+    data=data_official,
+    db=db_nuovo,
+    task_name = task_name,
+    task = task,
+    train_mask = train_mask_full,
+    node_type='drivers',
+    node_id='driverId',
+    higher_is_better=True,
+    col_stats_dict=col_stats_dict_official
+)
+
+
+
+#train the final model on the chosen paths
+lr=1e-02
+wd=0
+    
+model = XMetaPath(
+    data=data_official,
+    col_stats_dict=col_stats_dict_official,
+    metapath_counts = metapath_count, 
+    metapaths=metapaths,               
+    hidden_channels=hidden_channels,
+    out_channels=out_channels,
+    final_out_channels=1,
+).to(device)
+
+optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+    
+scheduler = CosineAnnealingLR(optimizer, T_max=25)
+
+early_stopping = EarlyStopping(
+    patience=60,
+    delta=0.0,
+    verbose=True,
+    higher_is_better = True,
+    path="best_basic_model.pt"
+)
+
+best_val_metric = -math.inf 
+test_table = task.get_table("test", mask_input_cols=False)
+best_test_metric = -math.inf 
+epochs = 100
+for epoch in range(0, epochs):
+    train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+
+    train_pred = test(model, loader_dict["train"], device=device, task=task)
+    val_pred = test(model, loader_dict["val"], device=device, task=task)
+    test_pred = test(model, loader_dict["test"], device=device, task=task)
+    
+    train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+    val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+
+    #scheduler.step(val_metrics[tune_metric])
+
+    if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
+        best_val_metric = val_metrics[tune_metric]
+        state_dict = copy.deepcopy(model.state_dict())
+
+    if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
+        best_test_metric = test_metrics[tune_metric]
+        state_dict_test = copy.deepcopy(model.state_dict())
+
+    current_lr = optimizer.param_groups[0]["lr"]
+    
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+
+    early_stopping(val_metrics[tune_metric], model)
+
+    if early_stopping.early_stop:
+        print(f"Early stopping triggered at epoch {epoch}")
+        break
+
+
+print(f"best validation results: {best_val_metric}")
+print(f"best test results: {best_test_metric}")

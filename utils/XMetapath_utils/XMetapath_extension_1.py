@@ -25,6 +25,20 @@ from collections import defaultdict
 from model.XMetaPath import XMetapath
 from utils.utils import evaluate_performance, test, train
 import numpy as np
+import collections 
+
+def flip_rel(rel_name: str) -> str:
+    return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
+
+def to_canonical(mp_outward):
+    """
+    Converte un path costruito 'in avanti' (da drivers a ...) nella forma canonica
+    usata dal modello (... -> 'drivers'), con flip dei nomi relazionali.
+    """
+    mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
+    assert mp[-1][2] == "drivers"
+    return tuple(mp)
+
 
 
 def get_candidate_relations(metadata, current_node_type: str) -> List[Tuple[str, str, str]]:
@@ -45,13 +59,15 @@ def construct_bags(
     previous_labels: List[float],     # list of the "v" nodes
     rel: Tuple[str, str, str],
     src_embeddings,
-) -> Tuple[List[List[int]], List[float], Dict[int, float]]:
+    previous_seed_ids: List[int]
+) -> Tuple[List[List[int]], List[float], List[int]]:
     """
     Estend the bags through relation "rel"
     Returns:
     - new bag 
     - labels associated to nodes v
     """
+
     edge_index = data.edge_index_dict.get(rel)
     if edge_index is None:
         print(f"this should not have happened, but the relation was not found.")
@@ -60,8 +76,9 @@ def construct_bags(
     edge_src, edge_dst = edge_index #tensor [2, #edges]
     bags = [] #the new bags, one for each "v" node.
     labels = [] #for each bag we consider its label, given by the one of the src in relation r.
+    seed_ids = []
 
-    for bag_v, label in zip(previous_bags, previous_labels):
+    for bag_v, label, seed_id in zip(previous_bags, previous_labels, previous_seed_ids):
         #the previous bag now becomes a "v" node
 
         bag_u = [] #new bag for the node (bag) "bag_v"
@@ -86,11 +103,41 @@ def construct_bags(
                 bag_u.append(u)
 
         if len(bag_u) > 0:
+            #new:
+            bag_u = list(dict.fromkeys(bag_u))
             bags.append(bag_u) #updates the new list of bags
             labels.append(label) #the label of the current bag is the same 
             #as the one that the father bag had.
+            seed_ids.append(seed_id)
 
-    return bags, labels
+    return bags, labels, seed_ids
+
+
+def _make_metapath_weights(selected_outward_paths, stats_map,
+                           alpha=0.5, beta=0.0, gamma=1.0, eps=1e-6):
+    """
+    Combina coverage^alpha * support^beta * quality^gamma su medie raccolte.
+    Ritorna: (keys_canoniche, torch.tensor pesi normalizzati)
+    """
+    import torch
+    scores, keys = [], []
+    for mp_out in selected_outward_paths:
+        key = to_canonical(mp_out)
+        st  = stats_map.get(key, None)
+        if st is None or st["cov_seen"] == 0:
+            cov = 0.0; sup = 0.0; q = 0.0
+        else:
+            cov = st["cov_sum"] / st["cov_seen"]
+            sup = st["sup_sum"] / st["cov_seen"]
+            q   = st["q_sum"]   / max(st["q_seen"], 1)
+        cov_s = (cov + eps) ** alpha
+        sup_s = (sup + eps) ** beta
+        q_s   = max(q, 0.0) ** gamma
+        scores.append(cov_s * sup_s * q_s)
+        keys.append(key)
+    w = torch.tensor(scores, dtype=torch.float)
+    w = w / w.sum().clamp_min(eps)
+    return keys, w
 
 
 
@@ -171,6 +218,18 @@ def greedy_metapath_search(
     all_path_info = [] 
     local_path = []
 
+    idxs2 = torch.where(train_mask)[0].tolist()
+    current_bags    = [[int(i)] for i in idxs2]
+    current_labels  = [float(data[node_type].y[i]) for i in idxs2]
+    current_seed_ids = [int(i) for i in idxs2]    # NEW
+    N_seed_batch    = len(current_seed_ids)
+
+    metapath_counts = collections.defaultdict(int)  # puoi tenerlo se vuoi contare passaggi
+    metapath_stats  = collections.defaultdict(lambda: {   # NEW: stats ricche
+        "cov_sum": 0.0, "sup_sum": 0.0, "q_sum": 0.0,
+        "cov_seen": 0, "q_seen": 0,
+    })
+
     
     current_paths = [[]] 
     for level in range(L_max):
@@ -201,12 +260,13 @@ def greedy_metapath_search(
                 if rel == ('races', 'rev_f2p_raceId', 'standings') or rel == ('races', 'rev_f2p_raceId', 'qualifying'): # for some reasons it provokes side assertions
                   continue
                 
-                bags, labels = construct_bags(
+                bags, labels, seed_ids = construct_bags(
                     data=data,
                     previous_bags=current_bags,
                     previous_labels=current_labels,
                     rel=rel,
-                    src_embeddings = node_embeddings_dict[src]
+                    src_embeddings = node_embeddings_dict[src],
+                    previous_seed_ids=current_seed_ids,
                 )
 
                 print(f"La lunghezza delle bag è {len(bags)}; e il suo contenuto per un indice 3 è {bags[2]}")
@@ -241,6 +301,35 @@ def greedy_metapath_search(
                         best_val_metrics = val_metrics[tune_metric]
                     if val_metrics[tune_metric] < best_val_metrics and not higher_is_better:
                         best_val_metrics = val_metrics[tune_metric]
+                
+                # path candidato "outward"
+                mp_candidate = local_path2.copy()
+                mp_candidate.append(rel)
+
+                # chiave canonica (termina su 'drivers')
+                mp_key = to_canonical(mp_candidate)
+
+                # Coverage: quanti seed unici sono coperti
+                unique_seeds = set(seed_ids)
+                coverage_frac = len(unique_seeds) / max(N_seed_batch, 1)
+
+                # Support medio per seed coperto: #foglie uniche / #seed coperti
+                from collections import defaultdict as _dd
+                leaves_per_seed = _dd(set)
+                for b, s in zip(bags, seed_ids):
+                    for u in b:
+                        leaves_per_seed[s].add(int(u))
+                sup_mean = (sum(len(leaves_per_seed[s]) for s in unique_seeds) / max(len(unique_seeds), 1)) if unique_seeds else 0.0
+
+                # Quality: F1 val del candidato
+                st = metapath_stats[mp_key]
+                st["cov_sum"]  += float(coverage_frac)
+                st["sup_sum"]  += float(sup_mean)
+                st["q_sum"]    += float(best_val_metrics)
+                st["cov_seen"] += 1
+                st["q_seen"]   += 1
+
+                
                 print(f"For the partial metapath {local_path2.copy()} we obtain F1 test loss equal to {best_val_metrics}")
                 all_path_info.append((best_val_metrics, local_path2.copy()))
                 score = best_val_metrics #score now is directly the F1 score returneb by training the model on that metapath
@@ -269,5 +358,19 @@ def greedy_metapath_search(
     selected_metapaths = [list(path_tuple) for path_tuple, _ in sorted_unique_paths[:number_of_metapaths]]
     #print(f"\nfinal metapaths are {selected_metapaths}\n")
 
-    return selected_metapaths, metapath_counts
+
+    # return selected_metapaths, metapath_counts
+
+    # dopo aver calcolato selected_metapaths (outward)
+    keys, weights = _make_metapath_weights(
+        selected_outward_paths=selected_metapaths,
+        stats_map=metapath_stats,
+        alpha=0.5, beta=0.0, gamma=1.0,   # semplice: coverage^0.5 * quality
+    )
+
+    final_mps_for_model   = [list(k) for k in keys]  # k è già canonico (...->drivers)
+    metapath_weight_dict  = {k: float(w) for k, w in zip(keys, weights.tolist())}
+
+    return final_mps_for_model, metapath_weight_dict
+
 
