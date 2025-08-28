@@ -591,6 +591,7 @@ class XMetaPath(nn.Module):
         weights = torch.tensor(
             [metapath_counts.get(tuple(mp), 1) for mp in metapaths], dtype=torch.float
         )
+        
         weights = weights/weights.sum() #normalization of count
         self.register_buffer("metapath_weights_tensor", weights) 
 
@@ -637,7 +638,8 @@ class XMetaPath(nn.Module):
         concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
         weighted = concat * self.metapath_weights_tensor.view(1, -1, 1)
         
-        return self.regressor(weighted) #finally apply regression
+        #return self.regressor(weighted) #finally apply regression
+        return weighted
      
     
 
