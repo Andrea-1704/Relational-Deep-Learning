@@ -120,8 +120,12 @@ def construct_bags(
     return bags, labels, seed_ids
 
 
-def _make_metapath_weights(selected_outward_paths, stats_map,
-                           alpha=0.5, beta=0.0, gamma=1.0, eps=1e-6):
+def _make_metapath_weights( selected_outward_paths, stats_map,
+                            alpha=0.1,   # coverage quasi ignorata
+                            beta=0.0,    # ignora supporto
+                            gamma=2.0,   # >>> quality dominante <<<
+                            delta=0.0,   # ignora counts-of-counts
+                            epsilon=0.0 ):
     """
     Combina coverage^alpha * support^beta * quality^gamma su medie raccolte.
     Ritorna: (keys_canoniche, torch.tensor pesi normalizzati)
@@ -379,8 +383,7 @@ def greedy_metapath_search(
     
     keys, weights = _make_metapath_weights(
         selected_outward_paths=selected_metapaths,
-        stats_map=metapath_stats,
-        alpha=0.5, beta=0.0, gamma=1.0,   #  coverage^0.5 * quality
+        stats_map=metapath_stats,   #  coverage^0.5 * quality
     )
 
     final_mps_for_model   = [list(k) for k in keys]
