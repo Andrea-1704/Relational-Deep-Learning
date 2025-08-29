@@ -172,7 +172,7 @@ for mp in metapaths:
         f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
 
     loc_canon = [list(mp_key)]
-    canonical.append(loc_canon)
+    canonical.append(mp_key)
 
 #print(f"The final metapath are {metapaths}")
 
