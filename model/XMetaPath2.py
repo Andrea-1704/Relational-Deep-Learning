@@ -640,4 +640,3 @@ class XMetaPath2(nn.Module):
     
 
     
-

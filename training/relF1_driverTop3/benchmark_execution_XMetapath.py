@@ -146,8 +146,8 @@ hidden_channels = 128
 out_channels = 128
 
 loader_dict = loader_dict_fn(
-    batch_size=1024,
-    num_neighbours=512,
+    batch_size=512,
+    num_neighbours=256,
     data=data_official,
     task=task,
     train_table=train_table,
@@ -192,13 +192,6 @@ model = XMetaPath2(
     final_out_channels=1,
 ).to(device)
 
-#Optim2->not best
-#AdamW(lr=1e-3, weight_decay=1e-4)
-# lr = 1e-3
-# wd = 1e-4
-# optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
-
-#Optim1-> better
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 
     
