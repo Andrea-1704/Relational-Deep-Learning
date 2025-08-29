@@ -526,7 +526,7 @@ class MetaPathSelfAttention(nn.Module):
 
 
 
-class XMetaPath(nn.Module):
+class XMetaPath2(nn.Module):
     """
     This is the complete Multi META Path model.
     It aggregates multiple metaPathGNN, each of which is dedicated
@@ -561,7 +561,7 @@ class XMetaPath(nn.Module):
                  data: HeteroData,
                  col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
                  metapaths: List[List[int]],  # rel_indices
-                 metapath_counts: Dict[Tuple, int], #statistics of each metapath
+                 #metapath_counts: Dict[Tuple, int], #statistics of each metapath
                  hidden_channels: int = 64,
                  out_channels: int = 64,
                  num_heads: int = 8,
@@ -593,12 +593,7 @@ class XMetaPath(nn.Module):
             for mp in metapaths
         ]) # we construct a specific MetaPathGNN for each metapath
 
-        weights = torch.tensor(
-            [metapath_counts.get(tuple(mp), 1) for mp in metapaths], dtype=torch.float
-        )
         
-        weights = weights/weights.sum() #normalization of count
-        self.register_buffer("metapath_weights_tensor", weights) 
 
         self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
 
@@ -645,210 +640,10 @@ class XMetaPath(nn.Module):
         
         return self.regressor(concat) #finally apply regression; just put weighted instead of concat if statistics
      
-    
-
-    def _encode_features_prev(self, batch, entity_table):
-        seed_time = batch[entity_table].seed_time
-        x_dict = self.encoder(batch.tf_dict)
-        rel_time_dict = self.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
-        for node_type, rel_time in rel_time_dict.items():
-            x_dict[node_type] = x_dict[node_type] + rel_time
-        return x_dict
-    
-
-    def _encode_features(self, batch, entity_table):
-        device = next(self.parameters()).device
-
-        tf_dict = {nt: tf.to(device) for nt, tf in batch.tf_dict.items()}
-
-        x_dict = self.encoder(tf_dict)
-
-        seed_time = batch[entity_table].seed_time
-        if torch.is_tensor(seed_time):
-            seed_time = seed_time.to(device)
-
-        time_dict  = {nt: (t.to(device) if torch.is_tensor(t) else t)
-                    for nt, t in batch.time_dict.items()}
-        batch_dict = {nt: b.to(device) for nt, b in batch.batch_dict.items()}
-
-        rel_time_dict = self.temporal_encoder(seed_time, time_dict, batch_dict)
-        for node_type, rel_time in rel_time_dict.items():
-            x_dict[node_type] = x_dict[node_type] + rel_time
-        return x_dict
-
-
-    @torch.no_grad()
-    def predict_with_details(self, batch, entity_table):
-        device = next(self.parameters()).device
-        self.eval()
-
-        x_dict = self._encode_features(batch, entity_table)
-
-        edge_index_dict = {k: v.to(device) for k, v in batch.edge_index_dict.items()}
-        time_dict = {nt: (t.to(device) if torch.is_tensor(t) else t)
-                    for nt, t in batch.time_dict.items()}
-
-        per_path_emb = [m(x_dict, edge_index_dict, node_time_dict=time_dict)
-                        for m in self.metapath_models]
-        per_path_emb = torch.stack(per_path_emb, dim=1)
-        weighted = per_path_emb * self.metapath_weights_tensor.view(1, -1, 1)
-        out, attn_weights = self.regressor(weighted, return_attention=True)
-        return out, attn_weights, weighted, per_path_emb
 
     
-    @torch.no_grad()
-    def _per_metapath_delta(self, weighted, baseline_out, target_idx):
-        """
-        Compute the Δ (drop of logit) removing a metapath at a time.
-        Returns a list of float of length equal to the number of metapaths.
-        """
-        N, M, D = weighted.shape
-        deltas = []
-        for m in range(M):
-            masked = weighted.clone()
-            masked[:, m, :] = 0
-            out_m = self.regressor(masked)                 # [N]
-            delta = (baseline_out[target_idx] - out_m[target_idx]).item()
-            deltas.append(delta)
-        return deltas
+
     
-
-    def _find_last_hop_to_target(self, metapath, entity_table):
-        """Trova l'hop del metapath che aggiorna i nodi di tipo entity_table (quello con dst == entity_table)."""
-        for (src, rel, dst) in metapath:
-            if dst == entity_table:
-                return (src, rel, dst)
-        return None
-
-    def _pretty_node(self, node_type: str, idx: int):
-        """Ritorna un dict leggibile per il nodo (usa le colonne della tabella TorchFrame)."""
-        try:
-            df = self.data[node_type].tf.df
-            row = df.iloc[int(idx)]
-            fields = [c for c in self.pretty_fields.get(node_type, []) if c in df.columns]
-            if not fields:
-                # fallback: prova a pescare qualcosa di parlante
-                candidates = [c for c in df.columns if any(k in c.lower() for k in ["name","title","forename","surname","code","country","nationality","year","round","location"])]
-                fields = candidates[:3]
-            pretty = {c: row[c] for c in fields}
-            # costruiamo un display_name se possibile
-            if {"forename","surname"}.issubset(set(fields)):
-                pretty["display_name"] = f"{row['forename']} {row['surname']}"
-            elif "name" in fields:
-                pretty["display_name"] = str(row["name"])
-            else:
-                pretty["display_name"] = f"{node_type}#{int(idx)}"
-            pretty["index"] = int(idx)  # teniamolo comunque
-            return pretty
-        except Exception:
-            return {"display_name": f"{node_type}#{int(idx)}", "index": int(idx)}
-
-    @torch.no_grad()
-    def _neighbor_deltas_for_metapath(self, batch, entity_table, target_idx, mp_index, per_path_emb, weighted, baseline_out, top_k_nodes=5):
-        """
-        Per il meta-path mp_index, calcola Δ per i vicini (edge ablation) dell'hop che aggrega verso entity_table.
-        Ritorna lista di dict {node_type, node_idx, delta, pretty:{...}} ordinata per delta desc.
-        """
-        # 1) individua hop che aggiorna i target
-        metapath = self.metapath_models[mp_index].metapath
-        hop = self._find_last_hop_to_target(metapath, entity_table)
-        if hop is None:
-            return []  # questo meta-path non aggiorna direttamente i target
-        src, rel, dst = hop
-        edge_index = batch.edge_index_dict[(src, rel, dst)]  # [2, E]
-        # vicini (global idx) che puntano al target
-        mask_dst = (edge_index[1] == int(target_idx))
-        src_neighbors = edge_index[0][mask_dst]
-        if src_neighbors.numel() == 0:
-            return []
-
-        # 2) pre-selezione veloce (se tanti vicini): prendi i più "attivi" per frequenza (qui: tutti)
-        unique_src = src_neighbors.unique()
-
-        results = []
-        # 3) per ogni vicino, rimuovi solo quell'arco e misura Δ sul logit
-        for u in unique_src.tolist():
-            # copia edge_index_dict e filtra l'arco (u -> target_idx) solo per questo hop
-            new_ei = edge_index[:, ~((edge_index[0] == u) & (edge_index[1] == int(target_idx)))]
-            new_edge_index_dict = dict(batch.edge_index_dict)
-            new_edge_index_dict[(src, rel, dst)] = new_ei
-
-            # ricalcola SOLO l'embedding del meta-path mp_index
-            x_dict = self._encode_features(batch, entity_table)
-            new_emb_mp = self.metapath_models[mp_index](x_dict, new_edge_index_dict, node_time_dict=batch.time_dict)  # [N, D]
-
-            # ricomponi il tensore [N, M, D] riusando gli altri canali
-            new_per_path = per_path_emb.clone()
-            new_per_path[:, mp_index, :] = new_emb_mp
-            new_weighted = new_per_path * self.metapath_weights_tensor.view(1, -1, 1)
-
-            new_out = self.regressor(new_weighted)  # [N]
-            delta = (baseline_out[int(target_idx)] - new_out[int(target_idx)]).item()
-
-            results.append({
-                "node_type": src,
-                "node_idx": int(u),
-                "delta": float(delta),
-                "pretty": self._pretty_node(src, int(u)),
-            })
-
-        # ordina e taglia
-        results.sort(key=lambda r: r["delta"], reverse=True)
-        return results[:top_k_nodes]
-
-
-    @torch.no_grad()
-    def explain_instance(self,
-                        batch: HeteroData,
-                        entity_table: str,
-                        target_idx: int,
-                        metapath_names: list,
-                        top_k_metapaths: int = 3,
-                        top_k_nodes: int = 5):
-        """
-        Spiegazione locale e self-explainable per una singola istanza (nodo target).
-        """
-        self.eval()
-
-        # 1) pred + pesi di attenzione + embeddings
-        out, w, weighted, per_path_emb = self.predict_with_details(batch, entity_table)
-        pred = float(torch.sigmoid(out[int(target_idx)]).item() if out.dim() == 1 else out[int(target_idx)].item())
-
-        # 2) Δ per meta-path (ablation)
-        deltas = self._per_metapath_delta(weighted, out, int(target_idx))  # lista di float
-        ranked = sorted(list(enumerate(deltas)), key=lambda x: x[1], reverse=True)
-
-        # 3) top meta-path + nodi più influenti per ciascuno
-        top_entries = []
-        for m, delta_m in ranked[:top_k_metapaths]:
-            node_contribs = self._neighbor_deltas_for_metapath(
-                batch, entity_table, int(target_idx), m, per_path_emb, weighted, out, top_k_nodes=top_k_nodes
-            )
-            top_entries.append({
-                "metapath_index": int(m),
-                "metapath_name": metapath_names[m] if m < len(metapath_names) else f"mp#{m}",
-                "attention_weight": float(w[int(target_idx), m].item()),
-                "delta_logit": float(delta_m),
-                "top_nodes": node_contribs,  # ciascuno con pretty info
-            })
-
-        # 4) pacchetto finale
-        return {
-            "entity_table": entity_table,
-            "target_index": int(target_idx),
-            "prediction": pred,
-            "attention_per_metapath": {
-                (metapath_names[i] if i < len(metapath_names) else f"mp#{i}"): float(w[int(target_idx), i].item())
-                for i in range(w.size(1))
-            },
-            "contribution_per_metapath": {
-                (metapath_names[i] if i < len(metapath_names) else f"mp#{i}"): float(deltas[i])
-                for i in range(len(deltas))
-            },
-            "top_metapaths": top_entries
-        }
-
-
 
 
 def interpret_attention(

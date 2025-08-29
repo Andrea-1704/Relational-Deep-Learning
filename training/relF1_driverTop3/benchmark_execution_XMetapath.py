@@ -26,7 +26,7 @@ sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
-from model.XMetaPath import XMetaPath, interpret_attention
+from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
     #utils.XMetapath_utils.XMetapath_extension4
@@ -159,9 +159,9 @@ wd=0
 node_type="drivers"
 
 
-from collections import defaultdict
+#from collections import defaultdict
 metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
-metapath_count = defaultdict(int)
+#metapath_count = defaultdict(int)
 
 canonical = []
 for mp in metapaths:
@@ -182,10 +182,10 @@ for mp in metapaths:
 lr=1e-02
 wd=0
     
-model = XMetaPath(
+model = XMetaPath2(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
-    metapath_counts = metapath_count, 
+    #metapath_counts = metapath_count, 
     metapaths=canonical,               
     hidden_channels=hidden_channels,
     out_channels=out_channels,
