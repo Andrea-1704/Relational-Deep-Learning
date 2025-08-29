@@ -168,7 +168,6 @@ metapaths, metapath_counts = greedy_metapath_search(
 metapaths, metapath_count = greedy_metapath_search(
     data=data_official,
     db=db_nuovo,
-    task_name = task_name,
     task = task,
     train_mask = train_mask_full,
     node_type='drivers',
