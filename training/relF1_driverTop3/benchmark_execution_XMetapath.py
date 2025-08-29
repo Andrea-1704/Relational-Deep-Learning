@@ -32,6 +32,19 @@ from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent,
     #utils.XMetapath_utils.XMetapath_extension4
 # from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
+
+# utility functions:
+def flip_rel(rel_name: str) -> str:
+    return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
+
+def to_canonical(mp_outward):
+    # mp_outward: [(src, rel, dst), ...] dalla costruzione RL (parte da 'drivers')
+    mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
+    assert mp[-1][2] == "drivers"
+    return tuple(mp)
+
+
+
 task_name = "driver-top3"
 
 dataset = get_dataset("rel-f1", download=True)
@@ -150,6 +163,17 @@ from collections import defaultdict
 metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
 metapath_count = defaultdict(int)
 
+canonical = []
+for mp in metapaths:
+    #change to canonical:
+    mp = mp.copy()
+    mp_key   = to_canonical(mp)         
+    assert mp_key[-1][2] == node_type, \
+        f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
+
+    loc_canon = [list(mp_key)]
+    canonical.append(loc_canon)
+
 #print(f"The final metapath are {metapaths}")
 
 
@@ -162,7 +186,7 @@ model = XMetaPath(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
     metapath_counts = metapath_count, 
-    metapaths=metapaths,               
+    metapaths=canonical,               
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
