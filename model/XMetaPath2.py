@@ -529,6 +529,7 @@ class MetaPathSelfAttention(nn.Module):
 
 
 
+
 class XMetaPath2(nn.Module):
     """
     This is the complete Multi META Path model.
@@ -576,7 +577,15 @@ class XMetaPath2(nn.Module):
                  time_scale: float = 1.0):
         super().__init__()
 
-        
+        #####LOCAL INTERPRETABILITY ONLY FOR F1, TO BE CHANGED TIME TO TIME 
+        self.data = data
+        self.pretty_fields = {
+            "drivers": ["forename", "surname", "code", "nationality"],
+            "races": ["year", "name", "round"],
+            "constructors": ["name", "nationality"],
+            "circuits": ["name", "location", "country"],
+        }
+        #####LOCAL INTERPRETABILITY
 
         
         self.metapath_models = nn.ModuleList([
@@ -592,6 +601,7 @@ class XMetaPath2(nn.Module):
 
         self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
 
+        
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
