@@ -114,18 +114,6 @@ def train2():
 
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    hidden_channels = 128
-    out_channels = 128
-
-    
-    y = data_official['drivers'].y
-    train_mask = data_official['drivers'].train_mask
-
-    print("Num training targets:", train_mask.sum().item())
-    print("Class balance in training set:")
-    print("  Class 0:", (y[train_mask] == 0).sum().item())
-    print("  Class 1:", (y[train_mask] == 1).sum().item())
-
         
     # pre training phase with the VGAE
     channels = 128
@@ -142,13 +130,16 @@ def train2():
 
 
 
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=0.0005,
-        weight_decay=0
-    )
+    # optimizer = torch.optim.Adam(
+    #     model.parameters(),
+    #     lr=0.0005,
+    #     weight_decay=0
+    # )
 
-    scheduler = CosineAnnealingLR(optimizer, T_max=100)
+    lr = 1e-3
+    wd = 1e-4
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
 
     early_stopping = EarlyStopping(
