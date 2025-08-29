@@ -18,20 +18,15 @@ from io import StringIO
 from torch_frame.config.text_embedder import TextEmbedderConfig
 from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
-from typing import Any, Dict, List
-from torch import Tensor
-from torch.nn import Embedding, ModuleDict
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch_frame.data.stats import StatType
 
 import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-from model.XMetaPath import MPSGNN
 from model.others.HGraphSAGE import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from utils.utils import evaluate_performance, test, train
 from utils.EarlyStopping import EarlyStopping
 
 """
