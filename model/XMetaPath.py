@@ -557,8 +557,8 @@ class XMetaPath(nn.Module):
                  col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
                  metapaths: List[List[int]],  # rel_indices
                  metapath_counts: Dict[Tuple, int], #statistics of each metapath
-                 hidden_channels: int = 128,
-                 out_channels: int = 128,
+                 hidden_channels: int = 64,
+                 out_channels: int = 64,
                  num_heads: int = 8,
                  final_out_channels: int = 1,
                  num_layers: int = 4,
