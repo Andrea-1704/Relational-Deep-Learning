@@ -531,36 +531,6 @@ class MetaPathSelfAttention(nn.Module):
 
 
 class XMetaPath2(nn.Module):
-    """
-    This is the complete Multi META Path model.
-    It aggregates multiple metaPathGNN, each of which is dedicated
-    to a single MetaPath (and, so produces embeddings fir target nodes based
-    on that metapath). 
-    We then compute all the embeddings produced by each metapath, 
-    through MetaPathGNN Model to make a final prediction.
-
-    We use a different GNN model for each distinct metapath 
-    making the aggregation only considering that metapath
-
-    We use HeteroEncoder in order to get intial enbeddings for nodes, we also use 
-    the TemporalHeteroEncoder provided by Relbench, in order to model in a 
-    valid way the temporal information.
-
-    Finally, we employ a nn (a Regressor) to combine the results 
-    of the aggregation of the different metapaths.
-
-    This follows the formula indicated in section 4.3 at pag 8 (final lines).
-
-    We decided to change a little bit this structure adding a self attention 
-    mechanism for the metapaths. We do not only hope to slightly improve the 
-    performances of the model, but we also desires to improve the 
-    explainability of the model, having a score value for each of the metapaths
-    we can easily indicate how much attention is given to every metapath, 
-    allowing us to gain more explainability.
-
-    Finally, we also added the statistic counts in order to indicate how many
-    times each metapath is really employed in the graph.
-    """
     def __init__(self,
                  data: HeteroData,
                  col_stats_dict: Dict[str, Dict[str, Dict[StatType, Any]]],
@@ -577,17 +547,6 @@ class XMetaPath2(nn.Module):
                  time_scale: float = 1.0):
         super().__init__()
 
-        #####LOCAL INTERPRETABILITY ONLY FOR F1, TO BE CHANGED TIME TO TIME 
-        self.data = data
-        self.pretty_fields = {
-            "drivers": ["forename", "surname", "code", "nationality"],
-            "races": ["year", "name", "round"],
-            "constructors": ["name", "nationality"],
-            "circuits": ["name", "location", "country"],
-        }
-        #####LOCAL INTERPRETABILITY
-
-        
         self.metapath_models = nn.ModuleList([
             MetaPathGNN(mp, hidden_channels, out_channels,
                         dropout_p=dropout_p,
@@ -597,11 +556,7 @@ class XMetaPath2(nn.Module):
             for mp in metapaths
         ]) # we construct a specific MetaPathGNN for each metapath
 
-        
-
         self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
-
-        
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,

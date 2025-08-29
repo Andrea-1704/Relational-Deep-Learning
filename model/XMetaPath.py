@@ -10,6 +10,11 @@ import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from typing import Optional
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.nn import MessagePassing
 
 
 """
@@ -98,70 +103,6 @@ class MetaPathGNNLayerOriginal(MessagePassing):
 
 
 
-# class MetaPathGNNLayer(MessagePassing):  
-#     """
-#     My update: follow original paper, but instead of applying a sum
-#     aggregation, normalize the message in order to delete the 
-#     bias given by the degree of the node.
-
-#     We also implemented a temporal decading so that "old" messages
-#     will weight less than the recent ones.
-#     """
-#     def __init__(self, in_channels: int, out_channels: int, relation_index: int):
-#         super().__init__(aggr='add', flow='target_to_source')
-#         self.relation_index = relation_index
-
-#         # Linear layers for each component of equation 7
-#         self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
-#         self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
-#         self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
-
-#         self.gate = nn.Parameter(torch.tensor(0.5))
-
-#     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
-#         """
-#         Args:
-#             x: Original input features of the node (x_v), shape [N_dst, in_channels]
-#             edge_index: Edge index for this relation, shape [2, num_edges]
-#             h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
-#             edge_weight: weight considering temporal proximity.
-#         Returns:
-#             Updated node representation after applying the layer, shape [N_dst, out_channels]
-#         """
-
-#         agg = self.propagate(edge_index, x=h, edge_weight = edge_weight)
-
-#         row = edge_index[1] #dst-s
-#         if edge_weight is None:
-#             deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
-#         else:
-#             deg = torch.bincount(row, weights=edge_weight, minlength=agg.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
-
-#         agg = agg/deg
-#         g = torch.sigmoid(self.gate)
-
-#         return self.w_l(agg) + (1 - g) * self.w_0(h) + g * self.w_1(x)
-        
-
-#         #return self.w_l(agg) + self.w_0(h) + self.w_1(x)
-
-#     def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
-#         if edge_weight is None:
-#             return x_j
-#         return x_j * edge_weight.unsqueeze(-1)
-
-
-
-
-
-
-
-
-from typing import Optional
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing
 
 class MetaPathGNNLayer(MessagePassing):
     """
