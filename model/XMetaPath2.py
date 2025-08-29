@@ -467,62 +467,96 @@ class MetaPathGNN_SAGEConv(nn.Module):
 
 
 
-class MetaPathSelfAttention(nn.Module):
+# class MetaPathSelfAttention(nn.Module):
+#     """
+#     This module applies Transformer-based self-attention between the different metapaths.
+#     It uses a TransformerEncoder. This module apply self attention between the different
+#     metapaths. It is mostly used as a source of explainability, in orfer to assess the 
+#     relevance contribution of every metapath to the final result.
+#     It was not present in the original paper.
+#     """
+#     def __init__(self, dim, num_heads=4, out_dim=1, num_layers=4):
+#         super().__init__()
+#         self.out_dim = out_dim
+#         self.attn_encoder = TransformerEncoder(
+#             TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
+#             num_layers=num_layers
+#         )
+
+#         #UPDATE:
+#         self.self_attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+
+#         self.output_proj = nn.Sequential(
+#             nn.Linear(dim, dim * 2),
+#             nn.ReLU(),
+#             nn.Dropout(0.3),
+#             nn.Linear(dim * 2, dim),
+#             nn.ReLU(),
+#             nn.Dropout(0.2),
+#             nn.Linear(dim, out_dim)
+#         )
+
+#     def forward(self, metapath_embeddings: torch.Tensor, return_attention: bool=False):  # [N, M, D]
+#         """
+#         metapath_embeddings: [N, M, D]
+#         return_attention: if True, returns intermediate attention embeddings as well
+#         """
+#         assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
+#         assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
+
+#         #UPDATE:
+#         ctx = self.attn_encoder(metapath_embeddings)
+#         _, A = self.self_attn(ctx, ctx, ctx, need_weights=True, average_attn_weights=True)
+#         w = A.mean(dim=-1)  
+#         w = torch.softmax(w, dim=1) 
+#         gated = ctx * w.unsqueeze(-1)
+#         pooled = gated.sum(dim=1) 
+#         out = self.output_proj(pooled).squeeze(-1) 
+#         if return_attention:
+#             return out, w
+#         return out
+
+
+#         # attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
+#         # pooled = attn_out.mean(dim=1)                      # [N, D]
+#         # out = self.output_proj(pooled).squeeze(-1)        # [N]
+#         # if return_attention:
+#         #     return out, attn_out
+#         # return out
+
+
+
+
+class MetaPathConcatMLP(nn.Module):
     """
-    This module applies Transformer-based self-attention between the different metapaths.
-    It uses a TransformerEncoder. This module apply self attention between the different
-    metapaths. It is mostly used as a source of explainability, in orfer to assess the 
-    relevance contribution of every metapath to the final result.
-    It was not present in the original paper.
+    Paper-faithful fusion: concat dei K metapath embeddings e MLP finale.
+    Accetta lo stesso input della vecchia regressor (tensor [N, K, D]) così
+    non devi cambiare il forward di XMetaPath. Per compatibilità con le
+    funzioni di interpretazione, se return_attention=True ritorna pesi
+    uniformi [N, K] (nel paper non c'è attenzione).
     """
-    def __init__(self, dim, num_heads=4, out_dim=1, num_layers=4):
+    def __init__(self, per_path_dim: int, num_paths: int,
+                 hidden: int = 256, out_dim: int = 1, dropout_p: float = 0.0):
         super().__init__()
-        self.out_dim = out_dim
-        self.attn_encoder = TransformerEncoder(
-            TransformerEncoderLayer(d_model=dim, nhead=num_heads, batch_first=True),
-            num_layers=num_layers
+        self.num_paths = num_paths
+        in_dim = per_path_dim * num_paths
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout_p),
+            nn.Linear(hidden, out_dim)
         )
 
-        #UPDATE:
-        self.self_attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
-
-        self.output_proj = nn.Sequential(
-            nn.Linear(dim, dim * 2),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(dim * 2, dim),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(dim, out_dim)
-        )
-
-    def forward(self, metapath_embeddings: torch.Tensor, return_attention: bool=False):  # [N, M, D]
-        """
-        metapath_embeddings: [N, M, D]
-        return_attention: if True, returns intermediate attention embeddings as well
-        """
-        assert not torch.isnan(metapath_embeddings).any(), "NaN detected"
-        assert not torch.isinf(metapath_embeddings).any(), "Inf detected"
-
-        #UPDATE:
-        ctx = self.attn_encoder(metapath_embeddings)
-        _, A = self.self_attn(ctx, ctx, ctx, need_weights=True, average_attn_weights=True)
-        w = A.mean(dim=-1)  
-        w = torch.softmax(w, dim=1) 
-        gated = ctx * w.unsqueeze(-1)
-        pooled = gated.sum(dim=1) 
-        out = self.output_proj(pooled).squeeze(-1) 
+    def forward(self, metapath_embeddings: torch.Tensor, return_attention: bool = False):
+        # metapath_embeddings: [N, K, D]
+        N, K, D = metapath_embeddings.shape
+        x = metapath_embeddings.reshape(N, K * D)   # concat
+        out = self.mlp(x).squeeze(-1)               # [N]
         if return_attention:
+            # Pesi “dummy” uniformi (il paper non usa attenzione)
+            w = torch.full((N, K), 1.0 / K, device=metapath_embeddings.device)
             return out, w
         return out
-
-
-        # attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
-        # pooled = attn_out.mean(dim=1)                      # [N, D]
-        # out = self.output_proj(pooled).squeeze(-1)        # [N]
-        # if return_attention:
-        #     return out, attn_out
-        # return out
 
 
 
@@ -595,7 +629,16 @@ class XMetaPath2(nn.Module):
 
         
 
-        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
+        #self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
+
+        self.regressor = MetaPathConcatMLP(
+            per_path_dim=out_channels,
+            num_paths=len(metapaths),
+            hidden=hidden_channels,          
+            out_dim=final_out_channels,
+            dropout_p=dropout_p
+        )
+
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
