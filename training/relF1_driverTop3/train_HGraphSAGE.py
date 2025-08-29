@@ -157,15 +157,15 @@ def train2():
 
 
     early_stopping = EarlyStopping(
-        patience=30,
+        patience=60,
         delta=0.0,
         verbose=True,
         path="best_basic_model.pt"
     )
 
     loader_dict = loader_dict_fn(
-        batch_size=512, 
-        num_neighbours=256, 
+        batch_size=1024, 
+        num_neighbours=512, 
         data=data_official, 
         task=task,
         train_table=train_table, 
