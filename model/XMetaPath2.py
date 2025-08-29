@@ -451,7 +451,7 @@ class MetaPathSelfAttention(nn.Module):
         #UPDATE:
         ctx = self.attn_encoder(metapath_embeddings)
         _, A = self.self_attn(ctx, ctx, ctx, need_weights=True, average_attn_weights=True)
-        w = A.mean(dim=-1)  
+        w = A.mean(dim=1)  
         w = torch.softmax(w, dim=1) 
         gated = ctx * w.unsqueeze(-1)
         pooled = gated.sum(dim=1) 
