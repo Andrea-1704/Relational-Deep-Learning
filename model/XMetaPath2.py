@@ -377,65 +377,9 @@ class MetaPathGNN(nn.Module):
 
 
 
-        #     #we apply the MetaPAthGNNLayer for this specific path obtaining an embedding h_dst specific for that path:
-        #     h_dst = self.convs[conv_idx](
-        #         x=x_dst_orig, 
-        #         edge_index=edge_index_remapped,
-        #         h=h_dst_curr, 
-        #         edge_weight=edge_weight
-        #     )
-
-        #     #since MetaPathGNNLayer is linear, here we apply the activation function:
-        #     h_dst = F.relu(h_dst)
-
-        #     #normalization + dropout:
-        #     h_dst = self.norms[conv_idx](h_dst)
-        #     h_dst = self.dropouts[conv_idx](h_dst)
-            
-            
-        #     #UPDATE: update the h_dict embeddings with just computed ones
-        #     h_dict[dst].index_copy_(0, dst_nodes, h_dst)
-
-        #     """
-        #     Change the embeddings of original nodes :
-        #     src_nodes = [3, 4, 5]
-        #     dst_nodes = [6, 2, 3]
-        #     """
-
-        # start_type = self.metapath[0][0] #start from the first node type
-        # return self.out_proj(h_dict[start_type])
-
-
-
 
 #Version 1, using SAGEConv:
 class MetaPathGNN_SAGEConv(nn.Module):
-    """
-    This is the network that express the GNN operations over a meta path.
-    We create a GNN layer for each relation in the metapath. Then, we 
-    propagate over the metapath using convolutions.
-    Finally we apply a final prejection to the initial node embeddings.
-
-    So, we generate embeddings considering the metapath "metapath".
-    A metapath is passed, and is a list of tuple (src, rel, dst).
-
-    Here, we use SAGEConv as GNN layer, but we can change this choice.
-
-    In Section 4.2 of the aforementioned paper, is indicated that they
-    use apply GNN layers by starting from the last layer, going back
-    to the first one. The aim is that target node receives immediatly
-    the informations coming from the reached node:
-    driver->race->circuit
-    We want to aggregate the information for making a prediction for 
-    the driver. By using a reverse technique, in the first GNN layer
-    race is going to receive and aggregate the information of the 
-    final destination of the metapath (in this case circuit) and in
-    the second GNN layer driver is going to receive the infromations 
-    from race, already considering circuit.
-
-    Also consider that we decided to use a RELU function, while the 
-    paper used a sigmoid function.
-    """
     def __init__(self,
                  metapath: List[Tuple[str, str, str]],
                  hidden_channels: int,  #dimension of the hidden state, 
@@ -542,7 +486,7 @@ class XMetaPath2(nn.Module):
                  final_out_channels: int = 1,
                  num_layers: int = 4,
                  dropout_p: float = 0.1,
-                 time_decay: bool = True,
+                 time_decay: bool = False,
                  init_lambda: float = 0.1,
                  time_scale: float = 1.0):
         super().__init__()
