@@ -241,23 +241,7 @@ for epoch in range(0, epochs):
         break
 
 #giving interpretability (local interpretability)
-meta_names = []
-for m in metapaths:
-  cur_metapath=m[0][0]
-  for metapath in m:
-    source = metapath[0]
-    dst = metapath[2]
-    cur_metapath=cur_metapath+"->"+dst
-  meta_names.append(cur_metapath)
-for batch in loader_dict["test"]:
-    batch.to(device)
-    results = interpret_attention(
-        model=model,
-        batch=batch,
-        metapath_names=meta_names,
-        entity_table="drivers"
-    )
-    print(f"result of interpretability are {results}")
+
 
 print(f"best validation results: {best_val_metric}")
 print(f"best test results: {best_test_metric}")
