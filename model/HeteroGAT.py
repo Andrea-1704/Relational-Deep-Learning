@@ -7,6 +7,7 @@ from torch_frame.data.stats import StatType
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import MLP
 from torch_geometric.typing import NodeType
+import torch.nn as nn
 from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 
 class HeteroGAT(torch.nn.Module):
@@ -21,13 +22,19 @@ class HeteroGAT(torch.nn.Module):
             conv = HeteroConv(
                 {
                     edge_type: GATConv(
-                        (-1, -1), channels, heads=heads, concat=False, add_self_loops=True, dropout=0.2
+                        (-1, -1), channels, heads=heads, concat=False, add_self_loops=False, dropout=0.2
                     )
                     for edge_type in edge_types
                 },
                 aggr=aggr,
             )
             self.convs.append(conv)
+
+        self.root_lin = torch.nn.ModuleList([
+            torch.nn.ModuleDict({
+                nt: nn.Linear(channels, channels, bias=False) for nt in self.node_types
+            }) for _ in range(num_layers)
+        ])
 
     def forward(self, x_dict, edge_index_dict, *args, **kwargs):
         for conv in self.convs:
