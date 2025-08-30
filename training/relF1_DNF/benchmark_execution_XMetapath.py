@@ -12,6 +12,19 @@ from relbench.datasets import get_dataset
 from relbench.tasks import get_task
 import math
 from torch_geometric.seed import seed_everything
+# --- TorchFrame shim: espone `stype` a livello top se assente ---
+import torch_frame as _tf
+try:
+    # Se questa funziona, ok.
+    from torch_frame import stype as _tf_stype
+except ImportError:
+    # Versione in cui stype è in torch_frame.data.stype
+    from torch_frame.data import stype as _tf_stype
+    setattr(_tf, "stype", _tf_stype)  # espone torch_frame.stype per i consumer (RelBench)
+
+# Ora è sicuro importare utility RelBench che aspettano torch_frame.stype
+from relbench.modeling.utils import get_stype_proposal
+
 from relbench.modeling.utils import get_stype_proposal
 from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
