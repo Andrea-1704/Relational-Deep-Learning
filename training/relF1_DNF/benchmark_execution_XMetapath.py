@@ -129,7 +129,7 @@ out_channels = 1
 loss_fn = nn.BCEWithLogitsLoss()
 # this is the mae loss and is used when have regressions tasks.
 tune_metric = "roc-auc"
-higher_is_better = False
+higher_is_better = True
 
 seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
