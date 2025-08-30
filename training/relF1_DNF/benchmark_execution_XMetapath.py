@@ -48,7 +48,7 @@ def to_canonical(mp_outward):
 
 
 dataset = get_dataset("rel-f1", download=True)
-task = get_task("rel-f1", "driver-DNF", download=True)
+task = get_task("rel-f1", "driver-dnf", download=True)
 
 train_table = task.get_table("train") #date  driverId  qualifying
 val_table = task.get_table("val") #date  driverId  qualifying
