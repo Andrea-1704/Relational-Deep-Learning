@@ -60,8 +60,8 @@ out_channels = 1
 #loss_fn = nn.BCEWithLogitsLoss()
 tune_metric = "f1"
 higher_is_better = True #is referred to the tune metric
-seed = 3
-seed_everything(3) #We should remember to try results 5 times with
+seed = 42
+seed_everything(42) #We should remember to try results 5 times with
 #different seed values to provide a confidence interval over results.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
