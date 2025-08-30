@@ -197,7 +197,7 @@ early_stopping = EarlyStopping(
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 500
+epochs = 150
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
@@ -223,11 +223,11 @@ for epoch in range(0, epochs):
     
     print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-    early_stopping(val_metrics[tune_metric], model)
+    # early_stopping(val_metrics[tune_metric], model)
 
-    if early_stopping.early_stop:
-        print(f"Early stopping triggered at epoch {epoch}")
-        break
+    # if early_stopping.early_stop:
+    #     print(f"Early stopping triggered at epoch {epoch}")
+    #     break
 
 
 
