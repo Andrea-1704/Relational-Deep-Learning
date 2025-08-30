@@ -60,8 +60,8 @@ out_channels = 1
 #loss_fn = nn.BCEWithLogitsLoss()
 tune_metric = "f1"
 higher_is_better = True #is referred to the tune metric
-
-seed_everything(42) #We should remember to try results 5 times with
+seed = 3
+seed_everything(3) #We should remember to try results 5 times with
 #different seed values to provide a confidence interval over results.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
@@ -180,7 +180,7 @@ early_stopping = EarlyStopping(
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 500
+epochs = 150
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
@@ -206,11 +206,11 @@ for epoch in range(0, epochs):
     
     print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-    early_stopping(val_metrics[tune_metric], model)
+    # early_stopping(val_metrics[tune_metric], model)
 
-    if early_stopping.early_stop:
-        print(f"Early stopping triggered at epoch {epoch}")
-        break
+    # if early_stopping.early_stop:
+    #     print(f"Early stopping triggered at epoch {epoch}")
+    #     break
 
 
 
