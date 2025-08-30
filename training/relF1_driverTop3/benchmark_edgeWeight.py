@@ -61,7 +61,7 @@ out_channels = 1
 tune_metric = "f1"
 higher_is_better = True #is referred to the tune metric
 
-seed = 3
+seed = 42
 
 seed_everything(seed) #We should remember to try results 5 times with
 #different seed values to provide a confidence interval over results.
