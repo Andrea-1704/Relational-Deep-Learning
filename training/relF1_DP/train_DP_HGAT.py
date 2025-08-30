@@ -115,7 +115,9 @@ optimizer = torch.optim.Adam(
     weight_decay=5e-5
 )
 
-scheduler = CosineAnnealingLR(optimizer, T_max=100)
+epochs = 150
+
+scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
 
 
 early_stopping = EarlyStopping(
@@ -158,7 +160,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    scheduler.step(val_metrics[tune_metric])
+    scheduler.step()
 
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
