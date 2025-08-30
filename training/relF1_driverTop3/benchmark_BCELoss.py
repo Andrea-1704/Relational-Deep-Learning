@@ -130,12 +130,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #     focal_gamma=2.0,      # puoi provare 1.5–2.0
 #     focal_thresh=0.10     # soglia 10%
 # )
-loss_fn = make_criterion_from_train_labels(
+
+loss_fn, loss_info = make_criterion_from_train_labels(
     y_train=y_full.to(device),
     device=device,
-    mode="auto",       # "auto": Focal se pos% < 10%, altrimenti BCE
-    focal_gamma=2.0,   # puoi tenere 2.0 o 1.5
-    focal_thresh=0.10  # soglia 10%
+    mode="auto",       # oppure "bce" / "focal"
+    focal_gamma=2.0,
+    focal_thresh=0.10
 )
 
 hidden_channels = 128
