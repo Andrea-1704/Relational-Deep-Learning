@@ -4,19 +4,19 @@ the model performance considering the same metapath.
 
 These metapath were found by extension 4.
 """
-# --- TorchFrame compatibility shim (no torch_frame.data imports!) ---
+# --- TorchFrame + RelBench compatibility shim (put this at the VERY TOP) ---
 import os
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # opzionale: silenzia log TF
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # less TF noise
 
-import sys, types
+import sys, types, importlib
 import torch_frame as _tf
 
-# 1) Espone gli stype a livello top se mancanti
+# 1) Expose stype labels at top-level if missing
 for _name in ("multicategorical", "categorical", "continuous", "timestamp", "text"):
     if not hasattr(_tf, _name):
-        setattr(_tf, _name, _name)  # etichette stringa sufficienti per RelBench
+        setattr(_tf, _name, _name)  # simple string labels are fine for RelBench
 
-# 2) Crea un modulo "torch_frame.stype" con gli stessi simboli (per `from torch_frame import stype`)
+# 2) Provide a torch_frame.stype module so "from torch_frame import stype" works
 if not hasattr(_tf, "stype"):
     _stype_mod = types.ModuleType("torch_frame.stype")
     for _name in ("multicategorical", "categorical", "continuous", "timestamp", "text"):
@@ -24,19 +24,17 @@ if not hasattr(_tf, "stype"):
     _tf.stype = _stype_mod
     sys.modules["torch_frame.stype"] = _stype_mod
 
-# 3) Aggiunge torch_frame.utils.infer_df_stype se assente (euristica basata su pandas)
+# 3) Provide torch_frame.utils.infer_df_stype if absent (lightweight heuristic)
 try:
     from torch_frame.utils import infer_df_stype as _unused
 except Exception:
     import pandas as pd
-    import importlib
     _tf_utils = importlib.import_module("torch_frame.utils")
 
     def infer_df_stype(df):
         out = {}
         for col in df.columns:
             s = df[col]
-            # multicategorical se contiene liste/insiemi/tuple in almeno una cella
             try:
                 if s.apply(lambda x: isinstance(x, (list, tuple, set))).any():
                     out[col] = _tf.multicategorical
@@ -55,8 +53,24 @@ except Exception:
 
     setattr(_tf_utils, "infer_df_stype", infer_df_stype)
 
-# --- ora è sicuro importare RelBench che assume questi simboli ---
-from relbench.modeling.utils import get_stype_proposal
+# 4) Inject a minimal torch_frame.typing module to break circular imports
+#    Needed symbols: IndexSelectType, TensorData, TextTokenizationOutputs
+if "torch_frame.typing" not in sys.modules:
+    tf_typing = types.ModuleType("torch_frame.typing")
+    from typing import Any, NamedTuple
+    class TextTokenizationOutputs(NamedTuple):
+        input_ids: Any
+        attention_mask: Any
+    IndexSelectType = Any
+    TensorData = Any
+
+    setattr(tf_typing, "TextTokenizationOutputs", TextTokenizationOutputs)
+    setattr(tf_typing, "IndexSelectType", IndexSelectType)
+    setattr(tf_typing, "TensorData", TensorData)
+
+    sys.modules["torch_frame.typing"] = tf_typing
+
+# --- Now it's safe to import RelBench/TorchFrame stuff that assumed the old API ---
 
 import torch
 import torch.nn as nn
@@ -65,15 +79,6 @@ from relbench.datasets import get_dataset
 from relbench.tasks import get_task
 import math
 from torch_geometric.seed import seed_everything
-# --- TorchFrame shim: espone `stype` a livello top se assente ---
-import torch_frame as _tf
-try:
-    # Se questa funziona, ok.
-    from torch_frame import stype as _tf_stype
-except ImportError:
-    # Versione in cui stype è in torch_frame.data.stype
-    from torch_frame.data import stype as _tf_stype
-    setattr(_tf, "stype", _tf_stype)  # espone torch_frame.stype per i consumer (RelBench)
 
 # Ora è sicuro importare utility RelBench che aspettano torch_frame.stype
 from relbench.modeling.utils import get_stype_proposal
