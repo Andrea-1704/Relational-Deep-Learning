@@ -21,7 +21,7 @@ class HeteroGAT(torch.nn.Module):
             conv = HeteroConv(
                 {
                     edge_type: GATConv(
-                        (-1, -1), channels, heads=heads, concat=False, add_self_loops=False
+                        (-1, -1), channels, heads=heads, concat=False, add_self_loops=True, dropout=0.2
                     )
                     for edge_type in edge_types
                 },
