@@ -110,7 +110,7 @@ model = Model(
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.0005,
+    lr=0.005,
     weight_decay=0
 )
 
