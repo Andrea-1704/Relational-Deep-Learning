@@ -115,7 +115,7 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-lr = 0.0005
+lr=1e-02
 wd = 0
 
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
