@@ -97,7 +97,7 @@ import os
 sys.path.append(os.path.abspath("."))
 
 from data_new import loader_dict_fn, merge_text_columns_to_categorical
-from utils.EarlyStopping import EarlyStopping
+# from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
@@ -391,13 +391,13 @@ optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_deca
 
 scheduler = CosineAnnealingLR(optimizer, T_max=25)
 
-early_stopping = EarlyStopping(
-    patience=60,
-    delta=0.0,
-    verbose=True,
-    higher_is_better = True,
-    path="best_basic_model.pt"
-)
+# early_stopping = EarlyStopping(
+#     patience=60,
+#     delta=0.0,
+#     verbose=True,
+#     higher_is_better = True,
+#     path="best_basic_model.pt"
+# )
 
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
