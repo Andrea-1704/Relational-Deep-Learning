@@ -142,7 +142,7 @@ class MetaPathGNN(nn.Module):
             h_dst = self.convs[conv_idx](
                 h=h_dst_curr,
                 edge_index=edge_index_remapped,
-                x_dst_orig=x_dst_orig
+                x=x_dst_orig
             )
             h_dst = F.relu(h_dst)
             h_dst = self.norms[conv_idx](h_dst)
