@@ -4,6 +4,29 @@ the model performance considering the same metapath.
 
 These metapath were found by extension 4.
 """
+# --- TorchFrame compatibility shim: re-exporta stype & stypes al top-level ---
+import os
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # opzionale: silenzia log TF rumorosi
+
+import torch_frame as _tf
+try:
+    # Se disponibile al top-level, ok
+    from torch_frame import stype as _tf_stype
+except Exception:
+    # Fallback: molte versioni lo tengono in torch_frame.data.stype
+    from torch_frame.data import stype as _tf_stype
+
+# Espone torch_frame.stype se manca
+if not hasattr(_tf, "stype"):
+    _tf.stype = _tf_stype
+
+# Re-export dei singoli stype usati da RelBench / TorchFrame data.dataset
+for _name in ("categorical", "multicategorical", "continuous", "timestamp", "text"):
+    if hasattr(_tf_stype, _name) and not hasattr(_tf, _name):
+        setattr(_tf, _name, getattr(_tf_stype, _name))
+
+# --- ora è sicuro importare cose che assumono torch_frame.stype & multicategorical ---
+from relbench.modeling.utils import get_stype_proposal
 
 import torch
 import torch.nn as nn
