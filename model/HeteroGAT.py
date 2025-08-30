@@ -145,6 +145,7 @@ class Model(torch.nn.Module):
         )
         self.head = MLP(
             channels,
+            hidden_channels=channels,
             out_channels=out_channels,
             norm=norm,
             num_layers=predictor_n_layers,
