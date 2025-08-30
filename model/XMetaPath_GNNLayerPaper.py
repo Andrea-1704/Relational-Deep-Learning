@@ -61,31 +61,25 @@ from torch_geometric.nn import MessagePassing
 
 
 
-class MetaPathGNNLayer(MessagePassing):  
-    """
-    MetaPathGNNLayer implements equation 7 from the MPS-GNN paper (https://arxiv.org/abs/2412.00521).
-
-    h'_v = W_l * sum_{u in N(v)} h_u + W_0 * h_v + W_1 * x_v
-    where:
-      - h_v is the current hidden state of node v,
-      - x_v is the original embedding of v,
-      - h_u are the neighbors' embeddings.
-    """
+class MetaPathGNNLayer(MessagePassing):
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__(aggr='add', flow='source_to_target')
-        # Linear layers for each component of equation 7
-        self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
-        self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
-        self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
+        self.w_l = nn.Linear(in_channels, out_channels)
+        self.w_0 = nn.Linear(in_channels, out_channels)
+        self.w_1 = nn.Linear(in_channels, out_channels)
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
-
-        agg_messages = self.propagate(edge_index, x=h)
-
-        return self.w_l(agg_messages) + self.w_0(h) + self.w_1(x)
+    def forward(self, h_src: torch.Tensor, h_dst: torch.Tensor,
+                x_dst: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        # h_src: [N_src, D], h_dst: [N_dst, D], x_dst: [N_dst, D]
+        # edge_index: [2, E] con indici RELATIVI al batch (PyG)
+        agg = self.propagate(edge_index,
+                             x=(h_src, h_dst),     # x_j prenderà da h_src
+                             size=(h_src.size(0), h_dst.size(0)))
+        return self.w_l(agg) + self.w_0(h_dst) + self.w_1(x_dst)
 
     def message(self, x_j: torch.Tensor) -> torch.Tensor:
         return x_j
+
 
 
 class MetaPathGNN(nn.Module):
@@ -107,41 +101,26 @@ class MetaPathGNN(nn.Module):
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
 
-    def forward(self, x_dict, edge_index_dict, node_time_dict: dict = None):
+    def forward(self, x_dict, edge_index_dict, node_time_dict=None):
+        # Copie delle embedding di partenza (x0) e stato corrente (h)
         x0_dict = {k: v for k, v in x_dict.items()}
         h_dict  = {k: v.clone() for k, v in x_dict.items()}
 
-        # IMPORTANTE: usa l'ordine naturale della metapath canonica
         for i, (src, rel, dst) in enumerate(self.metapath):
-            edge_index = edge_index_dict[(src, rel, dst)]
-            src_nodes = edge_index[0].unique()
-            dst_nodes = edge_index[1].unique()
+            edge_index = edge_index_dict[(src, rel, dst)]     # [2, E] già coerente col batch
+            h_src = h_dict[src]                                # [N_src, D]
+            h_dst = h_dict[dst]                                # [N_dst, D]
+            x_dst = x0_dict[dst]                               # [N_dst, D]
 
-            src_map = {int(n): j for j, n in enumerate(src_nodes.tolist())}
-            dst_map = {int(n): j for j, n in enumerate(dst_nodes.tolist())}
+            h_dst_new = self.convs[i](h_src=h_src, h_dst=h_dst, x_dst=x_dst, edge_index=edge_index)
+            h_dst_new = F.relu(h_dst_new)
+            h_dst_new = self.norms[i](h_dst_new)
+            h_dst_new = self.dropouts[i](h_dst_new)
+            h_dict[dst] = h_dst_new                            # NIENTE index_copy_: aggiorna tutto il tipo
 
-            edge_index_remapped = torch.stack([
-                torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()],
-                             device=edge_index.device, dtype=torch.long),
-                torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()],
-                             device=edge_index.device, dtype=torch.long)
-            ], dim=0)
-
-            x_dst_orig = x0_dict[dst][dst_nodes]
-            h_dst_curr = h_dict[dst][dst_nodes]
-
-            h_dst = self.convs[i](  # <<< i, non conv_idx
-                h=h_dst_curr,
-                edge_index=edge_index_remapped,
-                x=x_dst_orig
-            )
-            h_dst = F.relu(h_dst)
-            h_dst = self.norms[i](h_dst)
-            h_dst = self.dropouts[i](h_dst)
-            h_dict[dst].index_copy_(0, dst_nodes, h_dst)
-
-        target_type = self.metapath[-1][2]  # 'drivers'
+        target_type = self.metapath[-1][2]  # 'drivers' nella forma canonica
         return self.out_proj(h_dict[target_type])
+
 
 
 
