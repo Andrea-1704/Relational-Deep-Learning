@@ -61,7 +61,9 @@ out_channels = 1
 tune_metric = "f1"
 higher_is_better = True #is referred to the tune metric
 
-seed_everything(42) #We should remember to try results 5 times with
+seed = 3
+
+seed_everything(seed) #We should remember to try results 5 times with
 #different seed values to provide a confidence interval over results.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
