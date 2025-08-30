@@ -26,11 +26,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, test, train
 
-# Prova prima l'import "model/...", altrimenti fallback dal file locale
-try:
-    from model.XMetaPath_GNNLayerPaper import XMetaPath2
-except Exception:
-    from XMetaPath_GNNLayerPaper import XMetaPath2
+from model.XMetaPath2 import XMetaPath2
 
 
 # ---------------------------- Utils varie ----------------------------
