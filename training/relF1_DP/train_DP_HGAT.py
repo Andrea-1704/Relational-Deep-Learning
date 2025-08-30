@@ -102,7 +102,7 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="max",
+    aggr="sum",
     norm="batch_norm",
 ).to(device)
 
@@ -125,8 +125,8 @@ early_stopping = EarlyStopping(
 )
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=64, 
+    num_neighbours=32, 
     data=data, 
     task=task,
     train_table=train_table, 
