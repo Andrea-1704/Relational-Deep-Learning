@@ -13,6 +13,8 @@ from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 class HeteroGAT(torch.nn.Module):
     def __init__(self, node_types, edge_types, channels, heads=8, num_layers=2, aggr="sum"):
         super().__init__()
+        self.node_types = list(node_types)
+        self.edge_types = list(edge_types)
         self.convs = torch.nn.ModuleList()
         self.edge_types = edge_types
         #per ogni layer andiamoa a creare un HeteroConv che contiene 
