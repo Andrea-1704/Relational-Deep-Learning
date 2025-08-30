@@ -37,14 +37,27 @@ class HeteroGAT(torch.nn.Module):
         ])
 
     def forward(self, x_dict, edge_index_dict, *args, **kwargs):
-        for conv in self.convs:
-            x_dict = conv(x_dict, edge_index_dict)
+        for layer, conv in enumerate(self.convs):
+            x_in = x_dict  # tieni le feature correnti per il cammino root
+            x_out = conv(x_dict, edge_index_dict)  # dict: node_type -> Tensor
+
+            # === NEW: aggiungi il contributo root per ogni node type ===
+            for nt, x in x_out.items():
+                x_out[nt] = x + self.root_lin[layer][nt](x_in[nt])
+
+            x_dict = x_out
         return x_dict
+
 
     def reset_parameters(self):
         for conv in self.convs:
             for edge_type in self.edge_types:
                 conv.convs[edge_type].reset_parameters()
+        # === NEW: init dei pesi root ===
+        for md in self.root_lin:
+            for lin in md.values():
+                torch.nn.init.xavier_uniform_(lin.weight)
+
 
 
 
