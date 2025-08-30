@@ -104,6 +104,7 @@ model = Model(
     out_channels=1,
     aggr="sum",
     norm="batch_norm",
+    predictor_n_layers=2
 ).to(device)
 
 
@@ -111,7 +112,7 @@ model = Model(
 optimizer = torch.optim.Adam(
     model.parameters(),
     lr=0.0005,
-    weight_decay=0
+    weight_decay=5e-5
 )
 
 scheduler = CosineAnnealingLR(optimizer, T_max=100)
@@ -126,7 +127,7 @@ early_stopping = EarlyStopping(
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
-    num_neighbours=256, 
+    num_neighbours=64, 
     data=data, 
     task=task,
     train_table=train_table, 

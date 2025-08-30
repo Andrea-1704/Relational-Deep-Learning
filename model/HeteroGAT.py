@@ -25,7 +25,7 @@ class HeteroGAT(torch.nn.Module):
             conv = HeteroConv(
                 {
                     edge_type: GATConv(
-                        (-1, -1), channels, heads=heads, concat=False, add_self_loops=False, dropout=0.2
+                        (-1, -1), channels, heads=4, concat=False, add_self_loops=False, dropout=0.3
                     )
                     for edge_type in edge_types
                 },
@@ -44,7 +44,7 @@ class HeteroGAT(torch.nn.Module):
             for _ in range(num_layers)
         ])
 
-        self.dropout = 0.1
+        self.dropout = 0.3
         self.act = F.elu
 
     def forward(self, x_dict, edge_index_dict, *args, **kwargs):
@@ -71,9 +71,10 @@ class HeteroGAT(torch.nn.Module):
             for edge_type in self.edge_types:
                 conv.convs[edge_type].reset_parameters()
         # === NEW: init dei pesi root ===
-        for md in self.root_lin:
-            for lin in md.values():
-                torch.nn.init.xavier_uniform_(lin.weight)
+        for md in self.norms:
+            for nm in md.values():
+                if hasattr(nm, "reset_parameters"):
+                    nm.reset_parameters()
 
 
 
