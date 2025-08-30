@@ -8,25 +8,54 @@ These metapath were found by extension 4.
 import os
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # opzionale: silenzia log TF
 
-import types
-import sys
+import sys, types
 import torch_frame as _tf
 
-# 1) Espone i simboli stype come attributi top-level se mancanti
+# 1) Espone gli stype a livello top se mancanti
 for _name in ("multicategorical", "categorical", "continuous", "timestamp", "text"):
     if not hasattr(_tf, _name):
-        setattr(_tf, _name, _name)  # semplici stringhe/etichette sono sufficienti
+        setattr(_tf, _name, _name)  # etichette stringa sufficienti per RelBench
 
-# 2) Crea un "modulo" torch_frame.stype al volo, con gli stessi attributi
+# 2) Crea un modulo "torch_frame.stype" con gli stessi simboli (per `from torch_frame import stype`)
 if not hasattr(_tf, "stype"):
     _stype_mod = types.ModuleType("torch_frame.stype")
     for _name in ("multicategorical", "categorical", "continuous", "timestamp", "text"):
         setattr(_stype_mod, _name, getattr(_tf, _name))
     _tf.stype = _stype_mod
-    # facoltativo: registra in sys.modules così 'from torch_frame import stype' funziona sempre
     sys.modules["torch_frame.stype"] = _stype_mod
 
-# --- ora è sicuro importare cose che assumono torch_frame.stype & multicategorical ---
+# 3) Aggiunge torch_frame.utils.infer_df_stype se assente (euristica basata su pandas)
+try:
+    from torch_frame.utils import infer_df_stype as _unused
+except Exception:
+    import pandas as pd
+    import importlib
+    _tf_utils = importlib.import_module("torch_frame.utils")
+
+    def infer_df_stype(df):
+        out = {}
+        for col in df.columns:
+            s = df[col]
+            # multicategorical se contiene liste/insiemi/tuple in almeno una cella
+            try:
+                if s.apply(lambda x: isinstance(x, (list, tuple, set))).any():
+                    out[col] = _tf.multicategorical
+                    continue
+            except Exception:
+                pass
+            if pd.api.types.is_categorical_dtype(s) or pd.api.types.is_bool_dtype(s):
+                out[col] = _tf.categorical
+            elif pd.api.types.is_datetime64_any_dtype(s):
+                out[col] = _tf.timestamp
+            elif pd.api.types.is_numeric_dtype(s):
+                out[col] = _tf.continuous
+            else:
+                out[col] = _tf.text
+        return out
+
+    setattr(_tf_utils, "infer_df_stype", infer_df_stype)
+
+# --- ora è sicuro importare RelBench che assume questi simboli ---
 from relbench.modeling.utils import get_stype_proposal
 
 import torch
