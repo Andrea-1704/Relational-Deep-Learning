@@ -4,26 +4,27 @@ the model performance considering the same metapath.
 
 These metapath were found by extension 4.
 """
-# --- TorchFrame compatibility shim: re-exporta stype & stypes al top-level ---
+# --- TorchFrame compatibility shim (no torch_frame.data imports!) ---
 import os
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # opzionale: silenzia log TF rumorosi
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # opzionale: silenzia log TF
 
+import types
+import sys
 import torch_frame as _tf
-try:
-    # Se disponibile al top-level, ok
-    from torch_frame import stype as _tf_stype
-except Exception:
-    # Fallback: molte versioni lo tengono in torch_frame.data.stype
-    from torch_frame.data import stype as _tf_stype
 
-# Espone torch_frame.stype se manca
+# 1) Espone i simboli stype come attributi top-level se mancanti
+for _name in ("multicategorical", "categorical", "continuous", "timestamp", "text"):
+    if not hasattr(_tf, _name):
+        setattr(_tf, _name, _name)  # semplici stringhe/etichette sono sufficienti
+
+# 2) Crea un "modulo" torch_frame.stype al volo, con gli stessi attributi
 if not hasattr(_tf, "stype"):
-    _tf.stype = _tf_stype
-
-# Re-export dei singoli stype usati da RelBench / TorchFrame data.dataset
-for _name in ("categorical", "multicategorical", "continuous", "timestamp", "text"):
-    if hasattr(_tf_stype, _name) and not hasattr(_tf, _name):
-        setattr(_tf, _name, getattr(_tf_stype, _name))
+    _stype_mod = types.ModuleType("torch_frame.stype")
+    for _name in ("multicategorical", "categorical", "continuous", "timestamp", "text"):
+        setattr(_stype_mod, _name, getattr(_tf, _name))
+    _tf.stype = _stype_mod
+    # facoltativo: registra in sys.modules così 'from torch_frame import stype' funziona sempre
+    sys.modules["torch_frame.stype"] = _stype_mod
 
 # --- ora è sicuro importare cose che assumono torch_frame.stype & multicategorical ---
 from relbench.modeling.utils import get_stype_proposal
