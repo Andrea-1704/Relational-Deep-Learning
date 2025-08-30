@@ -72,7 +72,7 @@ class MetaPathGNNLayer(MessagePassing):
       - h_u are the neighbors' embeddings.
     """
     def __init__(self, in_channels: int, out_channels: int):
-        super().__init__(aggr='add', flow='target_to_source')
+        super().__init__(aggr='add', flow='source_to_target')
         # Linear layers for each component of equation 7
         self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
         self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
@@ -107,67 +107,40 @@ class MetaPathGNN(nn.Module):
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
 
-    def forward(self, x_dict, edge_index_dict, node_time_dict=None):
+    def forward(self, x_dict, edge_index_dict, node_time_dict: dict = None):
         x0_dict = {k: v for k, v in x_dict.items()}
         h_dict  = {k: v.clone() for k, v in x_dict.items()}
 
-        target_type = self.metapath[-1][2]  # dovrebbe essere 'drivers'
-
-        last_hop = None      # (src, rel, dst) tale che dst == target_type
-        last_env = None      # (edge_index_remapped, dst_nodes, conv_idx, x_dst_orig)
-
-        # 1) loop inverso, ma SKIP del write-back su drivers al primo hop
-        for i, (src, rel, dst) in enumerate(reversed(self.metapath)):
-            conv_idx = len(self.metapath) - 1 - i
+        # IMPORTANTE: usa l'ordine naturale della metapath canonica
+        for i, (src, rel, dst) in enumerate(self.metapath):
             edge_index = edge_index_dict[(src, rel, dst)]
-
             src_nodes = edge_index[0].unique()
             dst_nodes = edge_index[1].unique()
 
-            # remap
             src_map = {int(n): j for j, n in enumerate(src_nodes.tolist())}
             dst_map = {int(n): j for j, n in enumerate(dst_nodes.tolist())}
+
             edge_index_remapped = torch.stack([
                 torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()],
-                            device=edge_index.device, dtype=torch.long),
+                             device=edge_index.device, dtype=torch.long),
                 torch.tensor([dst_map[int(x)] for x in edge_index[1].tolist()],
-                            device=edge_index.device, dtype=torch.long)
+                             device=edge_index.device, dtype=torch.long)
             ], dim=0)
 
             x_dst_orig = x0_dict[dst][dst_nodes]
             h_dst_curr = h_dict[dst][dst_nodes]
 
-            h_dst = self.convs[conv_idx](
+            h_dst = self.convs[i](  # <<< i, non conv_idx
                 h=h_dst_curr,
                 edge_index=edge_index_remapped,
                 x=x_dst_orig
             )
             h_dst = F.relu(h_dst)
-            h_dst = self.norms[conv_idx](h_dst)
-            h_dst = self.dropouts[conv_idx](h_dst)
+            h_dst = self.norms[i](h_dst)
+            h_dst = self.dropouts[i](h_dst)
+            h_dict[dst].index_copy_(0, dst_nodes, h_dst)
 
-            if dst == target_type:
-                # NON scrivere ancora: salva per rifarlo a fine pipeline
-                last_hop = (src, rel, dst)
-                last_env = (edge_index_remapped, dst_nodes, conv_idx, x_dst_orig)
-            else:
-                # hop intermedio: scrivi subito (aggiorna C, poi B, ...)
-                h_dict[dst].index_copy_(0, dst_nodes, h_dst)
-
-        # 2) FINALMENTE: rifai l’ULTIMO hop verso i driver con i vicini aggiornati
-        assert last_hop is not None, "Il metapath deve terminare su 'drivers'."
-        edge_index_remapped, dst_nodes, conv_idx, x_dst_orig = last_env
-        h_dst_curr = h_dict[target_type][dst_nodes]   # drivers (ancora non aggiornati)
-        h_dst = self.convs[conv_idx](
-            h=h_dst_curr,
-            edge_index=edge_index_remapped,  # stesso tipo (C -> drivers)
-            x=x_dst_orig
-        )
-        h_dst = F.relu(h_dst)
-        h_dst = self.norms[conv_idx](h_dst)
-        h_dst = self.dropouts[conv_idx](h_dst)
-        h_dict[target_type].index_copy_(0, dst_nodes, h_dst)
-
+        target_type = self.metapath[-1][2]  # 'drivers'
         return self.out_proj(h_dict[target_type])
 
 
