@@ -102,7 +102,7 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="max",
+    aggr="sum",
     norm="batch_norm",
 ).to(device)
 
@@ -110,7 +110,7 @@ model = Model(
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.005,
+    lr=0.0005,
     weight_decay=0
 )
 

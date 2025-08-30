@@ -8,6 +8,7 @@ from torch_geometric.data import HeteroData
 from torch_geometric.nn import MLP
 from torch_geometric.typing import NodeType
 import torch.nn as nn
+import torch.nn.functional as F
 from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 
 class HeteroGAT(torch.nn.Module):
@@ -38,16 +39,30 @@ class HeteroGAT(torch.nn.Module):
             }) for _ in range(num_layers)
         ])
 
+        self.norms = nn.ModuleList([
+            nn.ModuleDict({ nt: nn.LayerNorm(channels) for nt in self.node_types })
+            for _ in range(num_layers)
+        ])
+
+        self.dropout = 0.1
+        self.act = F.elu
+
     def forward(self, x_dict, edge_index_dict, *args, **kwargs):
         for layer, conv in enumerate(self.convs):
-            x_in = x_dict  # tieni le feature correnti per il cammino root
-            x_out = conv(x_dict, edge_index_dict)  # dict: node_type -> Tensor
+            x_in = x_dict
+            x_out = conv(x_dict, edge_index_dict)
 
-            # === NEW: aggiungi il contributo root per ogni node type ===
+            new_dict = {}
             for nt, x in x_out.items():
-                x_out[nt] = x + self.root_lin[layer][nt](x_in[nt])
-
-            x_dict = x_out
+                x = x + self.root_lin[layer][nt](x_in[nt])   # self-feature
+                x = self.norms[layer][nt](x)                # norm
+                x = self.act(x)                              # attivazione
+                x = F.dropout(x, p=self.dropout, training=self.training)
+                # residual leggero se shape combacia
+                if x_in[nt].shape == x.shape:
+                    x = x + x_in[nt]
+                new_dict[nt] = x
+            x_dict = new_dict
         return x_dict
 
 
@@ -97,8 +112,8 @@ class Model(torch.nn.Module):
         num_layers: int,
         channels: int,
         out_channels: int,
-        aggr: str,
         norm: str,
+        aggr: str = "sum",
         shallow_list: List[NodeType] = [],
         id_awareness: bool = False,
         predictor_n_layers : int = 1,
