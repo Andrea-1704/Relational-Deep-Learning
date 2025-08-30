@@ -96,7 +96,7 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
+from data_new import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
