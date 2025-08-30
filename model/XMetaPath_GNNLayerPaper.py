@@ -23,67 +23,86 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
 
-class MetaPathGNNLayer(MessagePassing):
-    def __init__(self, hidden_channels: int):
-        super().__init__(aggr="add", flow="source_to_target")
-        self.w_l = nn.Linear(hidden_channels, hidden_channels)
-        self.w_0 = nn.Linear(hidden_channels, hidden_channels)
-        self.w_1 = nn.Linear(hidden_channels, hidden_channels)
-        self.gate = nn.Parameter(torch.tensor(0.5))
+# class MetaPathGNNLayer(MessagePassing):
+#     def __init__(self, hidden_channels: int):
+#         super().__init__(aggr="add", flow="source_to_target")
+#         self.w_l = nn.Linear(hidden_channels, hidden_channels)
+#         self.w_0 = nn.Linear(hidden_channels, hidden_channels)
+#         self.w_1 = nn.Linear(hidden_channels, hidden_channels)
+#         self.gate = nn.Parameter(torch.tensor(0.5))
 
-    def forward(
-        self,
-        h_src: torch.Tensor,                 
-        h_dst: torch.Tensor,                 
-        edge_index: torch.Tensor,            
-        x_dst_orig: torch.Tensor,         
-        edge_weight: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        out = self.propagate(
-            edge_index,
-            x=(h_src, h_dst),                
-            edge_weight=edge_weight,
-            size=(h_src.size(0), h_dst.size(0))
-        )                                  
+#     def forward(
+#         self,
+#         h_src: torch.Tensor,                 
+#         h_dst: torch.Tensor,                 
+#         edge_index: torch.Tensor,            
+#         x_dst_orig: torch.Tensor,         
+#         edge_weight: Optional[torch.Tensor] = None
+#     ) -> torch.Tensor:
+#         out = self.propagate(
+#             edge_index,
+#             x=(h_src, h_dst),                
+#             edge_weight=edge_weight,
+#             size=(h_src.size(0), h_dst.size(0))
+#         )                                  
 
-        row = edge_index[1]               
-        if edge_weight is None:
-            deg = torch.bincount(row, minlength=h_dst.size(0)).clamp(min=1).float().unsqueeze(-1)
-        else:
-            deg = torch.bincount(row, weights=edge_weight, minlength=h_dst.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
-        out = out / deg
+#         row = edge_index[1]               
+#         if edge_weight is None:
+#             deg = torch.bincount(row, minlength=h_dst.size(0)).clamp(min=1).float().unsqueeze(-1)
+#         else:
+#             deg = torch.bincount(row, weights=edge_weight, minlength=h_dst.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
+#         out = out / deg
 
-        g = torch.sigmoid(self.gate)
-        return self.w_l(out) + (1. - g) * self.w_0(h_dst) + g * self.w_1(x_dst_orig)
+#         g = torch.sigmoid(self.gate)
+#         return self.w_l(out) + (1. - g) * self.w_0(h_dst) + g * self.w_1(x_dst_orig)
 
-    def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor] = None) -> torch.Tensor:
-        return x_j if edge_weight is None else x_j * edge_weight.unsqueeze(-1)
+#     def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor] = None) -> torch.Tensor:
+#         return x_j if edge_weight is None else x_j * edge_weight.unsqueeze(-1)
 
 
+
+class MetaPathGNNLayer(MessagePassing):  
+    """
+    MetaPathGNNLayer implements equation 7 from the MPS-GNN paper (https://arxiv.org/abs/2412.00521).
+
+    h'_v = W_l * sum_{u in N(v)} h_u + W_0 * h_v + W_1 * x_v
+    where:
+      - h_v is the current hidden state of node v,
+      - x_v is the original embedding of v,
+      - h_u are the neighbors' embeddings.
+    """
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__(aggr='add', flow='target_to_source')
+        # Linear layers for each component of equation 7
+        self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
+        self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
+        self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+
+        agg_messages = self.propagate(edge_index, x=h)
+
+        return self.w_l(agg_messages) + self.w_0(h) + self.w_1(x)
+
+    def message(self, x_j: torch.Tensor) -> torch.Tensor:
+        return x_j
 
 
 class MetaPathGNN(nn.Module):
     def __init__(self, metapath, hidden_channels, out_channels,
-                 dropout_p: float = 0.1,
-                 use_time_decay: bool = True,
-                 init_lambda: float = 0.1,
-                 time_scale: float = 1.0):
+                 dropout_p: float = 0.1):
         super().__init__()
         self.metapath = metapath
         self.convs = nn.ModuleList()
         for i in range(len(metapath)):
-            self.convs.append(MetaPathGNNLayer(hidden_channels))
+            self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels))
 
         
         self.norms = nn.ModuleList([nn.LayerNorm(hidden_channels) for _ in range(len(metapath))])
         self.dropouts = nn.ModuleList([nn.Dropout(p=dropout_p) for _ in range(len(metapath))])
         
         
-        self.use_time_decay = use_time_decay
-        self.time_scale = float(time_scale)
-        self.raw_lambdas = nn.ParameterList([
-            nn.Parameter(torch.tensor(float(init_lambda))) for _ in range(len(metapath))
-        ])
+        
 
         self.out_proj = nn.Linear(hidden_channels, out_channels)
 
@@ -117,31 +136,13 @@ class MetaPathGNN(nn.Module):
             
             x_dst_orig = x0_dict[dst][dst_nodes]   # ORIGINAL
             h_dst_curr = h_dict[dst][dst_nodes]    # CURRENT
+   
 
-            #Δt for edge and weight: exp(-λ Δt)
-            edge_weight = None
-            if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
-                t_src_all = node_time_dict[src].float()
-                t_dst_all = node_time_dict[dst].float()
-                t_src_e = t_src_all[edge_index[0]]  # [E_rel]
-                t_dst_e = t_dst_all[edge_index[1]]  # [E_rel]
-                delta = (t_dst_e - t_src_e) / float(self.time_scale)
-                delta = delta.clamp(min=0.0)
-
-                lam = pos_lambda(self.raw_lambdas[conv_idx])      # scalare > 0
-                z = (-lam * delta).clamp(min=-60.0)               # stabilità numerica
-                edge_weight = torch.exp(z)    
-
-
-
-            h_src_curr = h_dict[src][src_nodes]   
 
             h_dst = self.convs[conv_idx](
-                h_src=h_src_curr,
-                h_dst=h_dst_curr,
+                h=h_dst_curr,
                 edge_index=edge_index_remapped,
-                x_dst_orig=x_dst_orig,
-                edge_weight=edge_weight
+                x_dst_orig=x_dst_orig
             )
             h_dst = F.relu(h_dst)
             h_dst = self.norms[conv_idx](h_dst)
@@ -207,18 +208,12 @@ class XMetaPath2(nn.Module):
                  num_heads: int = 8,
                  final_out_channels: int = 1,
                  num_layers: int = 4,
-                 dropout_p: float = 0.1,
-                 time_decay: bool = True, ######CHANGEE
-                 init_lambda: float = 0.1,
-                 time_scale: float = 1.0):
+                 dropout_p: float = 0.1):
         super().__init__()
 
         self.metapath_models = nn.ModuleList([
             MetaPathGNN(mp, hidden_channels, out_channels,
-                        dropout_p=dropout_p,
-                        use_time_decay=time_decay,
-                        init_lambda=init_lambda,
-                        time_scale=time_scale)
+                        dropout_p=dropout_p)
             for mp in metapaths
         ]) 
 
