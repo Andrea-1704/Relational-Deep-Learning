@@ -48,7 +48,7 @@ def train2():
     out_channels = 1
     
     #loss_fn = nn.BCEWithLogitsLoss()
-    tune_metric = "f1"
+    tune_metric = "roc_auc"
     higher_is_better = True #is referred to the tune metric
 
     seed_everything(42) #We should remember to try results 5 times with
