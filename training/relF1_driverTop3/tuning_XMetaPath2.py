@@ -231,15 +231,40 @@ def dict_to_key(d):
     """Chiave hashable per evitare ripetizioni (ordina items)."""
     return tuple(sorted((k, str(v)) for k, v in d.items()))
 
+# def load_tried():
+#     if os.path.exists(TRIED_PATH):
+#         with open(TRIED_PATH, "r") as f:
+#             return set(json.load(f))
+#     return set()
+
+# def save_tried(tried_set):
+#     with open(TRIED_PATH, "w") as f:
+#         json.dump(sorted(list(tried_set)), f, indent=2)
+from pathlib import Path
+HERE = Path(__file__).resolve().parent
+LOG_PATH = str((HERE / "tuning_log.csv").resolve())
+TRIED_PATH = str((HERE / "tuning_tried.json").resolve())
+
+
 def load_tried():
+    """Legge tuning_tried.json e ricrea le chiavi hashable (tuple di coppie)."""
     if os.path.exists(TRIED_PATH):
-        with open(TRIED_PATH, "r") as f:
-            return set(json.load(f))
+        with open(TRIED_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)  # lista di liste [[k, v], ...]
+        tried = set()
+        for item in raw:
+            # item è una lista di coppie [k, v] -> riconverti in tuple((k,v), ...)
+            tried.add(tuple((str(k), str(v)) for k, v in item))
+        return tried
     return set()
 
 def save_tried(tried_set):
-    with open(TRIED_PATH, "w") as f:
-        json.dump(sorted(list(tried_set)), f, indent=2)
+    """Salvataggio atomico del set su JSON (evita file troncati in caso di crash)."""
+    tmp = TRIED_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(sorted(list(tried_set)), f, indent=2, ensure_ascii=False)
+    os.replace(tmp, TRIED_PATH)
+
 
 def append_log(row_dict):
     header = not os.path.exists(LOG_PATH)
@@ -375,51 +400,61 @@ def main():
             print("[SKIP] already tried:", params)
             continue
 
+        tried.add(key)
+        save_tried(tried)
+
         print("\n================= NEW TRIAL =================")
         print(json.dumps(params, indent=2))
         print("=============================================\n")
 
-        # Trial
-        result = run_single_trial(device, GLOBAL_SEED, params)
 
-        # Log + tried
-        row = {
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "optimizer": params["optimizer"],
-            "lr": params["lr"],
-            "weight_decay": params["weight_decay"],
-            "momentum": params["momentum"],
-            "betas": str(params["betas"]),
-            "hidden_channels": params["hidden_channels"],
-            "out_channels": params["out_channels"],
-            "dropout_p": params["dropout_p"],
-            "num_heads": params["num_heads"],
-            "num_layers": params["num_layers"],
-            "batch_size": params["batch_size"],
-            "num_neighbours": params["num_neighbours"],
-            "scheduler": params["scheduler"],
-            "cosine_Tmax": params["cosine_Tmax"],
-            "plateau_patience": params["plateau_patience"],
-            "plateau_factor": params["plateau_factor"],
-            "best_val": result["best_val"],
-            "best_test": result["best_test"],
-            "ckpt_val": result["ckpt_val"],
-            "ckpt_test": result["ckpt_test"],
-        }
-        append_log(row)
-        tried.add(key)
-        save_tried(tried)
+        try:
+            # Trial
+            result = run_single_trial(device, GLOBAL_SEED, params)
 
-        # Aggiorna best globale su validation
-        if (result["best_val"] > best_overall_val) if HIGHER_IS_BETTER else (result["best_val"] < best_overall_val):
-            best_overall_val = result["best_val"]
-            best_overall = (params, result)
+            # Log dei risultati
+            row = {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "optimizer": params["optimizer"],
+                "lr": params["lr"],
+                "weight_decay": params["weight_decay"],
+                "momentum": params["momentum"],
+                "betas": str(params["betas"]),
+                "hidden_channels": params["hidden_channels"],
+                "out_channels": params["out_channels"],
+                "dropout_p": params["dropout_p"],
+                "num_heads": params["num_heads"],
+                "num_layers": params["num_layers"],
+                "batch_size": params["batch_size"],
+                "num_neighbours": params["num_neighbours"],
+                "scheduler": params["scheduler"],
+                "cosine_Tmax": params["cosine_Tmax"],
+                "plateau_patience": params["plateau_patience"],
+                "plateau_factor": params["plateau_factor"],
+                "best_val": result["best_val"],
+                "best_test": result["best_test"],
+                "ckpt_val": result["ckpt_val"],
+                "ckpt_test": result["ckpt_test"],
+            }
+            append_log(row)
 
-            print("\n*** NEW BEST (validation) ***")
-            print("Params:", json.dumps(params, indent=2))
-            print("Best Val:", result["best_val"], "Best Test:", result["best_test"])
-            print("Checkpoints:", result["ckpt_val"], "|", result["ckpt_test"])
-            print("*****************************\n")
+            # Aggiorna best globale
+            if (result["best_val"] > best_overall_val) if HIGHER_IS_BETTER else (result["best_val"] < best_overall_val):
+                best_overall_val = result["best_val"]
+                best_overall = (params, result)
+                print("\n*** NEW BEST (validation) ***")
+                print("Params:", json.dumps(params, indent=2))
+                print("Best Val:", result["best_val"], "Best Test:", result["best_test"])
+                print("Checkpoints:", result["ckpt_val"], "|", result["ckpt_test"])
+                print("*****************************\n")
+
+        except Exception as e:
+            #  Per non riprovare automaticamente la stessa combo, NON rimuovere la chiave:
+            print(f"[ERROR] Trial failed and will be skipped next runs: {e}")
+            # Se invece vuoi poterla riprovare in futuro, scommenta le due righe sotto:
+            # tried.remove(key)
+            # save_tried(tried)
+            continue
 
     if best_overall is not None:
         params, res = best_overall
