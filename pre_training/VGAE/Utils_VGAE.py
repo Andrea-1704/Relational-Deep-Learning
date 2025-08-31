@@ -104,15 +104,32 @@ def train_vgae(
     #the parameter to be optimed should not include the head etc, 
     #but only the ones we need to modify during the pre training:
     optimizer = torch.optim.Adam(
-        list(model.encoder_parameters()) + 
-        list(model.gnn_parameters()) + 
-        list(model.temporal_parameters()) + 
-        list(model.shallow_parameters()) + 
+        list(model.encoder_parameters()) + #include encoder tabellare, temporal encoder e gnn
+        list(model.embedding_dict.parameters()) +
         list(wrapper.proj_mu.parameters()) + 
         list(wrapper.proj_logvar.parameters()) + 
         list(decoder.parameters()),
         lr=1e-3
     )
+
+    # Utils_VGAE.train_vgae(...)
+    decoder = MLPDecoder(latent_dim=latent_dim, hidden_dim=hidden_dim).to(device)
+
+    param_groups = []
+    param_groups += list(model.encoder_parameters())   # feature encoders tabellari
+    if hasattr(model, "gnn_parameters"):
+        param_groups += list(model.gnn_parameters())   # message passing
+    if hasattr(model, "temporal_parameters"):
+        param_groups += list(model.temporal_parameters())  # encoding temporale
+    # (opzionale) shallow embeddings se non già coperte:
+    if hasattr(model, "shallow_parameters"):
+        param_groups += list(model.shallow_parameters())
+
+    param_groups += list(wrapper.proj_mu.parameters()) + list(wrapper.proj_logvar.parameters())
+    param_groups += list(decoder.parameters())
+
+    optimizer = torch.optim.Adam(param_groups, lr=1e-3)
+
 
     # optimizer = torch.optim.Adam(
     #     list(wrapper.parameters()) + list(decoder.parameters()),
