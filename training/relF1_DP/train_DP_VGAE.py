@@ -37,10 +37,6 @@ import os
 sys.path.append(os.path.abspath("."))
 
 
-from torch_geometric.data import HeteroData
-from torch_geometric.nn import MLP
-from torch_geometric.typing import NodeType
-from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
 from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
 from torch_geometric.loader import NeighborLoader
 import pyg_lib

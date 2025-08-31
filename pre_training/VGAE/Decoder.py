@@ -1,61 +1,21 @@
-
 import torch
-import numpy as np
-import math
-from tqdm import tqdm
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
-from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-from torch_frame.config.text_embedder import TextEmbedderConfig
-from relbench.modeling.graph import make_pkey_fkey_graph
-import copy
-
 import sys
 import os
 sys.path.append(os.path.abspath("."))
-
-
-from typing import Any, Dict, List
+from typing import Dict, Tuple
 from torch import Tensor
-from torch.nn import Embedding, ModuleDict
-from torch_frame.data.stats import StatType
-from torch_geometric.data import HeteroData
-from torch_geometric.nn import MLP
-from torch_geometric.typing import NodeType
-from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
-from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
-from torch_geometric.loader import NeighborLoader
-import pyg_lib
-from torch.nn import ModuleDict
-import torch.nn.functional as F
 from torch import nn
-import random
-from matplotlib import pyplot as plt
-from itertools import product
-import torch
-import numpy as np
-import copy
-import pandas as pd
-from utils.EarlyStopping import EarlyStopping
-
-from typing import Tuple
-
 import torch
 import torch.nn as nn
-from torch import Tensor
-from typing import Dict, Tuple
 
 class MLPDecoder(nn.Module):
-    def __init__(self, latent_dim: int, hidden_dim: int, input_dim: int, num_layers: int = 3):
+    def __init__(self, latent_dim: int, hidden_dim: int, num_layers: int = 3):
         super().__init__()
         layers = []
 
-        self.input_dim = input_dim
+        self.input_dim = 4 * latent_dim # because we concatenate z_i, z_j, |z_i - z_j|, and z_i * z_j
 
-        layers.append(nn.Linear(input_dim, hidden_dim))
+        layers.append(nn.Linear(self.input_dim, hidden_dim))
         layers.append(nn.ReLU())
         for _ in range(num_layers - 2):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
