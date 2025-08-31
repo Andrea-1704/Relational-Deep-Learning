@@ -146,49 +146,49 @@ def train_vgae(
                 )
                 if mask.any():
                     valid_edge_types.append(et)
-                # Se non c’è nessun edge-type utilizzabile in questo batch → salta
-                if not valid_edge_types:
-                    continue
-                # scegliamo UN edge-type valido
-                edge_type = random.choice(valid_edge_types)
-                src_type, _, dst_type = edge_type
+            # Se non c’è nessun edge-type utilizzabile in questo batch → salta
+            if not valid_edge_types:
+                continue
+            # scegliamo UN edge-type valido
+            edge_type = random.choice(valid_edge_types)
+            src_type, _, dst_type = edge_type
 
-                #eseguiamo UNA SOLA encode ristretta ai due tipi di nodo coinvolti
-                node_types_for_encode = [src_type, dst_type] if src_type != dst_type else [src_type]
-                z_dict = wrapper(batch, node_types=node_types_for_encode)
+            #eseguiamo UNA SOLA encode ristretta ai due tipi di nodo coinvolti
+            node_types_for_encode = [src_type, dst_type] if src_type != dst_type else [src_type]
+            z_dict = wrapper(batch, node_types=node_types_for_encode)
 
-                #generiamo pos/neg edges per quell’edge_type
-                res = get_pos_neg_edges(batch, edge_type)
-                if res is None:
-                    # se per qualche motivo non riusciamo a costruire coppie, saltiamo il batch
-                    continue
+            #generiamo pos/neg edges per quell’edge_type
+            res = get_pos_neg_edges(batch, edge_type)
+            if res is None:
+                # se per qualche motivo non riusciamo a costruire coppie, saltiamo il batch
+                continue
 
-                pos_edges, neg_edges = res
+            pos_edges, neg_edges = res
 
 
-                pos_logits = decoder(z_dict, pos_edges, src_type, dst_type)
-                neg_logits = decoder(z_dict, neg_edges, src_type, dst_type)
+            pos_logits = decoder(z_dict, pos_edges, src_type, dst_type)
+            neg_logits = decoder(z_dict, neg_edges, src_type, dst_type)
 
-                if pos_edges.numel() == 0 or neg_edges.numel() == 0:
-                    # safety net ulteriore
-                    continue
+            if pos_edges.numel() == 0 or neg_edges.numel() == 0:
+                # safety net ulteriore
+                continue
 
-                # loss (warmup beta su epoca, come nel tuo codice)
-                beta = min(1.0, epoch / 10)
-                mu_src, logvar_src = z_dict[src_type][1], z_dict[src_type][2]
-                mu_dst, logvar_dst = z_dict[dst_type][1], z_dict[dst_type][2]
-                mu = torch.cat([mu_src, mu_dst], dim=0)
-                logvar = torch.cat([logvar_src, logvar_dst], dim=0)
+            # loss (warmup beta su epoca, come nel tuo codice)
+            beta = min(1.0, epoch / 10)
+            mu_src, logvar_src = z_dict[src_type][1], z_dict[src_type][2]
+            mu_dst, logvar_dst = z_dict[dst_type][1], z_dict[dst_type][2]
+            mu = torch.cat([mu_src, mu_dst], dim=0)
+            logvar = torch.cat([logvar_src, logvar_dst], dim=0)
 
-                loss, recon, kl = vgae_loss(pos_logits, neg_logits, mu, logvar, beta)
+            loss, recon, kl = vgae_loss(pos_logits, neg_logits, mu, logvar, beta)
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-                total_loss += float(loss)
-                total_recon += float(recon)
-                total_kl += float(kl)
+            total_loss += float(loss)
+            total_recon += float(recon)
+            total_kl += float(kl)
 
         print(f"[VGAE] Epoch {epoch:02d} | Loss: {total_loss:.4f} | Recon: {total_recon:.4f} | KL: {total_kl:.4f}")
 
