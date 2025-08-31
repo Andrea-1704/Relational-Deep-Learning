@@ -1,58 +1,17 @@
-
 import torch
-import numpy as np
-import math
-from tqdm import tqdm
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
-from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-
 import sys
 import os
 sys.path.append(os.path.abspath("."))
-
-
-from torch_frame.config.text_embedder import TextEmbedderConfig
-from relbench.modeling.graph import make_pkey_fkey_graph
-import copy
-from typing import Any, Dict, List
+from typing import Dict, List
 from torch import Tensor
-from torch.nn import Embedding, ModuleDict
-from torch_frame.data.stats import StatType
 from torch_geometric.data import HeteroData
-from torch_geometric.nn import MLP
-from torch_geometric.typing import NodeType
-from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
-from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
 from torch_geometric.loader import NeighborLoader
-import pyg_lib
-from torch.nn import ModuleDict
 import torch.nn.functional as F
 from torch import nn
 import random
-from matplotlib import pyplot as plt
-from itertools import product
-import torch
-import numpy as np
-import copy
-import pandas as pd
-from utils.EarlyStopping import EarlyStopping
 from pre_training.VGAE.Encoder import VGAEWrapper
 from pre_training.VGAE.Decoder import MLPDecoder
-from torch_geometric.data import HeteroData
 from typing import Tuple
-
-import torch
-import torch.nn as nn
-from torch import Tensor
-from typing import Dict, Tuple
-
-from typing import Tuple
-from torch import Tensor
-import random
 
 def get_pos_neg_edges(batch: HeteroData, edge_type: Tuple[str, str, str], num_neg_samples: int = None) -> Tuple[Tensor, Tensor]:
     src_type, _, dst_type = edge_type
@@ -140,7 +99,7 @@ def train_vgae(
     ).to(device)
 
 
-    decoder = MLPDecoder(latent_dim=latent_dim, hidden_dim=hidden_dim, input_dim=encoder_out_dim).to(device)
+    decoder = MLPDecoder(latent_dim=latent_dim, hidden_dim=hidden_dim).to(device)
 
     #the parameter to be optimed should not include the head etc, 
     #but only the ones we need to modify during the pre training:
