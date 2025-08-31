@@ -2,8 +2,11 @@
 import csv, json
 from pathlib import Path
 
-LOG_PATH = "tuning_log.csv"
-TRIED_PATH = "tuning_tried.json"
+HERE = Path(__file__).resolve().parent
+TRAINING_DIR = HERE.parent
+
+LOG_PATH = TRAINING_DIR / "tuning_log.csv"
+TRIED_PATH = TRAINING_DIR / "tuning_tried.json"
 
 def dict_to_key(d):  # come nel tuo script
     return tuple(sorted((k, str(v)) for k, v in d.items()))
