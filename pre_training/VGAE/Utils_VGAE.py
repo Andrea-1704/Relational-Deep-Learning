@@ -119,69 +119,80 @@ def train_vgae(
 
 
     for epoch in range(1, epochs + 1):
-          wrapper.train()
-          decoder.train()
+        wrapper.train()
+        decoder.train()
 
-          total_loss = total_recon = total_kl = 0
+        total_loss = total_recon = total_kl = 0
 
-          for batch in loader_dict["train"]:
-              #scelgo casualmente un arco:
-              archi_presenti = False
-              archi_presenti_effettivi = False
+        for batch in loader_dict["train"]:
+            batch = batch.to(device) #do it as soon is possible 
+            #scelgo casualmente un arco:
+            valid_edge_types = []
+            for et in edge_types:
+                ei = batch.edge_index_dict[et]
+                if ei.numel()==0:
+                    continue
+                src_type, _, dst_type = et
+                src_ids, dst_ids = ei[0], ei[1]
+                # nodi effettivamente presenti nel batch (global IDs)
+                src_set = set(batch[src_type].n_id.tolist())
+                dst_set = set(batch[dst_type].n_id.tolist())
+                # maschera: tiene solo archi (s,d) i cui estremi sono nei n_id del batch
+                mask = torch.tensor(
+                    [int(s) in src_set and int(d) in dst_set
+                    for s, d in zip(src_ids.tolist(), dst_ids.tolist())],
+                    dtype=torch.bool,
+                    device=ei.device
+                )
+                if mask.any():
+                    valid_edge_types.append(et)
+                # Se non c’è nessun edge-type utilizzabile in questo batch → salta
+                if not valid_edge_types:
+                    continue
+                # scegliamo UN edge-type valido
+                edge_type = random.choice(valid_edge_types)
+                src_type, _, dst_type = edge_type
 
-              max_trials = 50
-              trial = 0
+                #eseguiamo UNA SOLA encode ristretta ai due tipi di nodo coinvolti
+                node_types_for_encode = [src_type, dst_type] if src_type != dst_type else [src_type]
+                z_dict = wrapper(batch, node_types=node_types_for_encode)
 
-              while (not archi_presenti or not archi_presenti_effettivi) and trial < max_trials:
-                edge_type = random.choice(edge_types)
-                edge_index_trial = batch.edge_index_dict[edge_type]
-                if len(edge_index_trial[0])!=0:
-                  archi_presenti = True
-
-                src_type = edge_type[0]
-                dst_type = edge_type[2]
-
-                batch = batch.to(device)
-
-                z_dict = wrapper(batch, node_types=[edge_type[0], edge_type[2]])
-
+                #generiamo pos/neg edges per quell’edge_type
                 res = get_pos_neg_edges(batch, edge_type)
-                #pos_edges, neg_edges = get_pos_neg_edges(batch, edge_type)
-                if res is not None:
-                  pos_edges, neg_edges = res
-                  archi_presenti_effettivi = True
-                trial += 1
+                if res is None:
+                    # se per qualche motivo non riusciamo a costruire coppie, saltiamo il batch
+                    continue
 
-              if trial == max_trials:
-                  print(f"⚠️ Skip batch: nessun edge_type valido trovato dopo {max_trials} tentativi.")
-                  continue
-
-              #print(f"per arco {edge_type} abbiamo {len(pos_edges[0])} archi positivi, e {len(neg_edges[0])} archi negativi, ma ne potremmo avere: {len(batch.edge_index_dict[edge_type][0])}")
-
-              pos_logits = decoder(z_dict, pos_edges, src_type, dst_type)
-              neg_logits = decoder(z_dict, neg_edges, src_type, dst_type)
-
-              if pos_edges.numel() == 0 or neg_edges.numel() == 0:
-                  print("Batch saltato: nessun arco seed-seed.")
-                  continue
-
-              beta = min(1.0, epoch / 10)  # warm-up
-              mu_src, logvar_src = z_dict[src_type][1], z_dict[src_type][2]
-              mu_dst, logvar_dst = z_dict[dst_type][1], z_dict[dst_type][2]
-              mu = torch.cat([mu_src, mu_dst], dim=0)
-              logvar = torch.cat([logvar_src, logvar_dst], dim=0)
-              loss, recon, kl = vgae_loss(pos_logits, neg_logits, mu, logvar, beta)
+                pos_edges, neg_edges = res
 
 
-              optimizer.zero_grad()
-              loss.backward()
-              optimizer.step()
+                pos_logits = decoder(z_dict, pos_edges, src_type, dst_type)
+                neg_logits = decoder(z_dict, neg_edges, src_type, dst_type)
 
-              total_loss += loss.item()
-              total_recon += recon.item()
-              total_kl += kl.item()
+                if pos_edges.numel() == 0 or neg_edges.numel() == 0:
+                    # safety net ulteriore
+                    continue
 
-          print(f"[VGAE] Epoch {epoch:02d} | Loss: {total_loss:.4f} | Recon: {total_recon:.4f} | KL: {total_kl:.4f}")
+                # loss (warmup beta su epoca, come nel tuo codice)
+                beta = min(1.0, epoch / 10)
+                mu_src, logvar_src = z_dict[src_type][1], z_dict[src_type][2]
+                mu_dst, logvar_dst = z_dict[dst_type][1], z_dict[dst_type][2]
+                mu = torch.cat([mu_src, mu_dst], dim=0)
+                logvar = torch.cat([logvar_src, logvar_dst], dim=0)
+
+                loss, recon, kl = vgae_loss(pos_logits, neg_logits, mu, logvar, beta)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += float(loss)
+                total_recon += float(recon)
+                total_kl += float(kl)
+
+        print(f"[VGAE] Epoch {epoch:02d} | Loss: {total_loss:.4f} | Recon: {total_recon:.4f} | KL: {total_kl:.4f}")
 
     print("Pretraining VGAE completato.\n")
     return model
+
+          
