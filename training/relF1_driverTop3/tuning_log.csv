@@ -1,0 +1,5 @@
+timestamp,optimizer,lr,weight_decay,momentum,betas,hidden_channels,out_channels,dropout_p,num_heads,num_layers,batch_size,num_neighbours,scheduler,cosine_Tmax,plateau_patience,plateau_factor,best_val,best_test
+2025-08-30 13:41:15,AdamW,0.001,0.0,0.8,"(0.9, 0.999)",64,64,0.0,4,2,256,64,none,10,10,0.5,0.4668769716088328,0.6005509641873278
+2025-08-30 13:41:15,AdamW,0.001,0.0,0.8,"(0.9, 0.999)",64,64,0.0,4,2,256,64,none,10,10,0.5,0.4668769716088328,0.6005509641873278
+,AdamW,0.001,0.0,0.8,"(0.9, 0.999)",64,64,0.0,4,2,256,64,none,10,10,0.3,,
+,AdamW,0.001,0.0,0.8,"(0.9, 0.999)",64,64,0.0,4,2,256,64,none,10,10,0.3,,
