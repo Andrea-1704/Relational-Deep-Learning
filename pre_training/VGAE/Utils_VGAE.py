@@ -105,6 +105,9 @@ def train_vgae(
     #but only the ones we need to modify during the pre training:
     optimizer = torch.optim.Adam(
         list(model.encoder_parameters()) + 
+        list(model.gnn_parameters()) + 
+        list(model.temporal_parameters()) + 
+        list(model.shallow_parameters()) + 
         list(wrapper.proj_mu.parameters()) + 
         list(wrapper.proj_logvar.parameters()) + 
         list(decoder.parameters()),
