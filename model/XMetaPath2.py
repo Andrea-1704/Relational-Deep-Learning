@@ -48,10 +48,11 @@ class MetaPathGNNLayer(MessagePassing):
         )                                    # -> [#dst_loc, D]
 
         row = edge_index[1]                  # dst locali
-        if edge_weight is None:
-            deg = torch.bincount(row, minlength=h_dst.size(0)).clamp(min=1).float().unsqueeze(-1)
-        else:
-            deg = torch.bincount(row, weights=edge_weight, minlength=h_dst.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
+        with torch.no_grad():
+            if edge_weight is None:
+                deg = torch.bincount(row, minlength=h_dst.size(0)).clamp(min=1).float().unsqueeze(-1)
+            else:
+                deg = torch.bincount(row, weights=edge_weight, minlength=h_dst.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
         out = out / deg
 
         g = torch.sigmoid(self.gate)
