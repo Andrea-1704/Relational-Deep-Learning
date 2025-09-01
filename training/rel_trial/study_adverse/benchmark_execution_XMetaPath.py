@@ -50,9 +50,14 @@ def to_canonical(mp_outward):
 dataset = get_dataset("rel-trial", download=True)
 task = get_task("rel-trial", "study-adverse", download=True)
 
-train_table = task.get_table("train") #date  driverId  qualifying
-val_table = task.get_table("val") #date  driverId  qualifying
-test_table = task.get_table("test") # date  driverId
+train_table = task.get_table("train") 
+val_table = task.get_table("val") 
+test_table = task.get_table("test") 
+
+print(train_table)
+target_table = "studies"
+target_column = "num_of_adverse_events"
+node_type = target_table
 
 out_channels = 1
 loss_fn = L1Loss()
@@ -72,95 +77,78 @@ col_to_stype_dict = get_stype_proposal(db)
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
 # Create the graph
-data, col_stats_dict = make_pkey_fkey_graph(
+data_official, col_stats_dict_official = make_pkey_fkey_graph(
+        db_nuovo,
+        col_to_stype_dict=col_to_stype_dict_nuovo,
+        text_embedder_cfg = None,
+        cache_dir=None  # disabled
+)
+
+
+graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+train_df = train_table.df
+driver_labels = train_df[target_column].to_numpy()
+driver_ids = train_df["nct_id"].to_numpy()
+
+target_vector = torch.full((len(graph_driver_ids),), float("nan"))
+for i, driver_id in enumerate(driver_ids):
+    if driver_id in id_to_idx:
+        target_vector[id_to_idx[driver_id]] = driver_labels[i]
+
+data_official[target_table].y = target_vector
+data_official[target_table].train_mask = ~torch.isnan(target_vector)
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+data_full, col_stats_dict_full = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    #text_embedder_cfg=text_embedder_cfg,
-    text_embedder_cfg = None,
-    cache_dir=None  # disabled
+    text_embedder_cfg=None,
+    cache_dir=None
 )
-node_type="drivers"
+data_full = data_full.to(device)
+
+#retrieve the id from the driver nodes
+graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+#get the labels and the ids of the drivers from the table
+train_df = train_table.df
+driver_labels = train_df[target_column].to_numpy()
+driver_ids = train_df["nct_id"].to_numpy()
+
+#map the correct labels for all drivers node (which are target ones)
+target_vector = torch.full((len(graph_driver_ids),), float("nan")) #inizial
+for i, driver_id in enumerate(driver_ids):
+    if driver_id in id_to_idx:
+        target_vector[id_to_idx[driver_id]] = driver_labels[i]
+
+
+data_full[target_table].y = target_vector
+data_full[target_table].train_mask = ~torch.isnan(target_vector)
+
+#take y and mask complete for the dataset:
+y_full = data_full[target_column].y.float()
+train_mask_full = data_full[target_column].train_mask
+y_bin_full = y_full
+
+hidden_channels = 128
+out_channels = 128
 
 loader_dict = loader_dict_fn(
-    batch_size=512,
-    num_neighbours=256,
-    data=data,
+    batch_size=1024,
+    num_neighbours=512,
+    data=data_official,
     task=task,
     train_table=train_table,
     val_table=val_table,
     test_table=test_table
 )
+lr=1e-02
+wd=0
 
-# --- Build data['drivers'].y from the train_table (RelBench keeps labels in task tables) ---
-import pandas as pd
-import torch
-
-node_type = "drivers"
-
-def table_df(t):
-    if hasattr(t, "df"):
-        return t.df
-    if hasattr(t, "to_pandas"):
-        return t.to_pandas()
-    raise TypeError("Unsupported Table type (no .df / .to_pandas)")
-
-df_train = table_df(train_table).copy()
-
-# 1) individua la colonna label in modo robusto:
-#    - rimuoviamo timestamp e pkey
-pk_col = "driverId"    # per rel-f1 driver table
-time_col = "date"
-candidates = [c for c in df_train.columns if c not in {pk_col, time_col}]
-# tieni solo numeric (la label è numerica per 'driver-position' con MAE)
-num_candidates = [c for c in candidates if pd.api.types.is_numeric_dtype(df_train[c])]
-if "label" in df_train.columns:
-    target_col = "label"
-elif len(num_candidates) == 1:
-    target_col = num_candidates[0]
-else:
-    # euristica: scegli la colonna numerica con varianza maggiore
-    target_col = df_train[num_candidates].var().sort_values(ascending=False).index[0]
-
-# 2) mappa pkey (driverId) -> indice di nodo 'drivers'
-try:
-    index_values = db_nuovo.table_dict[node_type].tf.index.tolist()
-except Exception:
-    index_values = db_nuovo.table_dict[node_type].df.index.tolist()
-id_to_idx = {int(pk): i for i, pk in enumerate(index_values)}
-
-# 3) aggrega per driver: media della label nel train
-agg = (
-    df_train[[pk_col, target_col]]
-    .groupby(pk_col, as_index=False)
-    .mean()
-)
-
-y = torch.full((data[node_type].num_nodes,), float("nan"), dtype=torch.float32)
-for pk, val in zip(agg[pk_col].tolist(), agg[target_col].tolist()):
-    if int(pk) in id_to_idx:
-        y[id_to_idx[int(pk)]] = float(val)
-
-# 4) opzionale: riempi i NaN con la media globale del train (o lasciali NaN se l’RL li ignora via mask)
-global_mean = torch.tensor(pd.to_numeric(agg[target_col], errors="coerce").mean(), dtype=torch.float32)
-y = torch.where(torch.isnan(y), global_mean, y)
-
-# 5) attacca al grafo
-data[node_type].y = y
-print(f"[Info] y attached to data['{node_type}']: {int(torch.isfinite(y).sum())}/{y.numel()} finite labels")
-
-
-# --- Build train_mask_full dai driverId del train split ---
-train_driver_ids = torch.as_tensor(
-    table_df(train_table)["driverId"].unique(), dtype=torch.long
-)
-
-mapped = [id_to_idx[pk] for pk in train_driver_ids.tolist() if int(pk) in id_to_idx]
-train_node_idx = torch.tensor(mapped, dtype=torch.long)
-
-train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
-train_mask_full[train_node_idx] = True
-
-print(f"[Info] Train mask: {int(train_mask_full.sum())}/{data[node_type].num_nodes} drivers nel train")
 
 
 #Learning metapaths:
@@ -172,7 +160,7 @@ agent.best_score_by_path_global.clear() #azzera registro punteggi
 
 warmup_rl_agent(
     agent=agent,
-    data=data,
+    data=data_official,
     loader_dict=loader_dict,
     task=task,
     loss_fn=loss_fn,
@@ -180,7 +168,7 @@ warmup_rl_agent(
     higher_is_better=higher_is_better,
     train_mask=train_mask_full,
     node_type='drivers',
-    col_stats_dict=col_stats_dict,
+    col_stats_dict=col_stats_dict_official,
     num_episodes=5,   
     L_max=7,          
     epochs=5         
@@ -195,7 +183,7 @@ agent.alpha = 0.2 # update più conservativo
 
 metapaths, metapath_count = final_metapath_search_with_rl(
     agent=agent,
-    data=data,
+    data=data_official,
     loader_dict=loader_dict,
     task=task,
     loss_fn=loss_fn,
@@ -203,7 +191,7 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     higher_is_better=higher_is_better,
     train_mask=train_mask_full,
     node_type='drivers',
-    col_stats_dict=col_stats_dict,
+    col_stats_dict=col_stats_dict_official,
     L_max=5,                 
     epochs=50,
     number_of_metapaths=K    
@@ -229,8 +217,8 @@ hidden_channels = 128
 out_channels = 128
 
 model = XMetaPath2(
-    data=data,
-    col_stats_dict=col_stats_dict,
+    data=data_official,
+    col_stats_dict=col_stats_dict_official,
     #metapath_counts = metapath_count, 
     metapaths=canonical,               
     hidden_channels=hidden_channels,
