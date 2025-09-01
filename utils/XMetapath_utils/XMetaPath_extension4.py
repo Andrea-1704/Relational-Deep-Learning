@@ -15,7 +15,7 @@ from typing import List, Tuple, Dict
 from relbench.modeling.nn import HeteroEncoder
 from collections import defaultdict
 from utils.utils import evaluate_performance, test, train
-from model.XMetaPath import XMetaPath
+from model.XMetaPath2 import XMetaPath2
 
 
 # utility functions:
@@ -300,7 +300,7 @@ def greedy_metapath_search_rl(
         ###### NOW THIS IS ADDED!
 
         print(f"The RL agent chosen r* {chosen_rel} to be added to metapath {current_path}, now we pass to the XMEtapath Model to test it")
-        model = XMetaPath(
+        model = XMetaPath2(
             data=data,
             col_stats_dict=col_stats_dict,
             metapaths=[mp_for_model],
