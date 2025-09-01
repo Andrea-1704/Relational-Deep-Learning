@@ -2,7 +2,8 @@
 This function is used for benchmarking the model against the others and improve
 the model performance considering the same metapath.
 
-These metapath were found by extension 4.
+In this executor, we are first going to learn meaningful metapaths using reinforcement learning, and 
+then using them for driver position task.
 """
 
 import torch
@@ -30,7 +31,6 @@ from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
-
 
 # utility functions:
 def flip_rel(rel_name: str) -> str:
@@ -81,7 +81,91 @@ data, col_stats_dict = make_pkey_fkey_graph(
 )
 node_type="drivers"
 
-metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
+loader_dict = loader_dict_fn(
+    batch_size=512,
+    num_neighbours=256,
+    data=data,
+    task=task,
+    train_table=train_table,
+    val_table=val_table,
+    test_table=test_table
+)
+
+# Costruzione di train mask: to be erified:
+
+node_type = "drivers"
+train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
+
+with torch.no_grad():
+    for batch in loader_dict["train"]:
+        # Caso PyG recente: gli indici globali dei seed sono in input_id
+        if hasattr(batch[node_type], "input_id"):
+            seeds = batch[node_type].input_id
+        # Alcuni loader espongono un dict
+        elif hasattr(batch, "input_id_dict") and node_type in batch.input_id_dict:
+            seeds = batch.input_id_dict[node_type]
+        else:
+            # Fallback (versioni PyG più vecchie): i primi 'batch_size' di n_id sono i seed
+            bs = getattr(batch[node_type], "batch_size", None)
+            if bs is None:
+                raise RuntimeError("Impossibile dedurre i seed nodes dal batch.")
+            seeds = batch[node_type].n_id[:bs]
+
+        train_mask_full[seeds] = True
+
+
+#Learning metapaths:
+agent = RLAgent(tau=1.0, alpha=0.5)
+"""
+We build a single agent and perform sequential warmups
+"""
+agent.best_score_by_path_global.clear() #azzera registro punteggi
+
+warmup_rl_agent(
+    agent=agent,
+    data=data,
+    loader_dict=loader_dict,
+    task=task,
+    loss_fn=loss_fn,
+    tune_metric=tune_metric,
+    higher_is_better=higher_is_better,
+    train_mask=train_mask_full,
+    node_type='drivers',
+    col_stats_dict=col_stats_dict,
+    num_episodes=5,   
+    L_max=7,          
+    epochs=5         
+)
+
+#Extract the Top-K metapaths found out with warmup:
+K = 3
+global_best_map = agent.best_score_by_path_global
+
+agent.tau = 0.3   # meno esplorazione
+agent.alpha = 0.2 # update più conservativo
+
+metapaths, metapath_count = final_metapath_search_with_rl(
+    agent=agent,
+    data=data,
+    loader_dict=loader_dict,
+    task=task,
+    loss_fn=loss_fn,
+    tune_metric=tune_metric,
+    higher_is_better=higher_is_better,
+    train_mask=train_mask_full,
+    node_type='drivers',
+    col_stats_dict=col_stats_dict,
+    L_max=7,                 
+    epochs=100,
+    number_of_metapaths=K    
+)
+
+
+
+print(f"The final metapath are {metapaths}")
+
+
+
 
 canonical = []
 for mp in metapaths:
@@ -105,15 +189,7 @@ model = XMetaPath2(
     final_out_channels=1,
 ).to(device)
 
-loader_dict = loader_dict_fn(
-    batch_size=512,
-    num_neighbours=256,
-    data=data,
-    task=task,
-    train_table=train_table,
-    val_table=val_table,
-    test_table=test_table
-)
+
 
 lr=1e-02
 wd = 0

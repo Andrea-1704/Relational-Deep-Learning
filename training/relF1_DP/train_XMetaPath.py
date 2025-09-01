@@ -31,15 +31,12 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-from model.XMetaPath import MPSGNN
-from data_management.data import loader_dict_fn
-from utils.XMetapath_utils.XMetapath_metapath_utils import binarize_targets# greedy_metapath_search
+from model.XMetaPath import XMetaPath
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 from utils.EarlyStopping import EarlyStopping
-from utils.XMetapath_utils.XMetapath_metapath_utils import greedy_metapath_search_with_bags_learned, beam_metapath_search_with_bags_learned
-from utils.XMetapath_utils.XMetapath_metapath_utils import greedy_metapath_search_with_bags_learned_3
-
+from utils.XMetapath_utils.XMetaPath_metapath_utils import greedy_metapath_search_with_bags_learned, greedy_metapath_search_with_bags_learned_2, greedy_metapath_search_with_bags_learned_3, beam_metapath_search_with_bags_learned_2
+#from utils.mapping_utils import get_global_to_local_id_map
 
 
 def train2():
