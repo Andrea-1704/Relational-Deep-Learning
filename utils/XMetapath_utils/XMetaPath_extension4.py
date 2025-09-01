@@ -304,7 +304,6 @@ def greedy_metapath_search_rl(
             data=data,
             col_stats_dict=col_stats_dict,
             metapaths=[mp_for_model],
-            metapath_counts=agent.statistics_on_mp,
             hidden_channels=hidden_channels,
             out_channels=out_channels,
             final_out_channels=final_out_channels,
