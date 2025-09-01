@@ -43,7 +43,7 @@ loss_fn = L1Loss()
 tune_metric = "mae"
 higher_is_better = False
 
-seed_everything(42)
+seed_everything(5)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
