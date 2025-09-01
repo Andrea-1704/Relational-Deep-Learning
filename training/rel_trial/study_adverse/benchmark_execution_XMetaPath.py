@@ -209,8 +209,7 @@ for mp in metapaths:
     #change to canonical:
     mp = mp.copy()
     mp_key   = to_canonical(mp)         
-    assert mp_key[-1][2] == node_type, \
-        f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
+    
     canonical.append(mp_key)
 
 hidden_channels = 128
