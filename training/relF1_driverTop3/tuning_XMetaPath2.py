@@ -12,11 +12,7 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from torch_geometric.seed import seed_everything
-
-# Assicura import locali come nel tuo benchmark
 sys.path.append(os.path.abspath("."))
-
-# ---- Import dal tuo progetto ----
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
 from relbench.modeling.utils import get_stype_proposal
