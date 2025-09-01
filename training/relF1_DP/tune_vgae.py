@@ -17,7 +17,11 @@ from relbench.modeling.graph import make_pkey_fkey_graph
 from relbench.modeling.utils import get_stype_proposal
 from torch_geometric.seed import seed_everything
 
-# === i tuoi moduli ===
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 from model.others.HGraphSAGE import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from pre_training.VGAE.Utils_VGAE import train_vgae
