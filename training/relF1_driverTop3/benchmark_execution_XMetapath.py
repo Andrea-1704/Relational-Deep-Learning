@@ -151,6 +151,7 @@ for mp in metapaths:
     assert mp_key[-1][2] == node_type, \
         f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
     canonical.append(mp_key)
+print(f"I metapath canonici sono: {canonical}")
 
 lr=1e-02
 wd=0
