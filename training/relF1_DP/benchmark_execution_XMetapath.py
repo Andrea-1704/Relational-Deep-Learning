@@ -149,6 +149,20 @@ data[node_type].y = y
 print(f"[Info] y attached to data['{node_type}']: {int(torch.isfinite(y).sum())}/{y.numel()} finite labels")
 
 
+# --- Build train_mask_full dai driverId del train split ---
+train_driver_ids = torch.as_tensor(
+    table_df(train_table)["driverId"].unique(), dtype=torch.long
+)
+
+mapped = [id_to_idx[pk] for pk in train_driver_ids.tolist() if int(pk) in id_to_idx]
+train_node_idx = torch.tensor(mapped, dtype=torch.long)
+
+train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
+train_mask_full[train_node_idx] = True
+
+print(f"[Info] Train mask: {int(train_mask_full.sum())}/{data[node_type].num_nodes} drivers nel train")
+
+
 #Learning metapaths:
 agent = RLAgent(tau=1.0, alpha=0.5)
 """
