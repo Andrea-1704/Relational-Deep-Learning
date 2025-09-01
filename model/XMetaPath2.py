@@ -122,7 +122,8 @@ class MetaPathGNN(nn.Module):
         #h_dict = x_dict.copy()
         #we store x0_dict for x and h_dict that will be updated path by path:
         #x0_dict = {k: v.detach() for k, v in x_dict.items()}   # freezed original features
-        x0_dict = {k: v for k, v in x_dict.items()} 
+        #x0_dict = {k: v for k, v in x_dict.items()} 
+        x0_dict = {k: v.detach().clone() for k,v in x_dict.items()}
         h_dict  = {k: v.clone()  for k, v in x_dict.items()}   # current state: to update
 
         def pos_lambda(raw):  # λ > 0
