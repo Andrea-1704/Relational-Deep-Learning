@@ -46,9 +46,9 @@ def canonicalize_metapaths(metapaths_raw, target="drivers"):
 # Imposta qui semi-random e sampling dal grid
 GLOBAL_SEED = 5
 MAX_TRIALS = None   # None = prova tutte le combinazioni; oppure un intero (es. 40)
-N_EPOCHS = 300
-EARLY_STOP_PATIENCE = 60
-TUNE_METRIC = "f1"
+N_EPOCHS = 80
+EARLY_STOP_PATIENCE = 30
+TUNE_METRIC = "roc_auc"
 HIGHER_IS_BETTER = True
 TARGET_NODE = "drivers"
 CHECKPOINT_DIR = "checkpoints"
