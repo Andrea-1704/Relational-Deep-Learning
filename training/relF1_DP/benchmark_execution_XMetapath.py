@@ -91,45 +91,62 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
+# --- Build data['drivers'].y from the train_table (RelBench keeps labels in task tables) ---
+import pandas as pd
 import torch
 
 node_type = "drivers"
 
-# Helper per estrarre una Series da una Table RelBench
-def table_col(table, col):
-    if hasattr(table, "df"):
-        return table.df[col]
-    if hasattr(table, "to_pandas"):
-        return table.to_pandas()[col]
-    raise TypeError("Impossibile accedere alle colonne della Table: manca .df e .to_pandas().")
+def table_df(t):
+    if hasattr(t, "df"):
+        return t.df
+    if hasattr(t, "to_pandas"):
+        return t.to_pandas()
+    raise TypeError("Unsupported Table type (no .df / .to_pandas)")
 
-# 1) pkey (driverId) nel train split
-train_driver_ids = torch.as_tensor(
-    table_col(train_table, "driverId").unique(),  # <-- usa .df o .to_pandas()
-    dtype=torch.long
-)
+df_train = table_df(train_table).copy()
 
-# 2) mappa pkey -> indice di nodo per 'drivers'
+# 1) individua la colonna label in modo robusto:
+#    - rimuoviamo timestamp e pkey
+pk_col = "driverId"    # per rel-f1 driver table
+time_col = "date"
+candidates = [c for c in df_train.columns if c not in {pk_col, time_col}]
+# tieni solo numeric (la label è numerica per 'driver-position' con MAE)
+num_candidates = [c for c in candidates if pd.api.types.is_numeric_dtype(df_train[c])]
+if "label" in df_train.columns:
+    target_col = "label"
+elif len(num_candidates) == 1:
+    target_col = num_candidates[0]
+else:
+    # euristica: scegli la colonna numerica con varianza maggiore
+    target_col = df_train[num_candidates].var().sort_values(ascending=False).index[0]
+
+# 2) mappa pkey (driverId) -> indice di nodo 'drivers'
 try:
-    # Preferibile: indice del TensorFrame (se presente)
     index_values = db_nuovo.table_dict[node_type].tf.index.tolist()
 except Exception:
-    # Fallback: indice del DataFrame sottostante
     index_values = db_nuovo.table_dict[node_type].df.index.tolist()
-
 id_to_idx = {int(pk): i for i, pk in enumerate(index_values)}
 
-# 3) traduci i driverId del train in indici di nodo
-mapped = [id_to_idx[pk] for pk in train_driver_ids.tolist() if pk in id_to_idx]
-train_node_idx = torch.tensor(mapped, dtype=torch.long)
+# 3) aggrega per driver: media della label nel train
+agg = (
+    df_train[[pk_col, target_col]]
+    .groupby(pk_col, as_index=False)
+    .mean()
+)
 
-# 4) costruisci la mask
-train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
-train_mask_full[train_node_idx] = True
+y = torch.full((data[node_type].num_nodes,), float("nan"), dtype=torch.float32)
+for pk, val in zip(agg[pk_col].tolist(), agg[target_col].tolist()):
+    if int(pk) in id_to_idx:
+        y[id_to_idx[int(pk)]] = float(val)
 
-# 5) sanity check
-assert train_mask_full.numel() == data[node_type].num_nodes
-print(f"[Info] Train drivers nella mask: {int(train_mask_full.sum())}/{data[node_type].num_nodes}")
+# 4) opzionale: riempi i NaN con la media globale del train (o lasciali NaN se l’RL li ignora via mask)
+global_mean = torch.tensor(pd.to_numeric(agg[target_col], errors="coerce").mean(), dtype=torch.float32)
+y = torch.where(torch.isnan(y), global_mean, y)
+
+# 5) attacca al grafo
+data[node_type].y = y
+print(f"[Info] y attached to data['{node_type}']: {int(torch.isfinite(y).sum())}/{y.numel()} finite labels")
 
 
 #Learning metapaths:
