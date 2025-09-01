@@ -204,8 +204,8 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict,
-    L_max=7,                 
-    epochs=100,
+    L_max=5,                 
+    epochs=50,
     number_of_metapaths=K    
 )
 
@@ -248,7 +248,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_deca
 scheduler = CosineAnnealingLR(optimizer, T_max=25)
 
 early_stopping = EarlyStopping(
-    patience=60,
+    patience=80,
     delta=0.0,
     verbose=True,
     higher_is_better = True,
@@ -258,7 +258,7 @@ early_stopping = EarlyStopping(
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 150
+epochs = 500
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
