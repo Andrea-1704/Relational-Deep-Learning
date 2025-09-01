@@ -15,158 +15,7 @@ import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-
-
-"""
-In this implementation we are solving one major problem related to the 
-previous version (which is referred to as MPSGNN_Model_old, please check git history),
-which is that, when we used the full x_dict[nodetype]
-tensors without checking which nodes were actually connected by the 
-relation. This means we were doing message passing over all nodes, 
-including nodes that are completely disconnected from the current relation.
-
-The solution should be that instead considering all the dst e src nodes
-for the message passing, we focus only on the ones for which we have at
-leat an edge between src to dst.
-
-In other words, this code:
-def forward(self, x_dict, edge_index_dict):
-    #edge_type_dict is the list of edge types
-    #edge_index_dict contains for each edge_type the edges
-    h_dict = x_dict.copy()
-    for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
-        conv_idx = len(self.metapath) - 1 - i
-        edge_index = edge_index_dict[(src, rel, dst)]
-        #only the one of the relation specified
-        h_dst = self.convs[conv_idx](
-            x=h_dict[dst],
-            h=h_dict[dst],
-            edge_index=edge_index
-        )
-        h_dict[dst] = F.relu(h_dst)
-    start_type = self.metapath[0][0]
-    return self.out_proj(h_dict[start_type])
-
-was wrong because simply considered x=h_dict[dst], without exclude all the 
-dst nodes that are not reached from src, adding them to the aggregation phase.
-
-A solution could be to exclude all the nodes that are not reached from the 
-relation, but this would generate a new problem to be managed:
-Given edge_index = [[3, 4, 5], [6, 2, 3]], this means there's an edge from
-x_dict["races"][3] to x_dict["drivers"][6], and so on. Suppose 
-x_dict["races"] originally has shape [128, D] and x_dict["drivers"]
-is [200, D]. If you do x_dict["races"] = x_dict["races"][[3,4,5]], then 
-x_dict["races"] now has shape [3, D] where index 0 corresponds to global
-node 3, index 1 to 4, and index 2 to 5. But edge_index still uses global
-indices [3, 4, 5], so when your GNN tries to index x[3], it will go out
-of bounds, because x only has indices [0,1,2] now. So after filtering nodes,
-you must remap edge_index to the new local indices. If global → local is 
-{3:0, 4:1, 5:2}, then remap edge_index[0] = [0,1,2].
-"""
-
-class MetaPathGNNLayerOriginal(MessagePassing):  
-    """
-    MetaPathGNNLayer implements equation 7 from the MPS-GNN paper (https://arxiv.org/abs/2412.00521).
-
-    h'_v = W_l * sum_{u in N(v)} h_u + W_0 * h_v + W_1 * x_v
-    where:
-      - h_v is the current hidden state of node v,
-      - x_v is the original embedding of v,
-      - h_u are the neighbors' embeddings.
-    """
-    def __init__(self, in_channels: int, out_channels: int, relation_index: int):
-        super().__init__(aggr='add', flow='target_to_source')
-        self.relation_index = relation_index
-
-        # Linear layers for each component of equation 7
-        self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
-        self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
-        self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
-
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Original input features of the node (x_v), shape [N_dst, in_channels]
-            edge_index: Edge index for this relation, shape [2, num_edges]
-            h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
-        Returns:
-            Updated node representation after applying the layer, shape [N_dst, out_channels]
-        """
-
-        agg_messages = self.propagate(edge_index, x=h)
-
-        return self.w_l(agg_messages) + self.w_0(h) + self.w_1(x)
-
-    def message(self, x_j: torch.Tensor) -> torch.Tensor:
-        return x_j
-
-
-
-
-# class MetaPathGNNLayer(MessagePassing):  
-#     """
-#     My update: follow original paper, but instead of applying a sum
-#     aggregation, normalize the message in order to delete the 
-#     bias given by the degree of the node.
-
-#     We also implemented a temporal decading so that "old" messages
-#     will weight less than the recent ones.
-#     """
-#     def __init__(self, in_channels: int, out_channels: int, relation_index: int):
-#         super().__init__(aggr='add', flow='target_to_source')
-#         self.relation_index = relation_index
-
-#         # Linear layers for each component of equation 7
-#         self.w_l = nn.Linear(in_channels, out_channels)  # for neighbor aggregation
-#         self.w_0 = nn.Linear(in_channels, out_channels)  # for current hidden state
-#         self.w_1 = nn.Linear(in_channels, out_channels)  # for original input features
-
-#         self.gate = nn.Parameter(torch.tensor(0.5))
-
-#     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, h: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
-#         """
-#         Args:
-#             x: Original input features of the node (x_v), shape [N_dst, in_channels]
-#             edge_index: Edge index for this relation, shape [2, num_edges]
-#             h: Current hidden representation of the node (h_v), shape [N_dst, in_channels]
-#             edge_weight: weight considering temporal proximity.
-#         Returns:
-#             Updated node representation after applying the layer, shape [N_dst, out_channels]
-#         """
-
-#         agg = self.propagate(edge_index, x=h, edge_weight = edge_weight)
-
-#         row = edge_index[1] #dst-s
-#         if edge_weight is None:
-#             deg = torch.bincount(row, minlength=agg.size(0)).clamp(min=1).float().unsqueeze(-1)
-#         else:
-#             deg = torch.bincount(row, weights=edge_weight, minlength=agg.size(0)).clamp(min=1e-6).float().unsqueeze(-1)
-
-#         agg = agg/deg
-#         g = torch.sigmoid(self.gate)
-
-#         return self.w_l(agg) + (1 - g) * self.w_0(h) + g * self.w_1(x)
-        
-
-#         #return self.w_l(agg) + self.w_0(h) + self.w_1(x)
-
-#     def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor = None ) -> torch.Tensor:
-#         if edge_weight is None:
-#             return x_j
-#         return x_j * edge_weight.unsqueeze(-1)
-
-
-
-
-
-
-
-
 from typing import Optional
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing
 
 class MetaPathGNNLayer(MessagePassing):
     """
@@ -211,8 +60,6 @@ class MetaPathGNNLayer(MessagePassing):
 
 
 
-
-#version 2, also the one really used!
 class MetaPathGNN(nn.Module):
     """
     This is the network that express the GNN operations over a meta path.
@@ -378,39 +225,6 @@ class MetaPathGNN(nn.Module):
 
 
 
-#Version 1, using SAGEConv:
-class MetaPathGNN_SAGEConv(nn.Module):
-    def __init__(self,
-                 metapath: List[Tuple[str, str, str]],
-                 hidden_channels: int,  #dimension of the hidden state, 
-                 #after each aggregation
-                 out_channels: int #final dimension of the 
-                 #embeddings produced by the GNN
-        ):
-        super().__init__()
-        self.metapath = metapath
-        self.convs = nn.ModuleList()
-
-        for _ in metapath:
-            #for each relation in the metapath we consider 
-            #a SAGEConv layer
-            conv = SAGEConv((-1, -1), hidden_channels)   #----> tune
-            self.convs.append(conv)
-
-        self.out_proj = nn.Linear(hidden_channels, out_channels)
-
-    def forward(self, x_dict, edge_index_dict, edge_type_dict = None):
-        h_dict = x_dict.copy()
-        for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed
-            conv_idx = len(self.metapath) - 1 - i #obtaining the correct index
-            edge_index = edge_index_dict[(src, rel, dst)]
-            h_dst = self.convs[conv_idx]((h_dict[src], h_dict[dst]), edge_index)
-            h_dict[dst] = F.relu(h_dst)
-        start_type = self.metapath[0][0]
-        return self.out_proj(h_dict[start_type])
-
-
-
 class MetaPathSelfAttention(nn.Module):
     """
     This module applies Transformer-based self-attention between the different metapaths.
@@ -459,16 +273,6 @@ class MetaPathSelfAttention(nn.Module):
         if return_attention:
             return out, w
         return out
-
-
-        # attn_out = self.attn_encoder(metapath_embeddings)  # [N, M, D]
-        # pooled = attn_out.mean(dim=1)                      # [N, D]
-        # out = self.output_proj(pooled).squeeze(-1)        # [N]
-        # if return_attention:
-        #     return out, attn_out
-        # return out
-
-
 
 
 
@@ -545,7 +349,3 @@ class XMetaPath2(nn.Module):
         
         return self.regressor(concat) #finally apply regression; just put weighted instead of concat if statistics
      
-
-    
-
-    
