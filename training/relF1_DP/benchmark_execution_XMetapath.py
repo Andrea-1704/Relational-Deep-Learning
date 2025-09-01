@@ -91,27 +91,55 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-# Costruzione di train mask: to be erified:
+import torch
 
 node_type = "drivers"
+
+# 1) Recupera i pkey dei driver nel train split
+train_driver_ids = torch.tensor(
+    train_table["driverId"].unique(), dtype=torch.long
+)  # 'driverId' è nel tuo train_table :contentReference[oaicite:1]{index=1}
+
+# 2) Costruisci una mappa pkey->indice di nodo per 'drivers'
+id_to_idx = None
+
+# (a) Preferibile: se il grafo contiene i pkey in un tensore 'node_id' allineato agli indici 0..num_nodes-1
+if hasattr(data[node_type], "node_id"):
+    pkeys = data[node_type].node_id  # tensor [num_nodes] di pkey (driverId) in ordine di indice
+    # Costruisci mapping pkey -> indice
+    id_to_idx = {int(pk): i for i, pk in enumerate(pkeys.tolist())}
+
+# (b) Fallback: usa l'indice della tabella nel Database/TensorFrame
+if id_to_idx is None:
+    # Prova TensorFrame.index (se hai usato TorchFrame/RelBench standard)
+    try:
+        index_values = db_nuovo.table_dict[node_type].tf.index.tolist()
+    except Exception:
+        # Altrimenti usa l'indice del DataFrame sottostante
+        index_values = db_nuovo.table_dict[node_type].df.index.tolist()
+    id_to_idx = {int(pk): i for i, pk in enumerate(index_values)}
+
+# 3) Mappa i driverId del train agli indici di nodo
+train_node_idx = []
+missing = []
+for pk in train_driver_ids.tolist():
+    if pk in id_to_idx:
+        train_node_idx.append(id_to_idx[pk])
+    else:
+        missing.append(pk)
+
+train_node_idx = torch.tensor(train_node_idx, dtype=torch.long)
+
+# 4) Crea la mask sul tipo di nodo corretto ('drivers')
 train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
+train_mask_full[train_node_idx] = True
 
-with torch.no_grad():
-    for batch in loader_dict["train"]:
-        # Caso PyG recente: gli indici globali dei seed sono in input_id
-        if hasattr(batch[node_type], "input_id"):
-            seeds = batch[node_type].input_id
-        # Alcuni loader espongono un dict
-        elif hasattr(batch, "input_id_dict") and node_type in batch.input_id_dict:
-            seeds = batch.input_id_dict[node_type]
-        else:
-            # Fallback (versioni PyG più vecchie): i primi 'batch_size' di n_id sono i seed
-            bs = getattr(batch[node_type], "batch_size", None)
-            if bs is None:
-                raise RuntimeError("Impossibile dedurre i seed nodes dal batch.")
-            seeds = batch[node_type].n_id[:bs]
-
-        train_mask_full[seeds] = True
+# 5) Sanity checks utili
+assert train_mask_full.dtype == torch.bool
+assert train_mask_full.numel() == data[node_type].num_nodes
+print(f"[Info] Train drivers nella mask: {int(train_mask_full.sum())}/{data[node_type].num_nodes}")
+if missing:
+    print(f"[Warning] {len(missing)} driverId nel train non mappati a nodi: esempi {missing[:5]}")
 
 
 #Learning metapaths:
