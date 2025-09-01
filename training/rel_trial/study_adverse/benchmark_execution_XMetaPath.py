@@ -130,8 +130,8 @@ data_full[target_table].y = target_vector
 data_full[target_table].train_mask = ~torch.isnan(target_vector)
 
 #take y and mask complete for the dataset:
-y_full = data_full[target_column].y.float()
-train_mask_full = data_full[target_column].train_mask
+y_full = data_full[target_table].y.float()
+train_mask_full = data_full[target_table].train_mask
 y_bin_full = y_full
 
 hidden_channels = 128
