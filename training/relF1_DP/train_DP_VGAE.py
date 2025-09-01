@@ -100,7 +100,7 @@ model = train_vgae(
     edge_types=edge_types,
     encoder_out_dim=channels,
     entity_table=task.entity_table,
-    latent_dim=32,
+    latent_dim=16,
     hidden_dim=64,
     epochs=150,
     device=device
@@ -109,7 +109,7 @@ model = train_vgae(
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.0005,
+    lr=0.001,
     weight_decay=0
 )
 
