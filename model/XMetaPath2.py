@@ -129,8 +129,8 @@ class MetaPathGNN(nn.Module):
         def pos_lambda(raw):  # λ > 0
             return F.softplus(raw) + 1e-8
 
-        for i, (src, rel, dst) in enumerate(reversed(self.metapath)): #reversed: follow metapath starting from last path!
-            conv_idx = len(self.metapath) - 1 - i
+        for i, (src, rel, dst) in enumerate(self.metapath): #reversed: follow metapath starting from last path!
+            conv_idx = i
             edge_index = edge_index_dict[(src, rel, dst)]
 
             #Store the list of the nodes that are used in the 
