@@ -48,7 +48,7 @@ GLOBAL_SEED = 5
 MAX_TRIALS = None   # None = prova tutte le combinazioni; oppure un intero (es. 40)
 N_EPOCHS = 80
 EARLY_STOP_PATIENCE = 30
-TUNE_METRIC = "roc_auc"
+TUNE_METRIC = "f1"
 HIGHER_IS_BETTER = True
 TARGET_NODE = "drivers"
 CHECKPOINT_DIR = "checkpoints"
