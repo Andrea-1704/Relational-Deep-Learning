@@ -129,6 +129,16 @@ def train2():
         norm="batch_norm",
     ).to(device)
 
+    loader_dict = loader_dict_fn(
+        batch_size=512, 
+        num_neighbours=256, 
+        data=data_official, 
+        task=task,
+        train_table=train_table, 
+        val_table=val_table, 
+        test_table=test_table
+    )
+
     
     for batch in loader_dict["train"]:
         edge_types=batch.edge_types
@@ -165,15 +175,7 @@ def train2():
         path="best_basic_model.pt"
     )
 
-    loader_dict = loader_dict_fn(
-        batch_size=512, 
-        num_neighbours=256, 
-        data=data_official, 
-        task=task,
-        train_table=train_table, 
-        val_table=val_table, 
-        test_table=test_table
-    )
+    
 
 
 
