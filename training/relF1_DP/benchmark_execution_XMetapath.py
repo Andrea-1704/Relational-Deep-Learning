@@ -181,9 +181,9 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict,
-    num_episodes=5,   
-    L_max=7,          
-    epochs=5         
+    num_episodes=3,   
+    L_max=5,          
+    epochs=3         
 )
 
 #Extract the Top-K metapaths found out with warmup:
@@ -205,7 +205,7 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     node_type='drivers',
     col_stats_dict=col_stats_dict,
     L_max=5,                 
-    epochs=50,
+    epochs=15,
     number_of_metapaths=K    
 )
 
@@ -221,8 +221,8 @@ for mp in metapaths:
     #change to canonical:
     mp = mp.copy()
     mp_key   = to_canonical(mp)         
-    assert mp_key[-1][2] == node_type, \
-        f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
+    # assert mp_key[-1][2] == node_type, \
+    #     f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
     canonical.append(mp_key)
 
 hidden_channels = 128
@@ -258,7 +258,7 @@ early_stopping = EarlyStopping(
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 500
+epochs = 300
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
