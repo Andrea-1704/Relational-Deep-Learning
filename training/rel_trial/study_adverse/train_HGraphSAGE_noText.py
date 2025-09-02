@@ -80,18 +80,15 @@ seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
-db_nuovo = dataset.get_db() #get all tables
-col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
-db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db_nuovo, col_to_stype_dict_nuovo)
-#this is used to get the stype of the columns
+db = dataset.get_db()
+col_to_stype_dict = get_stype_proposal(db)
+db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
-
-data, col_stats_dict = make_pkey_fkey_graph(
+data_official, col_stats_dict_official = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    #text_embedder_cfg=text_embedder_cfg,
     text_embedder_cfg = None,
-    cache_dir=None  # disabled
+    cache_dir=None
 )
 
 
