@@ -12,6 +12,7 @@ Tuner per RelBench rel-trial / study-adverse con HGraphSAGE
 - Griglia prioritaria su optimizer/lr/wd/layers/channels/aggr/sampler/batch_size/loss
 - Log CSV + salvataggio checkpoint
 - **Sampler sempre intero** per non rompere il tuo loader (se riceve "20,10", prende "20")
+- **Valutazione safe**: se lo split non contiene la colonna target (tipicamente `test`), salta le metriche
 
 Esempi:
   python tune_study_adverse_fixed.py --max_trials 20 --preset relbench_paper
@@ -28,7 +29,7 @@ import argparse
 import random
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from typing import List
+from typing import List, Dict, Any
 
 import torch
 import torch.nn as nn
@@ -171,13 +172,35 @@ def build_model(cfg: TrialConfig, data, col_stats_dict, device="cuda"):
     return model
 
 
+def safe_metrics(
+    pred: Dict[str, Any],
+    table,
+    metrics: Dict[str, Any],
+    task
+) -> Dict[str, float]:
+    """Calcola le metriche solo se il target è disponibile nello split."""
+    target_col = getattr(task, "target_col", None)
+    if target_col is None:
+        return {}
+    if hasattr(table, "df") and (target_col in table.df.columns):
+        return evaluate_performance(pred, table, metrics, task=task)
+    # target assente (tipicamente test): restituiamo NaN per le metriche attese
+    out = {}
+    for k in metrics.keys():
+        out[k] = float("nan")
+    return out
+
+
 def evaluate_loop(model, task, train_table, val_table, test_table, loader_dict, device):
     train_pred = test(model, loader_dict["train"], device=device, task=task)
-    train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+    train_metrics = safe_metrics(train_pred, train_table, task.metrics, task)
+
     val_pred = test(model, loader_dict["val"], device=device, task=task)
-    val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+    val_metrics = safe_metrics(val_pred, val_table, task.metrics, task)
+
     test_pred = test(model, loader_dict["test"], device=device, task=task)
-    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+    test_metrics = safe_metrics(test_pred, test_table, task.metrics, task)
+
     return train_metrics, val_metrics, test_metrics
 
 
@@ -201,7 +224,7 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     )
 
     best_val = math.inf
-    best_test = math.inf
+    best_test = float("nan")
     state_dict_val = None
     state_dict_test = None
 
@@ -213,7 +236,7 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
         # ALLINEATO al tuo train: chiamiamo la tua train() una volta per epoca
         _ = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-        # Eval identica
+        # Eval identica (safe su test senza target)
         train_metrics, val_metrics, test_metrics = evaluate_loop(
             model, task, train_table, val_table, test_table, loader_dict, device
         )
@@ -222,23 +245,28 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
         if isinstance(scheduler, CosineAnnealingLR):
             scheduler.step()  # CORRETTO: nessuna metrica qui
         else:
-            scheduler.step(val_metrics[tune_metric])
+            # plateau richiede la metrica
+            val_mae_for_sched = val_metrics.get(tune_metric, float("inf"))
+            scheduler.step(val_mae_for_sched)
 
-        # Best tracking
-        if val_metrics[tune_metric] < best_val:
-            best_val = val_metrics[tune_metric]
+        # Best tracking (val)
+        val_mae = val_metrics.get(tune_metric, float("inf"))
+        if val_mae < best_val:
+            best_val = val_mae
             state_dict_val = copy.deepcopy(model.state_dict())
-        if val_metrics[tune_metric] <= best_val + 1e-9:
+
+        # "Best test" solo se disponibile
+        if tune_metric in test_metrics and not math.isnan(test_metrics[tune_metric]):
             best_test = test_metrics[tune_metric]
             state_dict_test = copy.deepcopy(model.state_dict())
 
         # Early stopping
-        early_stopping(val_metrics[tune_metric], model)
+        early_stopping(val_mae, model)
         if early_stopping.early_stop:
             break
 
         # Early pruning
-        if epoch >= check_epoch and (val_metrics[tune_metric] - best_val) > worse_by_threshold:
+        if epoch >= check_epoch and (val_mae - best_val) > worse_by_threshold:
             break
 
     # Save checkpoints
@@ -284,9 +312,7 @@ def prioritized_grid(preset: str, max_trials: int):
     aggrs = [base.aggr, "max"]
     samplers = [base.sampler, "256", "128", "64"]   # <-- SOLO INTERI
     batches = [base.batch_size, 2048]
-
-    # SmoothL1 + L1 (MSE spesso peggiora su MAE target)
-    losses = ["smoothl1", "l1"]
+    losses = ["smoothl1", "l1"]  # MAE target: SmoothL1 di solito è più stabile
 
     grid = []
     for sd in seeds:
@@ -330,7 +356,7 @@ def main():
         if args.epochs is not None:
             cfg.epochs = int(args.epochs)
         if args.sampler is not None:
-            # Anche qui forziamo int (in stringa) per compatibilità col loader
+            # Forziamo int (in stringa) per compatibilità col loader
             cfg.sampler = str(parse_sampler_to_int(args.sampler))
 
     # Run
