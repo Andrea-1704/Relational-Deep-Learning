@@ -30,6 +30,7 @@ from typing import Any, Dict, List
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
+from torch_frame.config.text_embedder import TextEmbedderConfig
 
 import sys
 import os
@@ -57,6 +58,10 @@ from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
+from torch_frame.config.text_embedder import TextEmbedderConfig
+import torch
+import numpy as np
+
 
 dataset = get_dataset("rel-trial", download=True)
 task = get_task("rel-trial", "study-adverse", download=True)
@@ -75,14 +80,11 @@ seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
-db = dataset.get_db() #get all tables
-col_to_stype_dict = get_stype_proposal(db)
+db_nuovo = dataset.get_db() #get all tables
+col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
 #this is used to get the stype of the columns
 
-#let's use the merge categorical values:
-db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
-# Create the graph
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
@@ -107,21 +109,8 @@ model = Model(
 
 
 
+optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
-# optimizer = torch.optim.Adam(
-#     model.parameters(),
-#     lr=0.0005,
-#     weight_decay=0
-# )
-
-
-
-early_stopping = EarlyStopping(
-    patience=30,
-    delta=0.0,
-    verbose=True,
-    path="best_basic_model.pt"
-)
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
@@ -133,32 +122,9 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-for batch in loader_dict["train"]:
-    edge_types=batch.edge_types
-    break
-
-
-model = train_vgae(
-    model=model,
-    loader_dict=loader_dict,
-    edge_types=edge_types,
-    encoder_out_dim=channels,
-    entity_table=task.entity_table,
-    latent_dim=16,
-    hidden_dim=64,
-    epochs=150,
-    device=device
-)
-
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
-
-
-
-scheduler = CosineAnnealingLR(optimizer, T_max=100)
-
 
 # Training loop
-epochs = 100
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
@@ -177,7 +143,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    scheduler.step(val_metrics[tune_metric])
+    #scheduler.step(val_metrics[tune_metric])
 
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
@@ -195,10 +161,10 @@ for epoch in range(1, epochs + 1):
     current_lr = optimizer.param_groups[0]["lr"]
     print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-    early_stopping(val_metrics[tune_metric], model)
+    # early_stopping(val_metrics[tune_metric], model)
 
-    if early_stopping.early_stop:
-        print(f"Early stopping triggered at epoch {epoch}")
-        break
+    # if early_stopping.early_stop:
+    #     print(f"Early stopping triggered at epoch {epoch}")
+    #     break
 print(f"best validation results: {best_val_metric}")
 print(f"best test results: {best_test_metric}")
