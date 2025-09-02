@@ -84,7 +84,7 @@ db = dataset.get_db()
 col_to_stype_dict = get_stype_proposal(db)
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
-data_official, col_stats_dict_official = make_pkey_fkey_graph(
+data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
     text_embedder_cfg = None,
