@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Fast tuner for RelBench rel-trial / study-adverse with HGraphSAGE (compatibile con il tuo codice).
+Tuner per RelBench rel-trial / study-adverse con HGraphSAGE
+— allineato ai tuoi file locali (niente text embeddings).
 
-- Griglia prioritaria (optimizer, lr, weight_decay, hidden, layers, aggr, dropout, sampler, batch_size)
-- AMP + grad clipping, Cosine LR **corretto** (step() senza metrica)
-- Supporto text embeddings (MiniLM) con autodetect della firma di TextEmbedderConfig
-  oppure fallback categorico (--no-text-embeds)
-- Early stopping + early pruning; log su CSV; salvataggio checkpoint best
+- Costruzione grafo come nel tuo train:
+  merge_text_columns_to_categorical + make_pkey_fkey_graph(..., text_embedder_cfg=None)
+- Usa le tue funzioni: loader_dict_fn, train, test, evaluate_performance
+- Scheduler CosineAnnealingLR CORRETTO (step() senza metrica)
+- Early stopping + early pruning
+- Griglia prioritaria su optimizer/lr/wd/layers/channels/aggr/sampler/batch_size/loss
+- Log CSV + salvataggio checkpoint
 
 Esempi:
   python tune_study_adverse_fixed.py --max_trials 20 --preset relbench_paper
-  python tune_study_adverse_fixed.py --max_trials 12 --preset fast --no-text-embeds
+  python tune_study_adverse_fixed.py --max_trials 12 --preset fast
   python tune_study_adverse_fixed.py --epochs 120 --sampler "15,10"
-
-Richiede nel repo:
-  - model.others.HGraphSAGE.Model  (signature: Model(data, col_stats_dict, num_layers, channels, out_channels, aggr, norm, ...))
-  - data_management.data.loader_dict_fn  (signature: loader_dict_fn(data=..., task=..., ...))
-  - utils.{EarlyStopping} e utils.utils.{evaluate_performance, test, train}
 """
 
 import os
@@ -29,7 +27,7 @@ import argparse
 import random
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from typing import List, Optional
+from typing import List, Union
 
 import torch
 import torch.nn as nn
@@ -41,12 +39,6 @@ from relbench.datasets import get_dataset
 from relbench.tasks import get_task
 from relbench.modeling.graph import make_pkey_fkey_graph
 from relbench.modeling.utils import get_stype_proposal
-
-# Proviamo a importare TextEmbedderConfig; se non c'è, useremo il fallback
-try:
-    from torch_frame.config.text_embedder import TextEmbedderConfig
-except Exception:
-    TextEmbedderConfig = None  # type: ignore
 
 import sys
 sys.path.append(os.path.abspath("."))
@@ -74,23 +66,19 @@ class TrialConfig:
     channels: int = 256
     num_layers: int = 3
     aggr: str = "mean"         # "mean" | "max" | "sum"
-    norm: str = "batch_norm"   # passa alla head MLP
-    dropout: float = 0.5
+    norm: str = "batch_norm"   # come nel tuo HGraphSAGE
     # training
     optimizer: str = "AdamW"   # "Adam" | "AdamW"
     lr: float = 1e-3
     weight_decay: float = 5e-5
-    epochs: int = 50
+    epochs: int = 180
     batch_size: int = 1024
-    sampler: str = "20,10"     # fanout per layer come "a,b"
+    sampler: str = "256"       # "256" | "128" | "20,10" | "15,10"
     # loss / scheduler
     loss: str = "smoothl1"     # "l1" | "smoothl1" | "mse"
     scheduler: str = "cosine"  # "cosine" | "plateau"
     # misc
     grad_clip: float = 1.0
-    amp: bool = True
-    # data
-    use_text_embeds: bool = True  # se False: merge testo->categorico (più veloce, di solito peggiore)
 
 
 def get_loss_fn(cfg: TrialConfig):
@@ -110,47 +98,14 @@ def get_optimizer(cfg: TrialConfig, model: nn.Module):
 def get_scheduler(cfg: TrialConfig, optimizer):
     if cfg.scheduler == "plateau":
         return ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=8, threshold=0.0)
-    # cosine default
+    # cosine default (step() senza metrica)
     return CosineAnnealingLR(optimizer, T_max=cfg.epochs)
 
 
-def parse_sampler(s: str) -> List[int]:
-    return [int(x) for x in s.split(",")]
-
-
-def _make_text_cfg_autodetect() -> Optional[object]:
-    """
-    Prova automaticamente le varianti più comuni della firma di TextEmbedderConfig
-    in TorchFrame. Se tutte falliscono, ritorna None (fallback categorico).
-    """
-    if TextEmbedderConfig is None:
-        return None
-
-    trials = [
-        {"name": "minilm", "pooling": "mean", "max_length": 64},
-        {"model_name": "minilm", "pooling": "mean", "max_length": 64},
-        {"model": "minilm", "pooling": "mean", "max_length": 64},
-        {"encoder_name": "minilm", "pooling": "mean", "max_length": 64},
-        # Alcune versioni accettano l'argomento posizionale
-        "positional",
-        # Ultimo tentativo: senza pooling/max_length
-        {"name": "minilm"},
-        {"model_name": "minilm"},
-        {"model": "minilm"},
-        {"encoder_name": "minilm"},
-    ]
-
-    for t in trials:
-        try:
-            if t == "positional":
-                return TextEmbedderConfig("minilm")  # type: ignore
-            elif isinstance(t, dict):
-                return TextEmbedderConfig(**t)  # type: ignore
-        except TypeError:
-            continue
-        except Exception:
-            continue
-    return None
+def parse_sampler(s: str) -> Union[int, List[int]]:
+    """Accetta "256" oppure "20,10" e restituisce int o lista[int] compatibile col tuo loader."""
+    parts = [int(x) for x in s.split(",")]
+    return parts[0] if len(parts) == 1 else parts
 
 
 def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="study-adverse"):
@@ -162,27 +117,19 @@ def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_nam
     test_table = task.get_table("test")
 
     db = dataset.get_db()
-    col_to_stype = get_stype_proposal(db)
+    col_to_stype_dict = get_stype_proposal(db)
 
-    text_cfg = None
-    db_used = db
-    col_to_stype_used = col_to_stype
-
-    if cfg.use_text_embeds:
-        text_cfg = _make_text_cfg_autodetect()
-        if text_cfg is None:
-            print("[WARN] TextEmbedderConfig non compatibile con questa versione: passo al fallback categorico.")
-            db_used, col_to_stype_used = merge_text_columns_to_categorical(db, col_to_stype)
-    else:
-        db_used, col_to_stype_used = merge_text_columns_to_categorical(db, col_to_stype)
+    # Esattamente come nel tuo train: merge testo -> categorico, nessun text embedder
+    db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
     data, col_stats_dict = make_pkey_fkey_graph(
-        db_used,
-        col_to_stype_dict=col_to_stype_used,
-        text_embedder_cfg=text_cfg,
-        cache_dir=None  # imposta una cartella per cachare gli embed testuali tra i trial
+        db_nuovo,
+        col_to_stype_dict=col_to_stype_dict_nuovo,
+        text_embedder_cfg=None,
+        cache_dir=None
     )
 
+    # Loader identico allo stile del tuo script
     fanouts = parse_sampler(cfg.sampler)
     loader_dict = loader_dict_fn(
         data=data,
@@ -235,11 +182,11 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
 
     higher_is_better = False
     tune_metric = "mae"
-    early_stopping = EarlyStopping(patience=12, delta=0.0, verbose=False,
-                                   higher_is_better=higher_is_better,
-                                   path=str(Path(log_dir) / "tmp-best.pt"))
-
-    scaler = torch.cuda.amp.GradScaler(enabled=cfg.amp)
+    early_stopping = EarlyStopping(
+        patience=12, delta=0.0, verbose=False,
+        higher_is_better=higher_is_better,
+        path=str(Path(log_dir) / "tmp-best.pt")
+    )
 
     best_val = math.inf
     best_test = math.inf
@@ -251,28 +198,17 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     check_epoch = 25
 
     for epoch in range(1, cfg.epochs + 1):
-        model.train()
-        for batch in loader_dict["train"]:
-            optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(enabled=cfg.amp):
-                # train() del tuo progetto può restituire la loss dato un batch singolo
-                loss = train(model, optimizer=None, loader_dict=None, device=device,
-                             task=task, loss_fn=loss_fn, batch=batch, return_loss=True)
-            scaler.scale(loss).backward()
-            if cfg.grad_clip is not None:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
+        # ALLINEATO al tuo train: chiamiamo la tua train() una volta per epoca
+        train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-        # Eval
+        # Eval identica
         train_metrics, val_metrics, test_metrics = evaluate_loop(
             model, task, train_table, val_table, test_table, loader_dict, device
         )
 
         # Scheduler step
         if isinstance(scheduler, CosineAnnealingLR):
-            scheduler.step()  # <-- NIENTE metrica qui
+            scheduler.step()  # CORRETTO: nessuna metrica qui
         else:
             scheduler.step(val_metrics[tune_metric])
 
@@ -296,7 +232,7 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     # Save checkpoints
     exp_name = (
         f"{cfg.optimizer}_lr{cfg.lr}_wd{cfg.weight_decay}_h{cfg.channels}"
-        f"_L{cfg.num_layers}_{cfg.aggr}_do{cfg.dropout}_sam{cfg.sampler}"
+        f"_L{cfg.num_layers}_{cfg.aggr}_sam{cfg.sampler}"
         f"_bs{cfg.batch_size}_loss{cfg.loss}"
     )
     ckpt_dir = Path(log_dir) / "checkpoints"
@@ -310,55 +246,54 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     return {"val_mae": float(best_val), "test_mae": float(best_test), "exp_name": exp_name, **asdict(cfg)}
 
 
-def prioritized_grid(preset: str, max_trials: int) -> List[TrialConfig]:
+def prioritized_grid(preset: str, max_trials: int):
     base = TrialConfig()
     if preset == "relbench_paper":
         base.optimizer = "AdamW"
         base.lr = 1e-3
         base.weight_decay = 5e-5
         base.aggr = "mean"
-        base.epochs = 70
+        base.epochs = 180
+        base.sampler = "20,10"     # più stabile del 256 pieno
     elif preset == "fast":
         base.optimizer = "AdamW"
         base.lr = 8e-4
         base.weight_decay = 1e-5
-        base.epochs = 50
+        base.epochs = 140
+        base.sampler = "128"
 
-    seeds = [42]  # per velocità; eventualmente aggiungi altri seed
+    seeds = [42]  # un seed per velocità
     lrs = [base.lr, 5e-4, 2e-4]
     wds = [base.weight_decay, 1e-5, 0.0]
     chans = [256, 512]
     layers = [3, 2]
     aggrs = [base.aggr, "max"]
-    dropouts = [0.5, 0.3]
-    samplers = ["20,10", "15,10"]
+    samplers = [base.sampler, "256", "15,10"]
     batches = [1024, 2048]
     losses = ["smoothl1", "l1"]
 
-    grid: List[TrialConfig] = []
+    grid = []
     for sd in seeds:
         for lr in lrs:
             for wd in wds:
                 for ch in chans:
                     for L in layers:
                         for ag in aggrs:
-                            for do in dropouts:
-                                for sam in samplers:
-                                    for bs in batches:
-                                        for ls in losses:
-                                            cfg = copy.deepcopy(base)
-                                            cfg.seed = sd
-                                            cfg.lr = lr
-                                            cfg.weight_decay = wd
-                                            cfg.channels = ch
-                                            cfg.num_layers = L
-                                            cfg.aggr = ag
-                                            cfg.dropout = do
-                                            cfg.sampler = sam
-                                            cfg.batch_size = bs
-                                            cfg.loss = ls
-                                            grid.append(cfg)
-    # priorità: batch più grande, aggr="mean", 3 layer
+                            for sam in samplers:
+                                for bs in batches:
+                                    for ls in losses:
+                                        cfg = copy.deepcopy(base)
+                                        cfg.seed = sd
+                                        cfg.lr = lr
+                                        cfg.weight_decay = wd
+                                        cfg.channels = ch
+                                        cfg.num_layers = L
+                                        cfg.aggr = ag
+                                        cfg.sampler = sam
+                                        cfg.batch_size = bs
+                                        cfg.loss = ls
+                                        grid.append(cfg)
+    # Priorità: batch grande, aggr="mean", 3 layer
     grid.sort(key=lambda c: (-c.batch_size, c.aggr != "mean", -c.num_layers, c.lr))
     return grid[:max_trials]
 
@@ -367,17 +302,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_trials", type=int, default=20)
     parser.add_argument("--preset", type=str, default="relbench_paper", choices=["relbench_paper", "fast", "none"])
-    parser.add_argument("--no-text-embeds", action="store_true", help="Disabilita text embeddings (più veloce, di solito peggio).")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--log_dir", type=str, default="tune_logs")
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs per trial.")
-    parser.add_argument("--sampler", type=str, default=None, help='Override fanout string, es. "15,10"')
+    parser.add_argument("--sampler", type=str, default=None, help='Override fanout (es. "256" o "15,10")')
     args = parser.parse_args()
 
     # Build grid
     grid = prioritized_grid(args.preset, args.max_trials)
     for cfg in grid:
-        cfg.use_text_embeds = not args.no_text_embeds
         if args.epochs is not None:
             cfg.epochs = int(args.epochs)
         if args.sampler is not None:
