@@ -173,7 +173,7 @@ canonical = [to_canonical(mp.copy()) for mp in metapaths]
 
 # ------------------------ runner di UNA configurazione ------------------------
 def run_one(cfg):
-    # loader (API IDENTICA)
+    test_table = task.get_table("test", mask_input_cols=False)
     loader_dict = loader_dict_fn(
         batch_size=cfg["batch"],
         num_neighbours=cfg["neighbors"],
@@ -184,7 +184,7 @@ def run_one(cfg):
         test_table=test_table
     )
 
-    # modello (IDENTICO; variano solo i numeri)
+
     model = XMetaPath2(
         data=data,
         col_stats_dict=col_stats_dict,
@@ -206,7 +206,7 @@ def run_one(cfg):
     best_state = None
     best_val = math.inf if not higher_is_better else -math.inf
     history = []
-    test_table = task.get_table("test", mask_input_cols=False)
+    
 
     for epoch in range(1, MAX_EPOCHS + 1):
         train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
