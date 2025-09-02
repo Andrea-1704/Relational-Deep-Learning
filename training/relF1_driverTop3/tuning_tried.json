@@ -1,1388 +1,485 @@
 [
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "none"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "cosine"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "plateau"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "25"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.3"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "plateau"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "plateau"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "10"
-    ],
-    [
-      "scheduler",
-      "plateau"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ],
-  [
-    [
-      "batch_size",
-      "256"
-    ],
-    [
-      "betas",
-      "(0.9, 0.999)"
-    ],
-    [
-      "cosine_Tmax",
-      "10"
-    ],
-    [
-      "dropout_p",
-      "0.0"
-    ],
-    [
-      "hidden_channels",
-      "64"
-    ],
-    [
-      "lr",
-      "0.001"
-    ],
-    [
-      "momentum",
-      "0.8"
-    ],
-    [
-      "num_heads",
-      "4"
-    ],
-    [
-      "num_layers",
-      "2"
-    ],
-    [
-      "num_neighbours",
-      "64"
-    ],
-    [
-      "optimizer",
-      "AdamW"
-    ],
-    [
-      "out_channels",
-      "64"
-    ],
-    [
-      "plateau_factor",
-      "0.5"
-    ],
-    [
-      "plateau_patience",
-      "20"
-    ],
-    [
-      "scheduler",
-      "plateau"
-    ],
-    [
-      "weight_decay",
-      "0.0"
-    ]
-  ]
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 10,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 10,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 20,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 20,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 25,
+    "plateau_patience": 10,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 25,
+    "plateau_patience": 10,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 25,
+    "plateau_patience": 20,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "none",
+    "cosine_Tmax": 25,
+    "plateau_patience": 20,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "cosine",
+    "cosine_Tmax": 10,
+    "plateau_patience": 10,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "cosine",
+    "cosine_Tmax": 10,
+    "plateau_patience": 10,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "cosine",
+    "cosine_Tmax": 10,
+    "plateau_patience": 20,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "cosine",
+    "cosine_Tmax": 10,
+    "plateau_patience": 20,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "plateau",
+    "cosine_Tmax": 10,
+    "plateau_patience": 10,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "plateau",
+    "cosine_Tmax": 10,
+    "plateau_patience": 20,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "plateau",
+    "cosine_Tmax": 25,
+    "plateau_patience": 20,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 64,
+    "scheduler": "plateau",
+    "cosine_Tmax": 25,
+    "plateau_patience": 20,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 128,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 10,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 128,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 10,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 128,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 20,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 128,
+    "scheduler": "none",
+    "cosine_Tmax": 10,
+    "plateau_patience": 20,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 128,
+    "scheduler": "none",
+    "cosine_Tmax": 25,
+    "plateau_patience": 10,
+    "plateau_factor": 0.5
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 128,
+    "scheduler": "none",
+    "cosine_Tmax": 25,
+    "plateau_patience": 10,
+    "plateau_factor": 0.3
+  },
+  {
+    "optimizer": "AdamW",
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "momentum": 0.8,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "hidden_channels": 64,
+    "out_channels": 64,
+    "dropout_p": 0.0,
+    "num_heads": 4,
+    "num_layers": 2,
+    "batch_size": 256,
+    "num_neighbours": 128,
+    "scheduler": "none",
+    "cosine_Tmax": 25,
+    "plateau_patience": 20,
+    "plateau_factor": 0.5
+  }
 ]
