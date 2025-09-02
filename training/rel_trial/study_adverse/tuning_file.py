@@ -80,7 +80,7 @@ class TrialConfig:
     optimizer: str = "AdamW"   # "Adam" | "AdamW"
     lr: float = 1e-3
     weight_decay: float = 5e-5
-    epochs: int = 180
+    epochs: int = 50
     batch_size: int = 1024
     sampler: str = "20,10"     # fanout per layer come "a,b"
     # loss / scheduler
@@ -317,12 +317,12 @@ def prioritized_grid(preset: str, max_trials: int) -> List[TrialConfig]:
         base.lr = 1e-3
         base.weight_decay = 5e-5
         base.aggr = "mean"
-        base.epochs = 180
+        base.epochs = 70
     elif preset == "fast":
         base.optimizer = "AdamW"
         base.lr = 8e-4
         base.weight_decay = 1e-5
-        base.epochs = 140
+        base.epochs = 50
 
     seeds = [42]  # per velocità; eventualmente aggiungi altri seed
     lrs = [base.lr, 5e-4, 2e-4]
