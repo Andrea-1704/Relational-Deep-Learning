@@ -145,7 +145,8 @@ def get_data_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="
     # Build loaders via your project's helper
     fanouts = parse_sampler(cfg.sampler)
     loader_dict, in_channels_dict = loader_dict_fn(
-        db=db,
+        #db=db,
+        task= task,
         train_table=train_table,
         val_table=val_table,
         test_table=test_table,
