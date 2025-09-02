@@ -58,6 +58,27 @@ from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
+from torch_frame.config.text_embedder import TextEmbedderConfig
+import torch
+from sentence_transformers import SentenceTransformer
+import numpy as np
+
+class SBERTTextEmbedding:
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu"):
+        self.model = SentenceTransformer(model_name, device=device)
+        self.device = device
+    def __call__(self, sentences):
+        # ritorna torch.FloatTensor [N, D]
+        arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
+        return torch.from_numpy(np.asarray(arr)).to(self.device)
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+text_embedder_cfg = TextEmbedderConfig(
+    text_embedder=SBERTTextEmbedding(device=device),
+    batch_size=256,
+)
+
+
 
 dataset = get_dataset("rel-trial", download=True)
 task = get_task("rel-trial", "study-adverse", download=True)
@@ -84,7 +105,7 @@ col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    text_embedder_cfg=TextEmbedderConfig(name="glove", trainable=False),
+    text_embedder_cfg=text_embedder_cfg,
     cache_dir=None,
 )
 
