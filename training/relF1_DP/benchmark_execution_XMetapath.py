@@ -177,7 +177,7 @@ warmup_rl_agent(
     node_type='drivers',
     col_stats_dict=col_stats_dict,
     num_episodes=3,   
-    L_max=5,          
+    L_max=4,          
     epochs=3         
 )
 
@@ -199,8 +199,8 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type='drivers',
     col_stats_dict=col_stats_dict,
-    L_max=5,                 
-    epochs=15,
+    L_max=4,                 
+    epochs=10,
     number_of_metapaths=K    
 )
 
