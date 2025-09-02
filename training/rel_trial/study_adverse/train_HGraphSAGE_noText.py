@@ -82,6 +82,7 @@ root_dir = "./data"
 
 db_nuovo = dataset.get_db() #get all tables
 col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
+db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db_nuovo, col_to_stype_dict_nuovo)
 #this is used to get the stype of the columns
 
 
