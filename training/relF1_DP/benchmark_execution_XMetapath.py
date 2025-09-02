@@ -270,8 +270,8 @@ wd = 0
 #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 optimizer = torch.optim.AdamW(
     model.parameters(),
-    lr=0.0005,
-    weight_decay=0
+    lr=lr,
+    weight_decay=wd
 )
 #scheduler = CosineAnnealingLR(optimizer, T_max=25)
 

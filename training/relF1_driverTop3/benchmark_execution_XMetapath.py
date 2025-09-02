@@ -134,8 +134,8 @@ loader_dict = loader_dict_fn(
     val_table=val_table,
     test_table=test_table
 )
-lr=1e-02
-wd=0
+
+
 node_type="drivers"
 
 
@@ -153,8 +153,7 @@ for mp in metapaths:
     canonical.append(mp_key)
 print(f"I metapath canonici sono: {canonical}")
 
-lr=1e-02
-wd=0
+
     
 model = XMetaPath2(
     data=data_official,
@@ -166,17 +165,25 @@ model = XMetaPath2(
     final_out_channels=1,
 ).to(device)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-
-scheduler = CosineAnnealingLR(optimizer, T_max=25)
-
-early_stopping = EarlyStopping(
-    patience=60,
-    delta=0.0,
-    verbose=True,
-    higher_is_better = True,
-    path="best_basic_model.pt"
+lr=0.0005
+wd = 0
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=lr,
+    weight_decay=wd
 )
+
+# optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+
+#scheduler = CosineAnnealingLR(optimizer, T_max=25)
+
+# early_stopping = EarlyStopping(
+#     patience=60,
+#     delta=0.0,
+#     verbose=True,
+#     higher_is_better = True,
+#     path="best_basic_model.pt"
+# )
 
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
