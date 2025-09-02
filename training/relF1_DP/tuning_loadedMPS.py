@@ -206,6 +206,7 @@ def run_one(cfg):
     best_state = None
     best_val = math.inf if not higher_is_better else -math.inf
     history = []
+    test_table = task.get_table("test", mask_input_cols=False)
 
     for epoch in range(1, MAX_EPOCHS + 1):
         train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
@@ -220,6 +221,7 @@ def run_one(cfg):
 
         # === stessa chiamata sul test, ma protetta (evita KeyError se 'position' manca) ===
         try:
+            
             test_m = evaluate_performance(test_pred, test_table, task.metrics, task=task)
             test_val = float(test_m[tune_metric])
         except KeyError:
