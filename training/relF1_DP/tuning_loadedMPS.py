@@ -73,6 +73,7 @@ graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
 train_df = train_table.df
+print(f"train_df: {train_df}")
 driver_labels = train_df["qualifying"].to_numpy()
 driver_ids    = train_df["driverId"].to_numpy()
 
