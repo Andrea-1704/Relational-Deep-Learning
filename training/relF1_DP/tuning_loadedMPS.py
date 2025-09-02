@@ -79,7 +79,7 @@ graph_driver_ids = db_cat.table_dict["drivers"].df["driverId"].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
 train_df = train_table.df
-driver_labels = train_df["position"].to_numpy()
+driver_labels = train_df[task.target_col].to_numpy()
 driver_ids    = train_df["driverId"].to_numpy()
 
 target_vector = torch.full((len(graph_driver_ids),), float("nan"))
