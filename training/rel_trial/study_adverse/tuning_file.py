@@ -152,7 +152,7 @@ def get_data_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="
         test_table=test_table,
         batch_size=cfg.batch_size,
         num_neighbours=fanouts,
-        device=device,
+        #device=device,
     )
     return task, train_table, val_table, test_table, loader_dict, in_channels_dict
 
