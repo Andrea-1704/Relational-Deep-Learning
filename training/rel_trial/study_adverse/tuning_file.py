@@ -2,20 +2,21 @@
 # -*- coding: utf-8 -*-
 """
 Tuner per RelBench rel-trial / study-adverse con HGraphSAGE
-— allineato ai tuoi file locali (niente text embeddings).
+— allineato ai tuoi file locali (nessun text embedding) e compatibile col tuo loader.
 
 - Costruzione grafo come nel tuo train:
   merge_text_columns_to_categorical + make_pkey_fkey_graph(..., text_embedder_cfg=None)
 - Usa le tue funzioni: loader_dict_fn, train, test, evaluate_performance
-- Scheduler CosineAnnealingLR CORRETTO (step() senza metrica)
+- Scheduler CosineAnnealingLR **corretto** (step() senza metrica)
 - Early stopping + early pruning
 - Griglia prioritaria su optimizer/lr/wd/layers/channels/aggr/sampler/batch_size/loss
 - Log CSV + salvataggio checkpoint
+- **Sampler sempre intero** per non rompere il tuo loader (se riceve "20,10", prende "20")
 
 Esempi:
   python tune_study_adverse_fixed.py --max_trials 20 --preset relbench_paper
   python tune_study_adverse_fixed.py --max_trials 12 --preset fast
-  python tune_study_adverse_fixed.py --epochs 120 --sampler "15,10"
+  python tune_study_adverse_fixed.py --epochs 120 --sampler "128"
 """
 
 import os
@@ -27,7 +28,7 @@ import argparse
 import random
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from typing import List, Union
+from typing import List
 
 import torch
 import torch.nn as nn
@@ -73,12 +74,10 @@ class TrialConfig:
     weight_decay: float = 5e-5
     epochs: int = 180
     batch_size: int = 1024
-    sampler: str = "256"       # "256" | "128" | "20,10" | "15,10"
+    sampler: str = "256"       # <-- SEMPRE INTERO (stringa), es. "256", "128", "64"
     # loss / scheduler
     loss: str = "smoothl1"     # "l1" | "smoothl1" | "mse"
     scheduler: str = "cosine"  # "cosine" | "plateau"
-    # misc
-    grad_clip: float = 1.0
 
 
 def get_loss_fn(cfg: TrialConfig):
@@ -102,10 +101,23 @@ def get_scheduler(cfg: TrialConfig, optimizer):
     return CosineAnnealingLR(optimizer, T_max=cfg.epochs)
 
 
-def parse_sampler(s: str) -> Union[int, List[int]]:
-    """Accetta "256" oppure "20,10" e restituisce int o lista[int] compatibile col tuo loader."""
-    parts = [int(x) for x in s.split(",")]
-    return parts[0] if len(parts) == 1 else parts
+def parse_sampler_to_int(s: str) -> int:
+    """
+    Il tuo loader duplica *così com'è* num_neighbours per layer.
+    Per evitare liste-di-liste, forziamo un **intero**.
+    Se arriva una stringa 'a,b', prendiamo solo 'a'.
+    """
+    try:
+        if "," in s:
+            first = s.split(",")[0].strip()
+            val = int(first)
+            print(f"[WARN] sampler '{s}' non supportato dal loader; uso {val} (replicato per layer).")
+            return val
+        return int(s.strip())
+    except Exception:
+        # fallback sicuro
+        print(f"[WARN] sampler '{s}' non parsabile; uso 256.")
+        return 256
 
 
 def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="study-adverse"):
@@ -130,7 +142,7 @@ def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_nam
     )
 
     # Loader identico allo stile del tuo script
-    fanouts = parse_sampler(cfg.sampler)
+    fanout_int = parse_sampler_to_int(cfg.sampler)  # <-- QUI forziamo **int**
     loader_dict = loader_dict_fn(
         data=data,
         task=task,
@@ -138,7 +150,7 @@ def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_nam
         val_table=val_table,
         test_table=test_table,
         batch_size=cfg.batch_size,
-        num_neighbours=fanouts,
+        num_neighbours=fanout_int,  # <-- passa INT, il tuo loader farà [int, int]
     )
     return task, train_table, val_table, test_table, loader_dict, data, col_stats_dict
 
@@ -199,7 +211,7 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
 
     for epoch in range(1, cfg.epochs + 1):
         # ALLINEATO al tuo train: chiamiamo la tua train() una volta per epoca
-        train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+        _ = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
         # Eval identica
         train_metrics, val_metrics, test_metrics = evaluate_loop(
@@ -254,13 +266,15 @@ def prioritized_grid(preset: str, max_trials: int):
         base.weight_decay = 5e-5
         base.aggr = "mean"
         base.epochs = 180
-        base.sampler = "20,10"     # più stabile del 256 pieno
+        base.sampler = "128"   # più stabile del 256 pieno e rapido
+        base.batch_size = 1024
     elif preset == "fast":
         base.optimizer = "AdamW"
         base.lr = 8e-4
         base.weight_decay = 1e-5
         base.epochs = 140
-        base.sampler = "128"
+        base.sampler = "64"
+        base.batch_size = 2048
 
     seeds = [42]  # un seed per velocità
     lrs = [base.lr, 5e-4, 2e-4]
@@ -268,8 +282,10 @@ def prioritized_grid(preset: str, max_trials: int):
     chans = [256, 512]
     layers = [3, 2]
     aggrs = [base.aggr, "max"]
-    samplers = [base.sampler, "256", "15,10"]
-    batches = [1024, 2048]
+    samplers = [base.sampler, "256", "128", "64"]   # <-- SOLO INTERI
+    batches = [base.batch_size, 2048]
+
+    # SmoothL1 + L1 (MSE spesso peggiora su MAE target)
     losses = ["smoothl1", "l1"]
 
     grid = []
@@ -305,7 +321,7 @@ def main():
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--log_dir", type=str, default="tune_logs")
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs per trial.")
-    parser.add_argument("--sampler", type=str, default=None, help='Override fanout (es. "256" o "15,10")')
+    parser.add_argument("--sampler", type=str, default=None, help='Override fanout (es. "128" o "256")')
     args = parser.parse_args()
 
     # Build grid
@@ -314,7 +330,8 @@ def main():
         if args.epochs is not None:
             cfg.epochs = int(args.epochs)
         if args.sampler is not None:
-            cfg.sampler = args.sampler
+            # Anche qui forziamo int (in stringa) per compatibilità col loader
+            cfg.sampler = str(parse_sampler_to_int(args.sampler))
 
     # Run
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
