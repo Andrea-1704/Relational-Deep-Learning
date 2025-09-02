@@ -312,8 +312,9 @@ class XMetaPath2(nn.Module):
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
+             #nt: data.tf_dict[nt].col_names_dict
             node_to_col_names_dict={
-                node_type: data[node_type].tf.col_names_dict
+                node_type: data.tf_dict[node_type].col_names_dict
                 for node_type in data.node_types
             },
             node_to_col_stats=col_stats_dict
