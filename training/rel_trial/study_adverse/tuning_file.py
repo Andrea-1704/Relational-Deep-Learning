@@ -2,17 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 Tuner per RelBench rel-trial / study-adverse con HGraphSAGE
-— allineato ai tuoi file locali (nessun text embedding) e compatibile col tuo loader.
+— allineato ai tuoi file locali e compatibile col tuo loader (nessun text embedding).
 
 - Costruzione grafo come nel tuo train:
   merge_text_columns_to_categorical + make_pkey_fkey_graph(..., text_embedder_cfg=None)
 - Usa le tue funzioni: loader_dict_fn, train, test, evaluate_performance
-- Scheduler CosineAnnealingLR **corretto** (step() senza metrica)
+- Scheduler CosineAnnealingLR **corretto** (step() senza metrica); ReduceLROnPlateau usa una metrica di riferimento
 - Early stopping + early pruning
 - Griglia prioritaria su optimizer/lr/wd/layers/channels/aggr/sampler/batch_size/loss
 - Log CSV + salvataggio checkpoint
-- **Sampler sempre intero** per non rompere il tuo loader (se riceve "20,10", prende "20")
-- **Valutazione safe**: se lo split non contiene la colonna target (tipicamente `test`), salta le metriche
+- **Sampler sempre intero** per non rompere il tuo loader (se riceve "20,10", prende il primo numero)
+- **Valutazione safe**: se lo split non ha la colonna target (es. test), le metriche sono NaN senza crash
+- **Compatibile** con task.metrics sia come dict sia come list
 
 Esempi:
   python tune_study_adverse_fixed.py --max_trials 20 --preset relbench_paper
@@ -75,7 +76,7 @@ class TrialConfig:
     weight_decay: float = 5e-5
     epochs: int = 180
     batch_size: int = 1024
-    sampler: str = "256"       # <-- SEMPRE INTERO (stringa), es. "256", "128", "64"
+    sampler: str = "128"       # <-- SEMPRE INTERO (stringa), es. "256", "128", "64"
     # loss / scheduler
     loss: str = "smoothl1"     # "l1" | "smoothl1" | "mse"
     scheduler: str = "cosine"  # "cosine" | "plateau"
@@ -116,11 +117,62 @@ def parse_sampler_to_int(s: str) -> int:
             return val
         return int(s.strip())
     except Exception:
-        # fallback sicuro
         print(f"[WARN] sampler '{s}' non parsabile; uso 256.")
         return 256
 
 
+# ------------------------- Metrics helpers -------------------------
+def _metric_names(metrics) -> List[str]:
+    # Supporta sia dict che list/tuple o stringhe/callable/classi Metric
+    if isinstance(metrics, dict):
+        return list(metrics.keys())
+    names: List[str] = []
+    if isinstance(metrics, (list, tuple)):
+        for m in metrics:
+            if isinstance(m, str):
+                names.append(m)
+            elif hasattr(m, "name") and isinstance(getattr(m, "name"), str):
+                names.append(m.name)
+            elif hasattr(m, "__name__"):
+                names.append(m.__name__)
+            else:
+                names.append("metric")
+    if not names:
+        names = ["metric"]
+    return names
+
+
+def safe_metrics(pred: Dict[str, Any], table, metrics, task) -> Dict[str, float]:
+    """Calcola le metriche solo se il target è disponibile nello split."""
+    target_col = getattr(task, "target_col", None)
+    has_target = (
+        (target_col is not None)
+        and hasattr(table, "df")
+        and (target_col in table.df.columns)
+    )
+    if has_target:
+        return evaluate_performance(pred, table, metrics, task=task)
+    # target assente (tipicamente test): restituisci dizionario con NaN
+    names = _metric_names(metrics)
+    return {name: float("nan") for name in names}
+
+
+def pick_ref_value(metrics_dict: Dict[str, float]) -> float:
+    """Restituisce la metrica di riferimento per scheduler/early stop (preferisce MAE)."""
+    if not isinstance(metrics_dict, dict) or not metrics_dict:
+        return float("inf")
+    if "mae" in metrics_dict and isinstance(metrics_dict["mae"], (int, float)):
+        return metrics_dict["mae"]
+    if "MAE" in metrics_dict and isinstance(metrics_dict["MAE"], (int, float)):
+        return metrics_dict["MAE"]
+    # prima metrica numerica disponibile
+    for v in metrics_dict.values():
+        if isinstance(v, (int, float)):
+            return v
+    return float("inf")
+
+
+# ------------------------- Pipeline -------------------------
 def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="study-adverse"):
     dataset = get_dataset(dataset_name, download=True)
     task = get_task(dataset_name, task_name, download=True)
@@ -172,25 +224,6 @@ def build_model(cfg: TrialConfig, data, col_stats_dict, device="cuda"):
     return model
 
 
-def safe_metrics(
-    pred: Dict[str, Any],
-    table,
-    metrics: Dict[str, Any],
-    task
-) -> Dict[str, float]:
-    """Calcola le metriche solo se il target è disponibile nello split."""
-    target_col = getattr(task, "target_col", None)
-    if target_col is None:
-        return {}
-    if hasattr(table, "df") and (target_col in table.df.columns):
-        return evaluate_performance(pred, table, metrics, task=task)
-    # target assente (tipicamente test): restituiamo NaN per le metriche attese
-    out = {}
-    for k in metrics.keys():
-        out[k] = float("nan")
-    return out
-
-
 def evaluate_loop(model, task, train_table, val_table, test_table, loader_dict, device):
     train_pred = test(model, loader_dict["train"], device=device, task=task)
     train_metrics = safe_metrics(train_pred, train_table, task.metrics, task)
@@ -216,7 +249,6 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     scheduler = get_scheduler(cfg, optimizer)
 
     higher_is_better = False
-    tune_metric = "mae"
     early_stopping = EarlyStopping(
         patience=12, delta=0.0, verbose=False,
         higher_is_better=higher_is_better,
@@ -236,37 +268,36 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
         # ALLINEATO al tuo train: chiamiamo la tua train() una volta per epoca
         _ = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-        # Eval identica (safe su test senza target)
+        # Eval (safe su test senza target)
         train_metrics, val_metrics, test_metrics = evaluate_loop(
             model, task, train_table, val_table, test_table, loader_dict, device
         )
+
+        # ---- Scheduler + tracking robusti anche se 'mae' non c'è ----
+        val_ref = pick_ref_value(val_metrics)
 
         # Scheduler step
         if isinstance(scheduler, CosineAnnealingLR):
             scheduler.step()  # CORRETTO: nessuna metrica qui
         else:
-            # plateau richiede la metrica
-            val_mae_for_sched = val_metrics.get(tune_metric, float("inf"))
-            scheduler.step(val_mae_for_sched)
+            scheduler.step(val_ref)
 
-        # Best tracking (val)
-        val_mae = val_metrics.get(tune_metric, float("inf"))
-        if val_mae < best_val:
-            best_val = val_mae
+        # Best tracking (usa la metrica di riferimento)
+        if val_ref < best_val:
+            best_val = val_ref
             state_dict_val = copy.deepcopy(model.state_dict())
 
-        # "Best test" solo se disponibile
-        if tune_metric in test_metrics and not math.isnan(test_metrics[tune_metric]):
-            best_test = test_metrics[tune_metric]
+        # Aggiorna "best_test" solo se esiste una metrica numerica su test
+        test_ref = pick_ref_value(test_metrics)
+        if not math.isnan(test_ref) and math.isfinite(test_ref):
+            best_test = test_ref
             state_dict_test = copy.deepcopy(model.state_dict())
 
-        # Early stopping
-        early_stopping(val_mae, model)
+        # Early stopping e pruning
+        early_stopping(val_ref, model)
         if early_stopping.early_stop:
             break
-
-        # Early pruning
-        if epoch >= check_epoch and (val_mae - best_val) > worse_by_threshold:
+        if epoch >= check_epoch and (val_ref - best_val) > worse_by_threshold:
             break
 
     # Save checkpoints
