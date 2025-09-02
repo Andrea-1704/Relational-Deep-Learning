@@ -8,7 +8,11 @@ from relbench.tasks import get_task
 from relbench.modeling.utils import get_stype_proposal
 from relbench.modeling.graph import make_pkey_fkey_graph
 
-# === usa le TUE funzioni e classi, come nel file che mi hai dato ===
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, test, train
 from utils.EarlyStopping import EarlyStopping
