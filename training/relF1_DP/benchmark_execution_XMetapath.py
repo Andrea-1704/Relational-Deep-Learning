@@ -113,141 +113,73 @@ y_bin_full = y_full
 
 print(f"y full : {y_full}")
 
-#way2:
 
-# --- Build data['drivers'].y from the train_table (RelBench keeps labels in task tables) ---
-# import pandas as pd
-# import torch
+# #Learning metapaths:
+# agent = RLAgent(tau=1.0, alpha=0.5)
+# """
+# We build a single agent and perform sequential warmups
+# """
+# agent.best_score_by_path_global.clear() #azzera registro punteggi
 
-# node_type = "drivers"
-
-# def table_df(t):
-#     if hasattr(t, "df"):
-#         return t.df
-#     if hasattr(t, "to_pandas"):
-#         return t.to_pandas()
-#     raise TypeError("Unsupported Table type (no .df / .to_pandas)")
-
-# df_train = table_df(train_table).copy()
-
-# # 1) individua la colonna label in modo robusto:
-# #    - rimuoviamo timestamp e pkey
-# pk_col = node_type    # per rel-f1 driver table
-# time_col = "date"
-# candidates = [c for c in df_train.columns if c not in {pk_col, time_col}]
-# # tieni solo numeric (la label è numerica per 'driver-position' con MAE)
-# num_candidates = [c for c in candidates if pd.api.types.is_numeric_dtype(df_train[c])]
-# if "label" in df_train.columns:
-#     target_col = "label"
-# elif len(num_candidates) == 1:
-#     target_col = num_candidates[0]
-# else:
-#     # euristica: scegli la colonna numerica con varianza maggiore
-#     target_col = df_train[num_candidates].var().sort_values(ascending=False).index[0]
-
-# # 2) mappa pkey (driverId) -> indice di nodo 'drivers'
-# try:
-#     index_values = db_nuovo.table_dict[node_type].tf.index.tolist()
-# except Exception:
-#     index_values = db_nuovo.table_dict[node_type].df.index.tolist()
-# id_to_idx = {int(pk): i for i, pk in enumerate(index_values)}
-
-# # 3) aggrega per driver: media della label nel train
-# agg = (
-#     df_train[[pk_col, target_col]]
-#     .groupby(pk_col, as_index=False)
-#     .mean()
+# warmup_rl_agent(
+#     agent=agent,
+#     data=data,
+#     loader_dict=loader_dict,
+#     task=task,
+#     loss_fn=loss_fn,
+#     tune_metric=tune_metric,
+#     higher_is_better=higher_is_better,
+#     train_mask=train_mask_full,
+#     node_type='drivers',
+#     col_stats_dict=col_stats_dict,
+#     num_episodes=3,   
+#     L_max=4,          
+#     epochs=3         
 # )
 
-# y = torch.full((data[node_type].num_nodes,), float("nan"), dtype=torch.float32)
-# for pk, val in zip(agg[pk_col].tolist(), agg[target_col].tolist()):
-#     if int(pk) in id_to_idx:
-#         y[id_to_idx[int(pk)]] = float(val)
+# #Extract the Top-K metapaths found out with warmup:
+# K = 3
+# global_best_map = agent.best_score_by_path_global
 
-# # 4) opzionale: riempi i NaN con la media globale del train (o lasciali NaN se l’RL li ignora via mask)
-# global_mean = torch.tensor(pd.to_numeric(agg[target_col], errors="coerce").mean(), dtype=torch.float32)
-# y = torch.where(torch.isnan(y), global_mean, y)
+# agent.tau = 0.3   # meno esplorazione
+# agent.alpha = 0.2 # update più conservativo
 
-# # 5) attacca al grafo
-# data[node_type].y = y
-# print(f"[Info] y attached to data['{node_type}']: {int(torch.isfinite(y).sum())}/{y.numel()} finite labels")
-
-
-# # --- Build train_mask_full dai driverId del train split ---
-# train_driver_ids = torch.as_tensor(
-#     table_df(train_table)["driverId"].unique(), dtype=torch.long
+# metapaths, metapath_count = final_metapath_search_with_rl(
+#     agent=agent,
+#     data=data,
+#     loader_dict=loader_dict,
+#     task=task,
+#     loss_fn=loss_fn,
+#     tune_metric=tune_metric,
+#     higher_is_better=higher_is_better,
+#     train_mask=train_mask_full,
+#     node_type='drivers',
+#     col_stats_dict=col_stats_dict,
+#     L_max=4,                 
+#     epochs=10,
+#     number_of_metapaths=K    
 # )
 
-# mapped = [id_to_idx[pk] for pk in train_driver_ids.tolist() if int(pk) in id_to_idx]
-# train_node_idx = torch.tensor(mapped, dtype=torch.long)
-
-# train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
-# train_mask_full[train_node_idx] = True
-
-# print(f"[Info] Train mask: {int(train_mask_full.sum())}/{data[node_type].num_nodes} drivers nel train")
 
 
-#Learning metapaths:
-agent = RLAgent(tau=1.0, alpha=0.5)
-"""
-We build a single agent and perform sequential warmups
-"""
-agent.best_score_by_path_global.clear() #azzera registro punteggi
+# print(f"The final metapath are {metapaths}")
 
-warmup_rl_agent(
-    agent=agent,
-    data=data,
-    loader_dict=loader_dict,
-    task=task,
-    loss_fn=loss_fn,
-    tune_metric=tune_metric,
-    higher_is_better=higher_is_better,
-    train_mask=train_mask_full,
-    node_type='drivers',
-    col_stats_dict=col_stats_dict,
-    num_episodes=3,   
-    L_max=4,          
-    epochs=3         
-)
-
-#Extract the Top-K metapaths found out with warmup:
-K = 3
-global_best_map = agent.best_score_by_path_global
-
-agent.tau = 0.3   # meno esplorazione
-agent.alpha = 0.2 # update più conservativo
-
-metapaths, metapath_count = final_metapath_search_with_rl(
-    agent=agent,
-    data=data,
-    loader_dict=loader_dict,
-    task=task,
-    loss_fn=loss_fn,
-    tune_metric=tune_metric,
-    higher_is_better=higher_is_better,
-    train_mask=train_mask_full,
-    node_type='drivers',
-    col_stats_dict=col_stats_dict,
-    L_max=4,                 
-    epochs=10,
-    number_of_metapaths=K    
-)
-
-
-
-print(f"The final metapath are {metapaths}")
-
-
-
+#from collections import defaultdict
+metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
+#metapath_count = defaultdict(int)
 
 canonical = []
 for mp in metapaths:
     #change to canonical:
     mp = mp.copy()
     mp_key   = to_canonical(mp)         
-    # assert mp_key[-1][2] == node_type, \
-    #     f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
+    if mp_key[-1][2] != node_type:
+        print(f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'")
     canonical.append(mp_key)
+print(f"I metapath canonici sono: {canonical}")
+
+
+
 
 hidden_channels = 128
 out_channels = 128
