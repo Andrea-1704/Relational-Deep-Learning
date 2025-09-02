@@ -1,5 +1,14 @@
-import os, copy, math, time, json
+"""
+Tuning leggero per XMetaPath2 mantenendo identici:
+- costruzione dati/label
+- funzioni train/test/evaluate_performance
+- RL warmup + ricerca finale dei metapath
+Si variano solo pochi iperparametri chiave: lr, weight_decay, batch_size, num_neighbours, hidden_channels.
+"""
+
+import os, math, copy, time, json, sys
 import torch
+import torch.nn as nn
 from torch.nn import L1Loss
 from torch_geometric.seed import seed_everything
 
@@ -8,53 +17,39 @@ from relbench.tasks import get_task
 from relbench.modeling.utils import get_stype_proposal
 from relbench.modeling.graph import make_pkey_fkey_graph
 
-import sys
-import os
+# === import come nel tuo file ===
 sys.path.append(os.path.abspath("."))
-
-
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.utils import evaluate_performance, test, train
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
+from utils.utils import evaluate_performance, test, train
+from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
-# --------------------------------------------------------------------------------------
-# Config generali
-# --------------------------------------------------------------------------------------
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# ------------------------ setup generale ------------------------
 seed_everything(42)
-torch.backends.cudnn.benchmark = True
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+tune_metric = "mae"           # MAE: minore è meglio
+higher_is_better = False
+loss_fn = L1Loss()
 
-DATASET = "rel-f1"
-TASKSET = "driver-position"   # stesso task del tuo file
-TUNE_METRIC = "mae"           # MAE: più basso è meglio
-HIGHER_IS_BETTER = False
+# griglia piccola e mirata (6 run)
+GRID = [
+    {"lr": 1e-3,  "wd": 0.0,  "batch": 512, "neighbors": 128, "hidden": 128},
+    {"lr": 5e-4,  "wd": 0.0,  "batch": 512, "neighbors": 128, "hidden": 128},
+    {"lr": 1e-3,  "wd": 1e-4, "batch": 512, "neighbors": 128, "hidden": 128},
+    {"lr": 1e-3,  "wd": 0.0,  "batch": 256, "neighbors": 128, "hidden": 128},
+    {"lr": 1e-3,  "wd": 0.0,  "batch": 512, "neighbors": 256, "hidden": 128},
+    {"lr": 1e-3,  "wd": 0.0,  "batch": 512, "neighbors": 128, "hidden": 64},
+]
 
-MAX_EPOCHS = 12               # poche epoche per confronto rapido
+MAX_EPOCHS = 15
 PATIENCE = 3
 MIN_DELTA = 0.0
 
-# Griglia RISTRETTA ma sensata (8 run)
-GRID = [
-    # forti “default” stile RelBench (veloci + stabili su node regression)
-    {"lr": 1e-3,  "wd": 0.0,   "batch": 512, "neighbors": 128, "hidden": 128},
-    {"lr": 5e-4,  "wd": 0.0,   "batch": 512, "neighbors": 128, "hidden": 128},
-    {"lr": 1e-3,  "wd": 1e-4,  "batch": 512, "neighbors": 128, "hidden": 128},
-    {"lr": 5e-4,  "wd": 1e-4,  "batch": 512, "neighbors": 128, "hidden": 128},
-
-    # piccoli cambi mirati
-    {"lr": 1e-3,  "wd": 0.0,   "batch": 512, "neighbors": 256, "hidden": 128},
-    {"lr": 5e-4,  "wd": 0.0,   "batch": 512, "neighbors": 256, "hidden": 128},
-    {"lr": 1e-3,  "wd": 0.0,   "batch": 256, "neighbors": 128, "hidden": 128},
-    {"lr": 1e-3,  "wd": 0.0,   "batch": 512, "neighbors": 128, "hidden": 64},
-]
-
-# --------------------------------------------------------------------------------------
-# Setup dati e grafo (uguale alla tua pipeline)
-# --------------------------------------------------------------------------------------
+# ------------------------ dati + grafo (identico al tuo file) ------------------------
 print("Loading dataset/task...")
-dataset = get_dataset(DATASET, download=True)
-task = get_task(DATASET, TASKSET, download=True)
+dataset = get_dataset("rel-f1", download=True)
+task = get_task("rel-f1", "driver-position", download=True)
 
 train_table = task.get_table("train")
 val_table   = task.get_table("val")
@@ -62,24 +57,23 @@ test_table  = task.get_table("test")
 
 db = dataset.get_db()
 col_to_stype_dict = get_stype_proposal(db)
-# come nel tuo script: testo a categorico per velocità (puoi rimettere un text_embedder più avanti)
-db_cat, col_to_stype_cat = merge_text_columns_to_categorical(db, col_to_stype_dict)
+db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
 print("Building PK/FK graph...")
 data, col_stats_dict = make_pkey_fkey_graph(
-    db_cat,
-    col_to_stype_dict=col_to_stype_cat,
-    text_embedder_cfg=None,   # veloce: nessun embed testuale
+    db_nuovo,
+    col_to_stype_dict=col_to_stype_dict_nuovo,
+    text_embedder_cfg=None,
     cache_dir=None,
 )
 node_type = "drivers"
 
-# === target come nel tuo file ===
-graph_driver_ids = db_cat.table_dict["drivers"].df["driverId"].to_numpy()
+# === identica costruzione delle label/maschera dal tuo file ===
+graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
 train_df = train_table.df
-driver_labels = train_df[task.target_col].to_numpy()
+driver_labels = train_df["position"].to_numpy()
 driver_ids    = train_df["driverId"].to_numpy()
 
 target_vector = torch.full((len(graph_driver_ids),), float("nan"))
@@ -90,50 +84,86 @@ for i, driver_id in enumerate(driver_ids):
 data['drivers'].y = target_vector
 data['drivers'].train_mask = ~torch.isnan(target_vector)
 y_full = data['drivers'].y.float()
+train_mask_full = data['drivers'].train_mask
+print(f"[info] y full has {int(torch.isfinite(y_full).sum())}/{y_full.numel()} finite labels")
 
-# --------------------------------------------------------------------------------------
-# Metapath (come nel tuo file) + canonicalizzazione
-# --------------------------------------------------------------------------------------
+# ------------------------ util canonico (identico) ------------------------
 def flip_rel(rel_name: str) -> str:
     return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
 
-def to_canonical(mp_outward, expect="drivers"):
+def to_canonical(mp_outward):
     mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
-    assert mp[-1][2] == expect, f"Expected {expect}, got {mp[-1][2]}"
+    assert mp[-1][2] == node_type, f"Expected {node_type}, got {mp[-1][2]}"
     return tuple(mp)
 
-metapaths = [
-    [('drivers', 'rev_f2p_driverId', 'standings'),
-        ('standings', 'f2p_raceId', 'races')],
-    [('drivers', 'rev_f2p_driverId', 'qualifying'),
-        ('qualifying', 'f2p_constructorId', 'constructors'),
-        ('constructors', 'rev_f2p_constructorId', 'constructor_results'),
-        ('constructor_results', 'f2p_raceId', 'races')],
-    [('drivers', 'rev_f2p_driverId', 'results'),
-        ('results', 'f2p_constructorId', 'constructors'),
-        ('constructors', 'rev_f2p_constructorId', 'constructor_standings'),
-        ('constructor_standings', 'f2p_raceId', 'races')],
-]
-canonical = [to_canonical(mp.copy(), expect=node_type) for mp in metapaths]
+# ------------------------ RL: warmup + ricerca finale (UNA VOLTA) ------------------------
+print("\n[RL] Learning metapaths once (will be reused across runs)...")
+base_loader_for_rl = loader_dict_fn(
+    batch_size=512,              # valori “di servizio” per la fase RL
+    num_neighbours=256,
+    data=data,
+    task=task,
+    train_table=train_table,
+    val_table=val_table,
+    test_table=test_table
+)
 
-# --------------------------------------------------------------------------------------
-# Runner di una singola configurazione
-# --------------------------------------------------------------------------------------
+agent = RLAgent(tau=1.0, alpha=0.5)
+agent.best_score_by_path_global.clear()
+
+warmup_rl_agent(
+    agent=agent,
+    data=data,
+    loader_dict=base_loader_for_rl,
+    task=task,
+    loss_fn=loss_fn,
+    tune_metric=tune_metric,
+    higher_is_better=higher_is_better,
+    train_mask=train_mask_full,
+    node_type='drivers',
+    col_stats_dict=col_stats_dict,
+    num_episodes=3,
+    L_max=4,
+    epochs=3
+)
+
+K = 3
+agent.tau = 0.3
+agent.alpha = 0.2
+
+metapaths, metapath_count = final_metapath_search_with_rl(
+    agent=agent,
+    data=data,
+    loader_dict=base_loader_for_rl,
+    task=task,
+    loss_fn=loss_fn,
+    tune_metric=tune_metric,
+    higher_is_better=higher_is_better,
+    train_mask=train_mask_full,
+    node_type='drivers',
+    col_stats_dict=col_stats_dict,
+    L_max=4,
+    epochs=10,
+    number_of_metapaths=K
+)
+
+print(f"[RL] Final metapaths: {metapaths}")
+canonical = [to_canonical(mp.copy()) for mp in metapaths]
+
+# ------------------------ runner di UNA configurazione ------------------------
 def run_one(cfg):
-    seed_everything(42)  # per confronti equi
-
-    # loader (usa le tue API)
-    loaders = loader_dict_fn(
+    # loader con i parametri correnti (API identica al tuo file)
+    loader_dict = loader_dict_fn(
         batch_size=cfg["batch"],
         num_neighbours=cfg["neighbors"],
         data=data,
         task=task,
         train_table=train_table,
         val_table=val_table,
-        test_table=test_table,
+        test_table=test_table
     )
 
-    # modello
+    # modello identico (variamo solo hidden/out_channels)
     model = XMetaPath2(
         data=data,
         col_stats_dict=col_stats_dict,
@@ -141,106 +171,102 @@ def run_one(cfg):
         hidden_channels=cfg["hidden"],
         out_channels=cfg["hidden"],
         final_out_channels=1,
-    ).to(DEVICE)
+    ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["wd"])
-    loss_fn = L1Loss()
-
     early = EarlyStopping(
         patience=PATIENCE,
         delta=MIN_DELTA,
         verbose=False,
-        higher_is_better=HIGHER_IS_BETTER,
-        path=None,   # non salviamo su disco ad ogni run, teniamo in RAM lo state_dict
+        higher_is_better=higher_is_better,
+        path=None,
     )
 
     best_state = None
-    best_val = math.inf if not HIGHER_IS_BETTER else -math.inf
-    hist = []
+    best_val = math.inf if not higher_is_better else -math.inf
+    history = []
 
     for epoch in range(1, MAX_EPOCHS + 1):
-        train_loss = train(model, optimizer, loader_dict=loaders, device=DEVICE, task=task, loss_fn=loss_fn)
+        train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-        # predizioni
-        train_pred = test(model, loaders["train"], device=DEVICE, task=task)
-        val_pred   = test(model, loaders["val"],   device=DEVICE, task=task)
-        test_pred  = test(model, loaders["test"],  device=DEVICE, task=task)
+        train_pred = test(model, loader_dict["train"], device=device, task=task)
+        val_pred   = test(model, loader_dict["val"],   device=device, task=task)
+        test_pred  = test(model, loader_dict["test"],  device=device, task=task)
 
-        # metriche
         train_m = evaluate_performance(train_pred, train_table, task.metrics, task=task)
         val_m   = evaluate_performance(val_pred,   val_table,   task.metrics, task=task)
         test_m  = evaluate_performance(test_pred,  test_table,  task.metrics, task=task)
 
-        val_score = val_m[TUNE_METRIC]
-        hist.append({"epoch": epoch, "train_mae": train_m[TUNE_METRIC], "val_mae": val_score, "test_mae": test_m[TUNE_METRIC]})
-
-        # track best
-        improved = (val_score < best_val) if not HIGHER_IS_BETTER else (val_score > best_val)
+        val_score = val_m[tune_metric]
+        improved = (val_score < best_val) if not higher_is_better else (val_score > best_val)
         if improved:
             best_val = val_score
             best_state = copy.deepcopy(model.state_dict())
 
-        # early stopping
+        history.append({
+            "epoch": epoch,
+            "train_mae": float(train_m[tune_metric]),
+            "val_mae": float(val_m[tune_metric]),
+            "test_mae": float(test_m[tune_metric]),
+            "lr": optimizer.param_groups[0]["lr"],
+        })
+
+        # early stopping per velocità
         early(val_score, model)
         if getattr(early, "early_stop", False):
             break
 
-    # valuta il best state su val/test
+    # valuta al best sulla val
     if best_state is not None:
         model.load_state_dict(best_state)
         with torch.no_grad():
-            val_pred  = test(model, loaders["val"],  device=DEVICE, task=task)
-            test_pred = test(model, loaders["test"], device=DEVICE, task=task)
+            val_pred  = test(model, loader_dict["val"],  device=device, task=task)
+            test_pred = test(model, loader_dict["test"], device=device, task=task)
             val_m  = evaluate_performance(val_pred,  val_table,  task.metrics, task=task)
             test_m = evaluate_performance(test_pred, test_table, task.metrics, task=task)
     else:
-        # fallback: ultimo
         with torch.no_grad():
-            val_pred  = test(model, loaders["val"],  device=DEVICE, task=task)
-            test_pred = test(model, loaders["test"], device=DEVICE, task=task)
+            val_pred  = test(model, loader_dict["val"],  device=device, task=task)
+            test_pred = test(model, loader_dict["test"], device=device, task=task)
             val_m  = evaluate_performance(val_pred,  val_table,  task.metrics, task=task)
             test_m = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    return {
+    result = {
         "cfg": cfg,
-        "best_val_mae": float(val_m[TUNE_METRIC]),
-        "test_mae_at_best_val": float(test_m[TUNE_METRIC]),
-        "history": hist,
+        "best_val_mae": float(val_m[tune_metric]),
+        "test_mae_at_best_val": float(test_m[tune_metric]),
+        "history": history,
     }
+    print(f" -> cfg={cfg} | VAL {result['best_val_mae']:.3f} | TEST {result['test_mae_at_best_val']:.3f}")
+    return result
 
-# --------------------------------------------------------------------------------------
-# Loop di tuning
-# --------------------------------------------------------------------------------------
+# ------------------------ loop di tuning ------------------------
 def main():
     t0 = time.time()
     results = []
     for i, cfg in enumerate(GRID, 1):
-        print(f"\n=== Run {i}/{len(GRID)} ===  cfg={cfg}")
+        print(f"\n=== Run {i}/{len(GRID)} ===")
         try:
             out = run_one(cfg)
-            print(f" -> val MAE: {out['best_val_mae']:.3f} | test MAE (at best val): {out['test_mae_at_best_val']:.3f}")
             results.append(out)
         except RuntimeError as e:
-            # gestisci eventuali OOM riducendo batch
             if "out of memory" in str(e).lower() and cfg["batch"] > 256:
-                print("OOM: ritento con batch=256")
+                print("OOM: retry with batch=256")
                 cfg2 = dict(cfg); cfg2["batch"] = 256
                 out = run_one(cfg2)
-                print(f" -> val MAE: {out['best_val_mae']:.3f} | test MAE (at best val): {out['test_mae_at_best_val']:.3f}")
                 results.append(out)
             else:
                 print("Errore:", e)
 
-    # ordina per val MAE crescente
-    results = sorted(results, key=lambda x: x["best_val_mae"])
-    print("\n===== RANKING (miglior VAL MAE -> peggiore) =====")
+    results = sorted(results, key=lambda r: r["best_val_mae"])
+    print("\n===== RANKING (miglior VAL MAE → peggiore) =====")
     for r in results:
         c = r["cfg"]
-        print(f"VAL {r['best_val_mae']:.3f} | TEST {r['test_mae_at_best_val']:.3f} || lr={c['lr']} wd={c['wd']} batch={c['batch']} neigh={c['neighbors']} hidden={c['hidden']}")
+        print(f"VAL {r['best_val_mae']:.3f} | TEST {r['test_mae_at_best_val']:.3f} || "
+              f"lr={c['lr']} wd={c['wd']} batch={c['batch']} neigh={c['neighbors']} hidden={c['hidden']}")
 
-    # salva json riassunto
     os.makedirs("tuning_logs", exist_ok=True)
-    with open(os.path.join("tuning_logs", "results_studyAdverse_XMetaPath2.json"), "w") as f:
+    with open(os.path.join("tuning_logs", "results_XMetaPath2.json"), "w") as f:
         json.dump(results, f, indent=2)
 
     print(f"\nTempo totale: {time.time()-t0:.1f}s")
