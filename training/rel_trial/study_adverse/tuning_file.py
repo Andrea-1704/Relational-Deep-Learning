@@ -42,7 +42,11 @@ import numpy as np
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
 
-# Project imports (as in your training script)
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
+
 from model.others.HGraphSAGE import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
@@ -71,7 +75,7 @@ class TrialConfig:
     optimizer: str = "AdamW"  # "Adam" | "AdamW"
     lr: float = 1e-3
     weight_decay: float = 5e-5
-    epochs: int = 180
+    epochs: int = 40
     batch_size: int = 1024
     sampler: str = "20,10"    # fanout per layer as "a,b"
     # loss/schedule
