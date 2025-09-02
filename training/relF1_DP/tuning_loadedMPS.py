@@ -195,13 +195,13 @@ def run_one(cfg):
     ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["wd"])
-    early = EarlyStopping(
-        patience=PATIENCE,
-        delta=MIN_DELTA,
-        verbose=False,
-        higher_is_better=higher_is_better,
-        path=None,
-    )
+    # early = EarlyStopping(
+    #     patience=PATIENCE,
+    #     delta=MIN_DELTA,
+    #     verbose=False,
+    #     higher_is_better=higher_is_better,
+    #     path=None,
+    # )
 
     best_state = None
     best_val = math.inf if not higher_is_better else -math.inf
@@ -240,9 +240,9 @@ def run_one(cfg):
             "lr": optimizer.param_groups[0]["lr"],
         })
 
-        early(val_score, model)
-        if getattr(early, "early_stop", False):
-            break
+        #early(val_score, model)
+        # if getattr(early, "early_stop", False):
+        #     break
 
     # valuta al best sulla val (con la stessa protezione per il test)
     if best_state is not None:
