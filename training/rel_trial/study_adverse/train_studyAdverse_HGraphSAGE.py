@@ -30,6 +30,7 @@ from typing import Any, Dict, List
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
+from torch_frame.config.text_embedder import TextEmbedderConfig
 
 import sys
 import os
@@ -75,20 +76,16 @@ seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
-db = dataset.get_db() #get all tables
-col_to_stype_dict = get_stype_proposal(db)
+db_nuovo = dataset.get_db() #get all tables
+col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
 #this is used to get the stype of the columns
-
-#let's use the merge categorical values:
-db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
 # Create the graph
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    #text_embedder_cfg=text_embedder_cfg,
-    text_embedder_cfg = None,
-    cache_dir=None  # disabled
+    text_embedder_cfg=TextEmbedderConfig(name="glove", trainable=False),
+    cache_dir=None,
 )
 
 
@@ -101,17 +98,13 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="mean",
+    aggr="sum",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=0.0001,
-    weight_decay=5e-5
-)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
 #scheduler = CosineAnnealingLR(optimizer, T_max=100)
 
@@ -124,8 +117,8 @@ optimizer = torch.optim.AdamW(
 # )
 
 loader_dict = loader_dict_fn(
-    batch_size=256, 
-    num_neighbours=64, 
+    batch_size=512, 
+    num_neighbours=128, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -160,7 +153,7 @@ alignment_check(loader_dict["test"], expected_test_ids, device=device, task=task
 
 
 # Training loop
-epochs = 100
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
