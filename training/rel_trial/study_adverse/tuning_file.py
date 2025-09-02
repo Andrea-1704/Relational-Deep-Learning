@@ -5,7 +5,8 @@ Fast tuner for RelBench rel-trial / study-adverse with HGraphSAGE (compatibile c
 
 - Griglia prioritaria (optimizer, lr, weight_decay, hidden, layers, aggr, dropout, sampler, batch_size)
 - AMP + grad clipping, Cosine LR **corretto** (step() senza metrica)
-- Supporto MiniLM text embeddings (consigliato) o fallback categorico (--no-text-embeds)
+- Supporto text embeddings (MiniLM) con autodetect della firma di TextEmbedderConfig
+  oppure fallback categorico (--no-text-embeds)
 - Early stopping + early pruning; log su CSV; salvataggio checkpoint best
 
 Esempi:
@@ -28,7 +29,7 @@ import argparse
 import random
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from typing import List
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
@@ -41,7 +42,7 @@ from relbench.tasks import get_task
 from relbench.modeling.graph import make_pkey_fkey_graph
 from relbench.modeling.utils import get_stype_proposal
 
-# text embedder (se manca, gestiamo il fallback in runtime)
+# Proviamo a importare TextEmbedderConfig; se non c'è, useremo il fallback
 try:
     from torch_frame.config.text_embedder import TextEmbedderConfig
 except Exception:
@@ -117,6 +118,41 @@ def parse_sampler(s: str) -> List[int]:
     return [int(x) for x in s.split(",")]
 
 
+def _make_text_cfg_autodetect() -> Optional[object]:
+    """
+    Prova automaticamente le varianti più comuni della firma di TextEmbedderConfig
+    in TorchFrame. Se tutte falliscono, ritorna None (fallback categorico).
+    """
+    if TextEmbedderConfig is None:
+        return None
+
+    trials = [
+        {"name": "minilm", "pooling": "mean", "max_length": 64},
+        {"model_name": "minilm", "pooling": "mean", "max_length": 64},
+        {"model": "minilm", "pooling": "mean", "max_length": 64},
+        {"encoder_name": "minilm", "pooling": "mean", "max_length": 64},
+        # Alcune versioni accettano l'argomento posizionale
+        "positional",
+        # Ultimo tentativo: senza pooling/max_length
+        {"name": "minilm"},
+        {"model_name": "minilm"},
+        {"model": "minilm"},
+        {"encoder_name": "minilm"},
+    ]
+
+    for t in trials:
+        try:
+            if t == "positional":
+                return TextEmbedderConfig("minilm")  # type: ignore
+            elif isinstance(t, dict):
+                return TextEmbedderConfig(**t)  # type: ignore
+        except TypeError:
+            continue
+        except Exception:
+            continue
+    return None
+
+
 def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="study-adverse"):
     dataset = get_dataset(dataset_name, download=True)
     task = get_task(dataset_name, task_name, download=True)
@@ -128,12 +164,15 @@ def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_nam
     db = dataset.get_db()
     col_to_stype = get_stype_proposal(db)
 
-    # text embeddings (MiniLM) oppure merge a categorico
     text_cfg = None
     db_used = db
     col_to_stype_used = col_to_stype
-    if cfg.use_text_embeds and TextEmbedderConfig is not None:
-        text_cfg = TextEmbedderConfig(name="minilm", pooling="mean", max_length=64)
+
+    if cfg.use_text_embeds:
+        text_cfg = _make_text_cfg_autodetect()
+        if text_cfg is None:
+            print("[WARN] TextEmbedderConfig non compatibile con questa versione: passo al fallback categorico.")
+            db_used, col_to_stype_used = merge_text_columns_to_categorical(db, col_to_stype)
     else:
         db_used, col_to_stype_used = merge_text_columns_to_categorical(db, col_to_stype)
 
@@ -141,7 +180,7 @@ def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_nam
         db_used,
         col_to_stype_dict=col_to_stype_used,
         text_embedder_cfg=text_cfg,
-        cache_dir=None  # metti una cartella per cachare gli embed testuali tra trial
+        cache_dir=None  # imposta una cartella per cachare gli embed testuali tra i trial
     )
 
     fanouts = parse_sampler(cfg.sampler)
