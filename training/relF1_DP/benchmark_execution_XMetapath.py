@@ -86,76 +86,105 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
+#way 1:
+#retrieve the id from the driver nodes
+graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+#get the labels and the ids of the drivers from the table
+train_df = train_table.df
+driver_labels = train_df["position"].to_numpy()
+driver_ids = train_df["driverId"].to_numpy()
+
+#map the correct labels for all drivers node (which are target ones)
+target_vector = torch.full((len(graph_driver_ids),), float("nan")) #inizial
+for i, driver_id in enumerate(driver_ids):
+    if driver_id in id_to_idx:
+        target_vector[id_to_idx[driver_id]] = driver_labels[i]
+
+
+data['drivers'].y = target_vector
+data['drivers'].train_mask = ~torch.isnan(target_vector)
+
+#take y and mask complete for the dataset:
+y_full = data['drivers'].y.float()
+train_mask_full = data['drivers'].train_mask
+y_bin_full = y_full
+
+print(f"y full : {y_full}")
+
+#way2:
+
 # --- Build data['drivers'].y from the train_table (RelBench keeps labels in task tables) ---
-import pandas as pd
-import torch
+# import pandas as pd
+# import torch
 
-node_type = "drivers"
+# node_type = "drivers"
 
-def table_df(t):
-    if hasattr(t, "df"):
-        return t.df
-    if hasattr(t, "to_pandas"):
-        return t.to_pandas()
-    raise TypeError("Unsupported Table type (no .df / .to_pandas)")
+# def table_df(t):
+#     if hasattr(t, "df"):
+#         return t.df
+#     if hasattr(t, "to_pandas"):
+#         return t.to_pandas()
+#     raise TypeError("Unsupported Table type (no .df / .to_pandas)")
 
-df_train = table_df(train_table).copy()
+# df_train = table_df(train_table).copy()
 
-# 1) individua la colonna label in modo robusto:
-#    - rimuoviamo timestamp e pkey
-pk_col = node_type    # per rel-f1 driver table
-time_col = "date"
-candidates = [c for c in df_train.columns if c not in {pk_col, time_col}]
-# tieni solo numeric (la label è numerica per 'driver-position' con MAE)
-num_candidates = [c for c in candidates if pd.api.types.is_numeric_dtype(df_train[c])]
-if "label" in df_train.columns:
-    target_col = "label"
-elif len(num_candidates) == 1:
-    target_col = num_candidates[0]
-else:
-    # euristica: scegli la colonna numerica con varianza maggiore
-    target_col = df_train[num_candidates].var().sort_values(ascending=False).index[0]
+# # 1) individua la colonna label in modo robusto:
+# #    - rimuoviamo timestamp e pkey
+# pk_col = node_type    # per rel-f1 driver table
+# time_col = "date"
+# candidates = [c for c in df_train.columns if c not in {pk_col, time_col}]
+# # tieni solo numeric (la label è numerica per 'driver-position' con MAE)
+# num_candidates = [c for c in candidates if pd.api.types.is_numeric_dtype(df_train[c])]
+# if "label" in df_train.columns:
+#     target_col = "label"
+# elif len(num_candidates) == 1:
+#     target_col = num_candidates[0]
+# else:
+#     # euristica: scegli la colonna numerica con varianza maggiore
+#     target_col = df_train[num_candidates].var().sort_values(ascending=False).index[0]
 
-# 2) mappa pkey (driverId) -> indice di nodo 'drivers'
-try:
-    index_values = db_nuovo.table_dict[node_type].tf.index.tolist()
-except Exception:
-    index_values = db_nuovo.table_dict[node_type].df.index.tolist()
-id_to_idx = {int(pk): i for i, pk in enumerate(index_values)}
+# # 2) mappa pkey (driverId) -> indice di nodo 'drivers'
+# try:
+#     index_values = db_nuovo.table_dict[node_type].tf.index.tolist()
+# except Exception:
+#     index_values = db_nuovo.table_dict[node_type].df.index.tolist()
+# id_to_idx = {int(pk): i for i, pk in enumerate(index_values)}
 
-# 3) aggrega per driver: media della label nel train
-agg = (
-    df_train[[pk_col, target_col]]
-    .groupby(pk_col, as_index=False)
-    .mean()
-)
+# # 3) aggrega per driver: media della label nel train
+# agg = (
+#     df_train[[pk_col, target_col]]
+#     .groupby(pk_col, as_index=False)
+#     .mean()
+# )
 
-y = torch.full((data[node_type].num_nodes,), float("nan"), dtype=torch.float32)
-for pk, val in zip(agg[pk_col].tolist(), agg[target_col].tolist()):
-    if int(pk) in id_to_idx:
-        y[id_to_idx[int(pk)]] = float(val)
+# y = torch.full((data[node_type].num_nodes,), float("nan"), dtype=torch.float32)
+# for pk, val in zip(agg[pk_col].tolist(), agg[target_col].tolist()):
+#     if int(pk) in id_to_idx:
+#         y[id_to_idx[int(pk)]] = float(val)
 
-# 4) opzionale: riempi i NaN con la media globale del train (o lasciali NaN se l’RL li ignora via mask)
-global_mean = torch.tensor(pd.to_numeric(agg[target_col], errors="coerce").mean(), dtype=torch.float32)
-y = torch.where(torch.isnan(y), global_mean, y)
+# # 4) opzionale: riempi i NaN con la media globale del train (o lasciali NaN se l’RL li ignora via mask)
+# global_mean = torch.tensor(pd.to_numeric(agg[target_col], errors="coerce").mean(), dtype=torch.float32)
+# y = torch.where(torch.isnan(y), global_mean, y)
 
-# 5) attacca al grafo
-data[node_type].y = y
-print(f"[Info] y attached to data['{node_type}']: {int(torch.isfinite(y).sum())}/{y.numel()} finite labels")
+# # 5) attacca al grafo
+# data[node_type].y = y
+# print(f"[Info] y attached to data['{node_type}']: {int(torch.isfinite(y).sum())}/{y.numel()} finite labels")
 
 
-# --- Build train_mask_full dai driverId del train split ---
-train_driver_ids = torch.as_tensor(
-    table_df(train_table)["driverId"].unique(), dtype=torch.long
-)
+# # --- Build train_mask_full dai driverId del train split ---
+# train_driver_ids = torch.as_tensor(
+#     table_df(train_table)["driverId"].unique(), dtype=torch.long
+# )
 
-mapped = [id_to_idx[pk] for pk in train_driver_ids.tolist() if int(pk) in id_to_idx]
-train_node_idx = torch.tensor(mapped, dtype=torch.long)
+# mapped = [id_to_idx[pk] for pk in train_driver_ids.tolist() if int(pk) in id_to_idx]
+# train_node_idx = torch.tensor(mapped, dtype=torch.long)
 
-train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
-train_mask_full[train_node_idx] = True
+# train_mask_full = torch.zeros(data[node_type].num_nodes, dtype=torch.bool)
+# train_mask_full[train_node_idx] = True
 
-print(f"[Info] Train mask: {int(train_mask_full.sum())}/{data[node_type].num_nodes} drivers nel train")
+# print(f"[Info] Train mask: {int(train_mask_full.sum())}/{data[node_type].num_nodes} drivers nel train")
 
 
 #Learning metapaths:
