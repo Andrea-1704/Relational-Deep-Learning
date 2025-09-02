@@ -63,20 +63,31 @@ import torch
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
+# class SBERTTextEmbedding:
+#     def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu"):
+#         self.model = SentenceTransformer(model_name, device=device)
+#         self.device = device
+#     def __call__(self, sentences):
+#         # ritorna torch.FloatTensor [N, D]
+#         arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
+#         return torch.from_numpy(np.asarray(arr)).to(self.device)
+
+# device = "cuda" if torch.cuda.is_available() else "cpu"
+# text_embedder_cfg = TextEmbedderConfig(
+#     text_embedder=SBERTTextEmbedding(device=device),
+#     batch_size=256,
+# )
+
 class SBERTTextEmbedding:
     def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu"):
         self.model = SentenceTransformer(model_name, device=device)
         self.device = device
-    def __call__(self, sentences):
-        # ritorna torch.FloatTensor [N, D]
-        arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
-        return torch.from_numpy(np.asarray(arr)).to(self.device)
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-text_embedder_cfg = TextEmbedderConfig(
-    text_embedder=SBERTTextEmbedding(device=device),
-    batch_size=256,
-)
+    def __call__(self, sentences):
+        arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
+        import torch, numpy as np
+        # -> CPU + (opzionale) fp16 per ridurre footprint
+        return torch.from_numpy(np.asarray(arr)).to(dtype=torch.float16)  # niente .to("cuda") qui
 
 
 
@@ -102,6 +113,10 @@ col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
 #this is used to get the stype of the columns
 
 # Create the graph
+text_embedder_cfg = TextEmbedderConfig(
+    text_embedder=SBERTTextEmbedding(device="cpu"),  # <- CPU!
+    batch_size=128,                                   # più piccolo = meno picchi durante l’encoding
+)
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
@@ -138,8 +153,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 # )
 
 loader_dict = loader_dict_fn(
-    batch_size=256, 
-    num_neighbours=64, 
+    batch_size=512, 
+    num_neighbours=128, 
     data=data, 
     task=task,
     train_table=train_table, 
