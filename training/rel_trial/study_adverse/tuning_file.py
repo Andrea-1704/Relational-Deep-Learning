@@ -1,24 +1,22 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Fast tuner for RelBench rel-trial / study-adverse with HGraphSAGE.
+Fast tuner for RelBench rel-trial / study-adverse with HGraphSAGE (compatibile con il tuo codice).
 
-- Prioritized grid of (optimizer, lr, weight_decay, hidden, layers, aggr, dropout, sampler, batch_size)
-- Early pruning (patience + "worse-than-best-by" threshold)
-- AMP + grad clipping for speed/stability
-- CosineAnnealingLR **fixed** (step() without metric)
-- Optional preset "relbench_paper" (AdamW, lr=1e-3, wd=5e-5, aggr=mean) as a strong baseline
-- Logs each trial to CSV and saves best checkpoint
+- Griglia prioritaria (optimizer, lr, weight_decay, hidden, layers, aggr, dropout, sampler, batch_size)
+- AMP + grad clipping, Cosine LR **corretto** (step() senza metrica)
+- Supporto MiniLM text embeddings (consigliato) o fallback categorico (--no-text-embeds)
+- Early stopping + early pruning; log su CSV; salvataggio checkpoint best
 
-Usage:
-    python tune_study_adverse.py --max_trials 20 --preset relbench_paper
-    python tune_study_adverse.py --max_trials 30 --no-text-embeds   # if you really need to disable text embeds
+Esempi:
+  python tune_study_adverse_fixed.py --max_trials 20 --preset relbench_paper
+  python tune_study_adverse_fixed.py --max_trials 12 --preset fast --no-text-embeds
+  python tune_study_adverse_fixed.py --epochs 120 --sampler "15,10"
 
-This script expects your repo structure to expose:
-    - model.others.HGraphSAGE.Model
-    - data_management.data.loader_dict_fn
-    - utils.{EarlyStopping, utils:{evaluate_performance, evaluate_on_full_train, test, train}}
+Richiede nel repo:
+  - model.others.HGraphSAGE.Model  (signature: Model(data, col_stats_dict, num_layers, channels, out_channels, aggr, norm, ...))
+  - data_management.data.loader_dict_fn  (signature: loader_dict_fn(data=..., task=..., ...))
+  - utils.{EarlyStopping} e utils.utils.{evaluate_performance, test, train}
 """
 
 import os
@@ -30,29 +28,32 @@ import argparse
 import random
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from typing import Dict, Any, List, Tuple
-from relbench.modeling.graph import make_pkey_fkey_graph
-from relbench.modeling.utils import get_stype_proposal
+from typing import List
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.optim import Adam, AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 
 import numpy as np
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
+from relbench.modeling.graph import make_pkey_fkey_graph
+from relbench.modeling.utils import get_stype_proposal
+
+# text embedder (se manca, gestiamo il fallback in runtime)
+try:
+    from torch_frame.config.text_embedder import TextEmbedderConfig
+except Exception:
+    TextEmbedderConfig = None  # type: ignore
 
 import sys
-import os
 sys.path.append(os.path.abspath("."))
-
 
 from model.others.HGraphSAGE import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from utils.utils import evaluate_performance, test, train
 
 
 # ------------------------- Utilities -------------------------
@@ -68,38 +69,27 @@ def seed_everything(seed: int = 42):
 @dataclass
 class TrialConfig:
     seed: int = 42
-    # model
+    # modello
     channels: int = 256
     num_layers: int = 3
-    aggr: str = "mean"      # "mean" | "max" | "sum"
+    aggr: str = "mean"         # "mean" | "max" | "sum"
+    norm: str = "batch_norm"   # passa alla head MLP
     dropout: float = 0.5
     # training
-    optimizer: str = "AdamW"  # "Adam" | "AdamW"
+    optimizer: str = "AdamW"   # "Adam" | "AdamW"
     lr: float = 1e-3
     weight_decay: float = 5e-5
-    epochs: int = 40
+    epochs: int = 180
     batch_size: int = 1024
-    sampler: str = "20,10"    # fanout per layer as "a,b"
-    # loss/schedule
-    loss: str = "smoothl1"    # "l1" | "smoothl1" | "mse"
-    scheduler: str = "cosine" # "cosine" | "plateau"
+    sampler: str = "20,10"     # fanout per layer come "a,b"
+    # loss / scheduler
+    loss: str = "smoothl1"     # "l1" | "smoothl1" | "mse"
+    scheduler: str = "cosine"  # "cosine" | "plateau"
     # misc
     grad_clip: float = 1.0
     amp: bool = True
     # data
-    use_text_embeds: bool = True  # if False, we merge text columns -> categorical (faster but usually worse)
-
-
-def build_model(cfg: TrialConfig, in_channels_dict, out_channels=1, device="cuda"):
-    model = Model(
-        in_channels_dict=in_channels_dict,
-        hidden_channels=cfg.channels,
-        out_channels=out_channels,
-        num_layers=cfg.num_layers,
-        aggr=cfg.aggr,
-        dropout=cfg.dropout,
-    ).to(device)
-    return model
+    use_text_embeds: bool = True  # se False: merge testo->categorico (più veloce, di solito peggiore)
 
 
 def get_loss_fn(cfg: TrialConfig):
@@ -119,7 +109,7 @@ def get_optimizer(cfg: TrialConfig, model: nn.Module):
 def get_scheduler(cfg: TrialConfig, optimizer):
     if cfg.scheduler == "plateau":
         return ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=8, threshold=0.0)
-    # cosine as default
+    # cosine default
     return CosineAnnealingLR(optimizer, T_max=cfg.epochs)
 
 
@@ -127,12 +117,7 @@ def parse_sampler(s: str) -> List[int]:
     return [int(x) for x in s.split(",")]
 
 
-def maybe_merge_text_columns(db):
-    # lightweight wrapper in case user wants to disable text embeds for speed
-    return merge_text_columns_to_categorical(db)
-
-
-def get_data_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="study-adverse", device="cuda"):
+def build_graph_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="study-adverse"):
     dataset = get_dataset(dataset_name, download=True)
     task = get_task(dataset_name, task_name, download=True)
 
@@ -141,40 +126,54 @@ def get_data_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="
     test_table = task.get_table("test")
 
     db = dataset.get_db()
-    if not cfg.use_text_embeds:
-        db = maybe_merge_text_columns(db)
-    col_to_stype_dict = get_stype_proposal(db)
-    #this is used to get the stype of the columns
+    col_to_stype = get_stype_proposal(db)
 
-    #let's use the merge categorical values:
-    db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
+    # text embeddings (MiniLM) oppure merge a categorico
+    text_cfg = None
+    db_used = db
+    col_to_stype_used = col_to_stype
+    if cfg.use_text_embeds and TextEmbedderConfig is not None:
+        text_cfg = TextEmbedderConfig(name="minilm", pooling="mean", max_length=64)
+    else:
+        db_used, col_to_stype_used = merge_text_columns_to_categorical(db, col_to_stype)
 
-    
     data, col_stats_dict = make_pkey_fkey_graph(
-        db,
-        col_to_stype_dict=col_to_stype_dict_nuovo,
-        #text_embedder_cfg=text_embedder_cfg,
-        text_embedder_cfg = None,
-        cache_dir=None  # disabled
+        db_used,
+        col_to_stype_dict=col_to_stype_used,
+        text_embedder_cfg=text_cfg,
+        cache_dir=None  # metti una cartella per cachare gli embed testuali tra trial
     )
 
-    # Build loaders via your project's helper
     fanouts = parse_sampler(cfg.sampler)
     loader_dict = loader_dict_fn(
-        #db=db,
         data=data,
-        task= task,
+        task=task,
         train_table=train_table,
         val_table=val_table,
         test_table=test_table,
         batch_size=cfg.batch_size,
         num_neighbours=fanouts,
-        #device=device,
     )
-    return task, train_table, val_table, test_table, loader_dict
+    return task, train_table, val_table, test_table, loader_dict, data, col_stats_dict
 
 
-def evaluate_loop(model, task, train_table, val_table, test_table, loader_dict, loss_fn, device, amp):
+def build_model(cfg: TrialConfig, data, col_stats_dict, device="cuda"):
+    model = Model(
+        data=data,
+        col_stats_dict=col_stats_dict,
+        num_layers=cfg.num_layers,
+        channels=cfg.channels,
+        out_channels=1,            # regression
+        aggr=cfg.aggr,
+        norm=cfg.norm,
+        shallow_list=[],
+        id_awareness=False,
+        predictor_n_layers=1,
+    ).to(device)
+    return model
+
+
+def evaluate_loop(model, task, train_table, val_table, test_table, loader_dict, device):
     train_pred = test(model, loader_dict["train"], device=device, task=task)
     train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
     val_pred = test(model, loader_dict["val"], device=device, task=task)
@@ -188,17 +187,17 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     seed_everything(cfg.seed)
     os.makedirs(log_dir, exist_ok=True)
 
-    task, train_table, val_table, test_table, loader_dict, in_channels_dict = get_data_and_loaders(cfg, device=device)
+    task, train_table, val_table, test_table, loader_dict, data, col_stats_dict = build_graph_and_loaders(cfg)
 
-    out_channels = 1
     loss_fn = get_loss_fn(cfg)
-    model = build_model(cfg, in_channels_dict, out_channels=out_channels, device=device)
+    model = build_model(cfg, data, col_stats_dict, device=device)
     optimizer = get_optimizer(cfg, model)
     scheduler = get_scheduler(cfg, optimizer)
 
     higher_is_better = False
     tune_metric = "mae"
-    early_stopping = EarlyStopping(patience=12, delta=0.0, verbose=False, higher_is_better=higher_is_better,
+    early_stopping = EarlyStopping(patience=12, delta=0.0, verbose=False,
+                                   higher_is_better=higher_is_better,
                                    path=str(Path(log_dir) / "tmp-best.pt"))
 
     scaler = torch.cuda.amp.GradScaler(enabled=cfg.amp)
@@ -208,37 +207,37 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     state_dict_val = None
     state_dict_test = None
 
-    # Early-pruning threshold: if val is worse than best by >1.0 after 25 epochs, stop to save time
+    # pruning: se dopo 25 epoche sei >1.0 peggio del best, stoppa il trial
     worse_by_threshold = 1.0
     check_epoch = 25
 
     for epoch in range(1, cfg.epochs + 1):
-        # single-epoch train
         model.train()
-        running_loss = 0.0
         for batch in loader_dict["train"]:
             optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast(enabled=cfg.amp):
-                loss = train(model, optimizer=None, loader_dict=None, device=device, task=task, loss_fn=loss_fn, batch=batch, return_loss=True)
+                # train() del tuo progetto può restituire la loss dato un batch singolo
+                loss = train(model, optimizer=None, loader_dict=None, device=device,
+                             task=task, loss_fn=loss_fn, batch=batch, return_loss=True)
             scaler.scale(loss).backward()
-            # grad clip
             if cfg.grad_clip is not None:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
             scaler.step(optimizer)
             scaler.update()
-            running_loss += float(loss.detach().cpu())
 
         # Eval
-        train_metrics, val_metrics, test_metrics = evaluate_loop(model, task, train_table, val_table, test_table, loader_dict, loss_fn, device, cfg.amp)
+        train_metrics, val_metrics, test_metrics = evaluate_loop(
+            model, task, train_table, val_table, test_table, loader_dict, device
+        )
 
-        # Scheduler step (cosine: step() w/out metric; plateau: step(val))
+        # Scheduler step
         if isinstance(scheduler, CosineAnnealingLR):
-            scheduler.step()
+            scheduler.step()  # <-- NIENTE metrica qui
         else:
             scheduler.step(val_metrics[tune_metric])
 
-        # Track best
+        # Best tracking
         if val_metrics[tune_metric] < best_val:
             best_val = val_metrics[tune_metric]
             state_dict_val = copy.deepcopy(model.state_dict())
@@ -246,17 +245,21 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
             best_test = test_metrics[tune_metric]
             state_dict_test = copy.deepcopy(model.state_dict())
 
-        # Early stop (patience-based)
+        # Early stopping
         early_stopping(val_metrics[tune_metric], model)
         if early_stopping.early_stop:
             break
 
-        # Early prune if far worse after check_epoch
+        # Early pruning
         if epoch >= check_epoch and (val_metrics[tune_metric] - best_val) > worse_by_threshold:
             break
 
     # Save checkpoints
-    exp_name = f"{cfg.optimizer}_lr{cfg.lr}_wd{cfg.weight_decay}_h{cfg.channels}_L{cfg.num_layers}_{cfg.aggr}_do{cfg.dropout}_sam{cfg.sampler}_bs{cfg.batch_size}_loss{cfg.loss}"
+    exp_name = (
+        f"{cfg.optimizer}_lr{cfg.lr}_wd{cfg.weight_decay}_h{cfg.channels}"
+        f"_L{cfg.num_layers}_{cfg.aggr}_do{cfg.dropout}_sam{cfg.sampler}"
+        f"_bs{cfg.batch_size}_loss{cfg.loss}"
+    )
     ckpt_dir = Path(log_dir) / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -265,17 +268,10 @@ def train_one_trial(cfg: TrialConfig, device="cuda", log_dir="tune_logs"):
     if state_dict_test is not None:
         torch.save(state_dict_test, ckpt_dir / f"best_test_{exp_name}.pt")
 
-    return {
-        "val_mae": float(best_val),
-        "test_mae": float(best_test),
-        "exp_name": exp_name,
-        **asdict(cfg),
-    }
+    return {"val_mae": float(best_val), "test_mae": float(best_test), "exp_name": exp_name, **asdict(cfg)}
 
 
 def prioritized_grid(preset: str, max_trials: int) -> List[TrialConfig]:
-    # A small, prioritized grid focusing on combinations that tend to work for rel-trial
-    # Preset "relbench_paper" biases to AdamW, lr=1e-3, wd=5e-5, aggr=mean.
     base = TrialConfig()
     if preset == "relbench_paper":
         base.optimizer = "AdamW"
@@ -289,7 +285,7 @@ def prioritized_grid(preset: str, max_trials: int) -> List[TrialConfig]:
         base.weight_decay = 1e-5
         base.epochs = 140
 
-    seeds = [42]  # keep single seed for speed; can extend to [42, 1, 2]
+    seeds = [42]  # per velocità; eventualmente aggiungi altri seed
     lrs = [base.lr, 5e-4, 2e-4]
     wds = [base.weight_decay, 1e-5, 0.0]
     chans = [256, 512]
@@ -300,7 +296,7 @@ def prioritized_grid(preset: str, max_trials: int) -> List[TrialConfig]:
     batches = [1024, 2048]
     losses = ["smoothl1", "l1"]
 
-    grid = []
+    grid: List[TrialConfig] = []
     for sd in seeds:
         for lr in lrs:
             for wd in wds:
@@ -323,7 +319,7 @@ def prioritized_grid(preset: str, max_trials: int) -> List[TrialConfig]:
                                             cfg.batch_size = bs
                                             cfg.loss = ls
                                             grid.append(cfg)
-    # Prioritize by heuristic: higher bs, mean aggr, 3 layers first
+    # priorità: batch più grande, aggr="mean", 3 layer
     grid.sort(key=lambda c: (-c.batch_size, c.aggr != "mean", -c.num_layers, c.lr))
     return grid[:max_trials]
 
@@ -332,15 +328,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_trials", type=int, default=20)
     parser.add_argument("--preset", type=str, default="relbench_paper", choices=["relbench_paper", "fast", "none"])
-    parser.add_argument("--no-text-embeds", action="store_true", help="Disable text embeddings (faster, but usually worse).")
+    parser.add_argument("--no-text-embeds", action="store_true", help="Disabilita text embeddings (più veloce, di solito peggio).")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--log_dir", type=str, default="tune_logs")
+    parser.add_argument("--epochs", type=int, default=None, help="Override epochs per trial.")
+    parser.add_argument("--sampler", type=str, default=None, help='Override fanout string, es. "15,10"')
     args = parser.parse_args()
 
     # Build grid
     grid = prioritized_grid(args.preset, args.max_trials)
     for cfg in grid:
         cfg.use_text_embeds = not args.no_text_embeds
+        if args.epochs is not None:
+            cfg.epochs = int(args.epochs)
+        if args.sampler is not None:
+            cfg.sampler = args.sampler
 
     # Run
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -350,7 +352,7 @@ def main():
 
     csv_path = Path(args.log_dir) / "results.csv"
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    if not csv_path.exists():
+    if not csv_path.exists() and len(grid) > 0:
         with open(csv_path, "w") as f:
             f.write(",".join(list(asdict(grid[0]).keys()) + ["val_mae", "test_mae", "exp_name"]) + "\n")
 
