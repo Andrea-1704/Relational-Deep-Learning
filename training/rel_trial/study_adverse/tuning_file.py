@@ -31,6 +31,8 @@ import random
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, List, Tuple
+from relbench.modeling.graph import make_pkey_fkey_graph
+from relbench.modeling.utils import get_stype_proposal
 
 import torch
 import torch.nn as nn
@@ -141,11 +143,26 @@ def get_data_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="
     db = dataset.get_db()
     if not cfg.use_text_embeds:
         db = maybe_merge_text_columns(db)
+    col_to_stype_dict = get_stype_proposal(db)
+    #this is used to get the stype of the columns
+
+    #let's use the merge categorical values:
+    db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
+
+    
+    data, col_stats_dict = make_pkey_fkey_graph(
+        db,
+        col_to_stype_dict=col_to_stype_dict_nuovo,
+        #text_embedder_cfg=text_embedder_cfg,
+        text_embedder_cfg = None,
+        cache_dir=None  # disabled
+    )
 
     # Build loaders via your project's helper
     fanouts = parse_sampler(cfg.sampler)
     loader_dict, in_channels_dict = loader_dict_fn(
         #db=db,
+        data=data,
         task= task,
         train_table=train_table,
         val_table=val_table,
