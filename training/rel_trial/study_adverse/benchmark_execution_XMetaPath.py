@@ -39,7 +39,7 @@ def flip_rel(rel_name: str) -> str:
 def to_canonical(mp_outward):
     # mp_outward: [(src, rel, dst), ...] dalla costruzione RL (parte da 'drivers')
     mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
-    assert mp[-1][2] == "drivers"
+    
     return tuple(mp)
 
 

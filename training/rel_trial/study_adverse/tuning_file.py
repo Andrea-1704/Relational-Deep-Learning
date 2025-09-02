@@ -160,7 +160,7 @@ def get_data_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="
 
     # Build loaders via your project's helper
     fanouts = parse_sampler(cfg.sampler)
-    loader_dict, in_channels_dict = loader_dict_fn(
+    loader_dict = loader_dict_fn(
         #db=db,
         data=data,
         task= task,
@@ -171,7 +171,7 @@ def get_data_and_loaders(cfg: TrialConfig, dataset_name="rel-trial", task_name="
         num_neighbours=fanouts,
         #device=device,
     )
-    return task, train_table, val_table, test_table, loader_dict, in_channels_dict
+    return task, train_table, val_table, test_table, loader_dict
 
 
 def evaluate_loop(model, task, train_table, val_table, test_table, loader_dict, loss_fn, device, amp):
