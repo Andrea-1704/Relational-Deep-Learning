@@ -138,8 +138,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 # )
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=128, 
+    batch_size=256, 
+    num_neighbours=64, 
     data=data, 
     task=task,
     train_table=train_table, 
