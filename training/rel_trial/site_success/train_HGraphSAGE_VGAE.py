@@ -101,27 +101,24 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="max",
+    aggr="sum",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=0.0005,
-    weight_decay=0
-)
-
-scheduler = CosineAnnealingLR(optimizer, T_max=100)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
 
-early_stopping = EarlyStopping(
-    patience=30,
-    delta=0.0,
-    verbose=True,
-    path="best_basic_model.pt"
-)
+#scheduler = CosineAnnealingLR(optimizer, T_max=100)
+
+
+# early_stopping = EarlyStopping(
+#     patience=30,
+#     delta=0.0,
+#     verbose=True,
+#     path="best_basic_model.pt"
+# )
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
@@ -131,6 +128,23 @@ loader_dict = loader_dict_fn(
     train_table=train_table, 
     val_table=val_table, 
     test_table=test_table
+)
+
+for batch in loader_dict["train"]:
+    edge_types=batch.edge_types
+    break
+
+
+model = train_vgae(
+    model=model,
+    loader_dict=loader_dict,
+    edge_types=edge_types,
+    encoder_out_dim=channels,
+    entity_table=task.entity_table,
+    latent_dim=16,
+    hidden_dim=64,
+    epochs=150,
+    device=device
 )
 
 
@@ -156,7 +170,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    scheduler.step(val_metrics[tune_metric])
+    #scheduler.step(val_metrics[tune_metric])
 
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
@@ -174,10 +188,10 @@ for epoch in range(1, epochs + 1):
     current_lr = optimizer.param_groups[0]["lr"]
     print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-    early_stopping(val_metrics[tune_metric], model)
+    # early_stopping(val_metrics[tune_metric], model)
 
-    if early_stopping.early_stop:
-        print(f"Early stopping triggered at epoch {epoch}")
-        break
+    # if early_stopping.early_stop:
+    #     print(f"Early stopping triggered at epoch {epoch}")
+    #     break
 print(f"best validation results: {best_val_metric}")
 print(f"best test results: {best_test_metric}")
