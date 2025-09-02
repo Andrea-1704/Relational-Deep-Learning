@@ -32,21 +32,6 @@ from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
-# utility functions:
-def flip_rel(rel_name: str) -> str:
-    return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
-
-def to_canonical(mp_outward):
-    # mp_outward: [(src, rel, dst), ...] dalla costruzione RL (parte da 'drivers')
-    mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
-    assert mp[-1][2] == "drivers"
-    return tuple(mp)
-
-
-
-
-
-
 dataset = get_dataset("rel-f1", download=True)
 task = get_task("rel-f1", "driver-position", download=True)
 
@@ -81,6 +66,16 @@ data, col_stats_dict = make_pkey_fkey_graph(
 )
 node_type="drivers"
 
+# utility functions:
+def flip_rel(rel_name: str) -> str:
+    return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
+
+def to_canonical(mp_outward):
+    # mp_outward: [(src, rel, dst), ...] dalla costruzione RL (parte da 'drivers')
+    mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
+    assert mp[-1][2] == node_type , f"Expected {node_type}, got {mp[-1][2]}"
+    return tuple(mp)
+
 loader_dict = loader_dict_fn(
     batch_size=512,
     num_neighbours=256,
@@ -108,7 +103,7 @@ df_train = table_df(train_table).copy()
 
 # 1) individua la colonna label in modo robusto:
 #    - rimuoviamo timestamp e pkey
-pk_col = "driverId"    # per rel-f1 driver table
+pk_col = node_type    # per rel-f1 driver table
 time_col = "date"
 candidates = [c for c in df_train.columns if c not in {pk_col, time_col}]
 # tieni solo numeric (la label è numerica per 'driver-position' con MAE)
@@ -240,25 +235,29 @@ model = XMetaPath2(
 
 
 
-lr=1e-02
+lr=0.0005
 wd = 0
 
-optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-
-scheduler = CosineAnnealingLR(optimizer, T_max=25)
-
-early_stopping = EarlyStopping(
-    patience=80,
-    delta=0.0,
-    verbose=True,
-    higher_is_better = True,
-    path="best_basic_model.pt"
+#optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=0.0005,
+    weight_decay=0
 )
+#scheduler = CosineAnnealingLR(optimizer, T_max=25)
+
+# early_stopping = EarlyStopping(
+#     patience=80,
+#     delta=0.0,
+#     verbose=True,
+#     higher_is_better = True,
+#     path="best_basic_model.pt"
+# )
 
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 300
+epochs = 200
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
