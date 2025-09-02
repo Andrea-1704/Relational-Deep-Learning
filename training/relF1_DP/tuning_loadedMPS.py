@@ -108,44 +108,57 @@ base_loader_for_rl = loader_dict_fn(
     test_table=test_table
 )
 
-agent = RLAgent(tau=1.0, alpha=0.5)
-agent.best_score_by_path_global.clear()
+# agent = RLAgent(tau=1.0, alpha=0.5)
+# agent.best_score_by_path_global.clear()
 
-warmup_rl_agent(
-    agent=agent,
-    data=data,
-    loader_dict=base_loader_for_rl,
-    task=task,
-    loss_fn=loss_fn,
-    tune_metric=tune_metric,
-    higher_is_better=higher_is_better,
-    train_mask=train_mask_full,
-    node_type='drivers',
-    col_stats_dict=col_stats_dict,
-    num_episodes=3,
-    L_max=4,
-    epochs=3
-)
+# warmup_rl_agent(
+#     agent=agent,
+#     data=data,
+#     loader_dict=base_loader_for_rl,
+#     task=task,
+#     loss_fn=loss_fn,
+#     tune_metric=tune_metric,
+#     higher_is_better=higher_is_better,
+#     train_mask=train_mask_full,
+#     node_type='drivers',
+#     col_stats_dict=col_stats_dict,
+#     num_episodes=3,
+#     L_max=4,
+#     epochs=3
+# )
 
-K = 3
-agent.tau = 0.3
-agent.alpha = 0.2
+# K = 3
+# agent.tau = 0.3
+# agent.alpha = 0.2
 
-metapaths, metapath_count = final_metapath_search_with_rl(
-    agent=agent,
-    data=data,
-    loader_dict=base_loader_for_rl,
-    task=task,
-    loss_fn=loss_fn,
-    tune_metric=tune_metric,
-    higher_is_better=higher_is_better,
-    train_mask=train_mask_full,
-    node_type='drivers',
-    col_stats_dict=col_stats_dict,
-    L_max=4,
-    epochs=10,
-    number_of_metapaths=K
-)
+# metapaths, metapath_count = final_metapath_search_with_rl(
+#     agent=agent,
+#     data=data,
+#     loader_dict=base_loader_for_rl,
+#     task=task,
+#     loss_fn=loss_fn,
+#     tune_metric=tune_metric,
+#     higher_is_better=higher_is_better,
+#     train_mask=train_mask_full,
+#     node_type='drivers',
+#     col_stats_dict=col_stats_dict,
+#     L_max=4,
+#     epochs=10,
+#     number_of_metapaths=K
+# )
+
+metapaths = [
+    [('drivers', 'rev_f2p_driverId', 'standings'),
+        ('standings', 'f2p_raceId', 'races')],
+    [('drivers', 'rev_f2p_driverId', 'qualifying'),
+        ('qualifying', 'f2p_constructorId', 'constructors'),
+        ('constructors', 'rev_f2p_constructorId', 'constructor_results'),
+        ('constructor_results', 'f2p_raceId', 'races')],
+    [('drivers', 'rev_f2p_driverId', 'results'),
+        ('results', 'f2p_constructorId', 'constructors'),
+        ('constructors', 'rev_f2p_constructorId', 'constructor_standings'),
+        ('constructor_standings', 'f2p_raceId', 'races')],
+]
 
 print(f"[RL] Final metapaths: {metapaths}")
 canonical = [to_canonical(mp.copy()) for mp in metapaths]
