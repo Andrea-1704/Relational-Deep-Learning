@@ -39,6 +39,8 @@ train_table = task.get_table("train") #date  driverId  qualifying
 val_table = task.get_table("val") #date  driverId  qualifying
 test_table = task.get_table("test") # date  driverId
 
+print(f"train table: {train_table}")
+
 out_channels = 1
 loss_fn = L1Loss()
 # this is the mae loss and is used when have regressions tasks.
