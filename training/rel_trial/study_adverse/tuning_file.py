@@ -74,7 +74,7 @@ class TrialConfig:
     optimizer: str = "AdamW"   # "Adam" | "AdamW"
     lr: float = 1e-3
     weight_decay: float = 5e-5
-    epochs: int = 180
+    epochs: int = 50
     batch_size: int = 1024
     sampler: str = "128"       # <-- SEMPRE INTERO (stringa), es. "256", "128", "64"
     # loss / scheduler
@@ -324,14 +324,14 @@ def prioritized_grid(preset: str, max_trials: int):
         base.lr = 1e-3
         base.weight_decay = 5e-5
         base.aggr = "mean"
-        base.epochs = 180
+        base.epochs = 50
         base.sampler = "128"   # più stabile del 256 pieno e rapido
         base.batch_size = 1024
     elif preset == "fast":
         base.optimizer = "AdamW"
         base.lr = 8e-4
         base.weight_decay = 1e-5
-        base.epochs = 140
+        base.epochs = 40
         base.sampler = "64"
         base.batch_size = 2048
 
