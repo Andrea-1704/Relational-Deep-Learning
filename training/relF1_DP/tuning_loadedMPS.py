@@ -1,14 +1,19 @@
 """
-Tuning leggero per XMetaPath2 mantenendo identici:
-- costruzione dati/label
-- funzioni train/test/evaluate_performance
-- RL warmup + ricerca finale dei metapath
-Si variano solo pochi iperparametri chiave: lr, weight_decay, batch_size, num_neighbours, hidden_channels.
+Tuning leggero: cambia SOLO gli iperparametri.
+Chiamate/estrazione dati identiche al file originale:
+- merge_text_columns_to_categorical
+- make_pkey_fkey_graph
+- costruzione y con position/driverId
+- RL warmup + ricerca finale
+- train / test / evaluate_performance
+
+Nota: lo split 'test' in rel-f1/driver-position può non avere 'position'.
+Per evitare crash, la chiamata a evaluate_performance(...) sul test è
+inserita in un try/except KeyError: se manca la colonna, stampiamo 'n/a'.
 """
 
 import os, math, copy, time, json, sys
 import torch
-import torch.nn as nn
 from torch.nn import L1Loss
 from torch_geometric.seed import seed_everything
 
@@ -17,15 +22,17 @@ from relbench.tasks import get_task
 from relbench.modeling.utils import get_stype_proposal
 from relbench.modeling.graph import make_pkey_fkey_graph
 
-# === import come nel tuo file ===
+# === import IDENTICI al tuo file ===
 sys.path.append(os.path.abspath("."))
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
-from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_utils.XMetaPath_extension4 import (
+    RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+)
 
-# ------------------------ setup generale ------------------------
+# ------------------------ setup ------------------------
 seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 tune_metric = "mae"           # MAE: minore è meglio
@@ -46,7 +53,7 @@ MAX_EPOCHS = 15
 PATIENCE = 3
 MIN_DELTA = 0.0
 
-# ------------------------ dati + grafo (identico al tuo file) ------------------------
+# ------------------------ dati + grafo (IDENTICO) ------------------------
 print("Loading dataset/task...")
 dataset = get_dataset("rel-f1", download=True)
 task = get_task("rel-f1", "driver-position", download=True)
@@ -68,12 +75,11 @@ data, col_stats_dict = make_pkey_fkey_graph(
 )
 node_type = "drivers"
 
-# === identica costruzione delle label/maschera dal tuo file ===
+# === costruzione label/maschera IDENTICA al tuo file ===
 graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
 train_df = train_table.df
-print(f"train_df: {train_df}")
 driver_labels = train_df["position"].to_numpy()
 driver_ids    = train_df["driverId"].to_numpy()
 
@@ -88,7 +94,7 @@ y_full = data['drivers'].y.float()
 train_mask_full = data['drivers'].train_mask
 print(f"[info] y full has {int(torch.isfinite(y_full).sum())}/{y_full.numel()} finite labels")
 
-# ------------------------ util canonico (identico) ------------------------
+# ------------------------ util canonico (IDENTICO) ------------------------
 def flip_rel(rel_name: str) -> str:
     return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
 
@@ -148,6 +154,8 @@ base_loader_for_rl = loader_dict_fn(
 #     number_of_metapaths=K
 # )
 
+# print(f"[RL] Final metapaths: {metapaths}")
+
 metapaths = [
     [('drivers', 'rev_f2p_driverId', 'standings'),
         ('standings', 'f2p_raceId', 'races')],
@@ -161,12 +169,11 @@ metapaths = [
         ('constructor_standings', 'f2p_raceId', 'races')],
 ]
 
-print(f"[RL] Final metapaths: {metapaths}")
 canonical = [to_canonical(mp.copy()) for mp in metapaths]
 
 # ------------------------ runner di UNA configurazione ------------------------
 def run_one(cfg):
-    # loader con i parametri correnti (API identica al tuo file)
+    # loader (API IDENTICA)
     loader_dict = loader_dict_fn(
         batch_size=cfg["batch"],
         num_neighbours=cfg["neighbors"],
@@ -177,7 +184,7 @@ def run_one(cfg):
         test_table=test_table
     )
 
-    # modello identico (variamo solo hidden/out_channels)
+    # modello (IDENTICO; variano solo i numeri)
     model = XMetaPath2(
         data=data,
         col_stats_dict=col_stats_dict,
@@ -207,9 +214,17 @@ def run_one(cfg):
         val_pred   = test(model, loader_dict["val"],   device=device, task=task)
         test_pred  = test(model, loader_dict["test"],  device=device, task=task)
 
+        # === chiamate IDENTICHE su train/val ===
         train_m = evaluate_performance(train_pred, train_table, task.metrics, task=task)
         val_m   = evaluate_performance(val_pred,   val_table,   task.metrics, task=task)
-        test_m  = evaluate_performance(test_pred,  test_table,  task.metrics, task=task)
+
+        # === stessa chiamata sul test, ma protetta (evita KeyError se 'position' manca) ===
+        try:
+            test_m = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+            test_val = float(test_m[tune_metric])
+        except KeyError:
+            test_m = {m.__name__: float("nan") for m in task.metrics}
+            test_val = float("nan")
 
         val_score = val_m[tune_metric]
         improved = (val_score < best_val) if not higher_is_better else (val_score > best_val)
@@ -221,37 +236,34 @@ def run_one(cfg):
             "epoch": epoch,
             "train_mae": float(train_m[tune_metric]),
             "val_mae": float(val_m[tune_metric]),
-            "test_mae": float(test_m[tune_metric]),
+            "test_mae": test_val,
             "lr": optimizer.param_groups[0]["lr"],
         })
 
-        # early stopping per velocità
         early(val_score, model)
         if getattr(early, "early_stop", False):
             break
 
-    # valuta al best sulla val
+    # valuta al best sulla val (con la stessa protezione per il test)
     if best_state is not None:
         model.load_state_dict(best_state)
-        with torch.no_grad():
-            val_pred  = test(model, loader_dict["val"],  device=device, task=task)
-            test_pred = test(model, loader_dict["test"], device=device, task=task)
-            val_m  = evaluate_performance(val_pred,  val_table,  task.metrics, task=task)
+    with torch.no_grad():
+        val_pred  = test(model, loader_dict["val"],  device=device, task=task)
+        test_pred = test(model, loader_dict["test"], device=device, task=task)
+        val_m  = evaluate_performance(val_pred,  val_table,  task.metrics, task=task)
+        try:
             test_m = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-    else:
-        with torch.no_grad():
-            val_pred  = test(model, loader_dict["val"],  device=device, task=task)
-            test_pred = test(model, loader_dict["test"], device=device, task=task)
-            val_m  = evaluate_performance(val_pred,  val_table,  task.metrics, task=task)
-            test_m = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+        except KeyError:
+            test_m = {m.__name__: float("nan") for m in task.metrics}
 
     result = {
         "cfg": cfg,
         "best_val_mae": float(val_m[tune_metric]),
-        "test_mae_at_best_val": float(test_m[tune_metric]),
+        "test_mae_at_best_val": float(test_m[tune_metric]) if not math.isnan(test_m[tune_metric]) else float("nan"),
         "history": history,
     }
-    print(f" -> cfg={cfg} | VAL {result['best_val_mae']:.3f} | TEST {result['test_mae_at_best_val']:.3f}")
+    print(f" -> cfg={cfg} | VAL {result['best_val_mae']:.3f} | TEST {('n/a' if math.isnan(result['test_mae_at_best_val']) else f'{result['test_mae_at_best_val']:.3f}')}")
+
     return result
 
 # ------------------------ loop di tuning ------------------------
@@ -276,7 +288,9 @@ def main():
     print("\n===== RANKING (miglior VAL MAE → peggiore) =====")
     for r in results:
         c = r["cfg"]
-        print(f"VAL {r['best_val_mae']:.3f} | TEST {r['test_mae_at_best_val']:.3f} || "
+        tv = r["test_mae_at_best_val"]
+        tvs = "n/a" if (tv is None or (isinstance(tv, float) and math.isnan(tv))) else f"{tv:.3f}"
+        print(f"VAL {r['best_val_mae']:.3f} | TEST {tvs} || "
               f"lr={c['lr']} wd={c['wd']} batch={c['batch']} neigh={c['neighbors']} hidden={c['hidden']}")
 
     os.makedirs("tuning_logs", exist_ok=True)

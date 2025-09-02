@@ -39,8 +39,6 @@ train_table = task.get_table("train") #date  driverId  qualifying
 val_table = task.get_table("val") #date  driverId  qualifying
 test_table = task.get_table("test") # date  driverId
 
-print(f"train table: {train_table}")
-
 out_channels = 1
 loss_fn = L1Loss()
 # this is the mae loss and is used when have regressions tasks.
@@ -95,7 +93,7 @@ id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
 #get the labels and the ids of the drivers from the table
 train_df = train_table.df
-driver_labels = train_df["qualifying"].to_numpy()
+driver_labels = train_df["position"].to_numpy()
 driver_ids = train_df["driverId"].to_numpy()
 
 #map the correct labels for all drivers node (which are target ones)
