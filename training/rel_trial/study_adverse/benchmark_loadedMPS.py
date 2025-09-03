@@ -152,7 +152,7 @@ wd=0
 
 
 #Learning metapaths:
-metapaths = [('studies', 'rev_f2p_nct_id', 'reported_event_totals')]
+metapaths = [[('studies', 'rev_f2p_nct_id', 'reported_event_totals')]]
 
 
 print(f"The final metapath are {metapaths}")
