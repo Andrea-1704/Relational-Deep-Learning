@@ -68,8 +68,8 @@ test_table = task.get_table("test")
 out_channels = 1
 loss_fn = L1Loss()
 # this is the mae loss and is used when have regressions tasks.
-tune_metric = "mae"
-higher_is_better = False
+tune_metric = "roc_auc"
+higher_is_better = True #is referred to the tune metric
 
 seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
