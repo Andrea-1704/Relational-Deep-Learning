@@ -76,6 +76,7 @@ col_to_stype_dict = get_stype_proposal(db)
 #let's use the merge categorical values:
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
+
 # Create the graph
 data_official, col_stats_dict_official = make_pkey_fkey_graph(
         db_nuovo,
@@ -84,85 +85,166 @@ data_official, col_stats_dict_official = make_pkey_fkey_graph(
         cache_dir=None  # disabled
 )
 
+# === CONFIG per site-success ===
 target_table  = "facilities"     # entità nodo
 target_column = "success_rate"   # label di regressione
 node_type     = target_table
 
-# --- 1) ID nodi nel grafo (PK 'id' nella tabella facilities) ---
+# --- 1) ID nodi nel grafo (PK nella tua facilities è 'facility_id') ---
 fac_df = db_nuovo.table_dict[target_table].df
-assert "id" in fac_df.columns, f"Colonna 'id' non trovata in {target_table}. Colonne: {fac_df.columns.tolist()}"
-graph_site_ids = fac_df["id"].to_numpy()
-id_to_idx = {site_id: idx for idx, site_id in enumerate(graph_site_ids)}
+
+# autodetect PK: preferisci 'id', altrimenti 'facility_id', altrimenti qualunque *_id unico
+if "id" in fac_df.columns:
+    node_id_col = "id"
+elif "facility_id" in fac_df.columns:
+    node_id_col = "facility_id"
+else:
+    cands = [c for c in fac_df.columns if c.endswith("_id") and fac_df[c].is_unique]
+    assert len(cands) > 0, f"Nessuna PK trovata in {target_table}. Colonne: {fac_df.columns.tolist()}"
+    node_id_col = cands[0]
+
+graph_site_ids = fac_df[node_id_col].to_numpy()
 
 # --- 2) Prendi la tabella di train e riduci ad UNA riga per sito (ultimo timestamp) ---
 train_df = train_table.df
 for col in ["facility_id", "timestamp", target_column]:
     assert col in train_df.columns, f"Colonna '{col}' non trovata in train. Colonne: {train_df.columns.tolist()}"
 
-# ordina per timestamp e tieni l'ultima occorrenza per facility_id
 train_latest = train_df.sort_values("timestamp").drop_duplicates("facility_id", keep="last")
 
-site_ids    = train_latest["facility_id"].to_numpy()
+# allinea i tipi (evita mismatch int/str)
+fk_series = train_latest["facility_id"]
+pk_series = fac_df[node_id_col]
+
+if fk_series.dtype != pk_series.dtype:
+    # prova a castare la FK al dtype della PK; se fallisce, cast a stringa su entrambi
+    try:
+        fk_series = fk_series.astype(pk_series.dtype)
+    except Exception:
+        fk_series = fk_series.astype(str)
+        pk_series = pk_series.astype(str)
+        graph_site_ids = pk_series.to_numpy()
+
+id_to_idx = {sid: idx for idx, sid in enumerate(graph_site_ids)}
+
+site_ids    = fk_series.to_numpy()
 site_labels = train_latest[target_column].astype(float).to_numpy()
 
-# --- 3) Allinea alle posizioni dei nodi 'facilities' ---
+# --- 3) Costruisci y e mask allineate ai nodi 'facilities' ---
 import torch
 target_vector = torch.full((len(graph_site_ids),), float("nan"), dtype=torch.float32)
-
-# assegna le label solo dove c'è match facility_id -> facilities.id
 for sid, y in zip(site_ids, site_labels):
     idx = id_to_idx.get(sid, None)
     if idx is not None:
         target_vector[idx] = float(y)
 
-# --- 4) Salva su data_official ---
 data_official[target_table].y = target_vector
 data_official[target_table].train_mask = ~torch.isnan(target_vector)
 
+# (opzionale) crea anche val/test mask coerenti (ultima etichetta per sito)
+for split_name, split_table in [("val", val_table), ("test", test_table)]:
+    sdf = split_table.df.sort_values("timestamp").drop_duplicates("facility_id", keep="last")
+    fk = sdf["facility_id"]
+    if fk.dtype != pk_series.dtype:
+        try:
+            fk = fk.astype(pk_series.dtype)
+        except Exception:
+            fk = fk.astype(str)
+    mask = torch.zeros(len(graph_site_ids), dtype=torch.bool)
+    for sid in fk.to_numpy():
+        idx = id_to_idx.get(sid, None)
+        if idx is not None:
+            mask[idx] = True
+    data_official[target_table][f"{split_name}_mask"] = mask
 
-# graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
-# id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
+# Create the graph
+# data_official, col_stats_dict_official = make_pkey_fkey_graph(
+#         db_nuovo,
+#         col_to_stype_dict=col_to_stype_dict_nuovo,
+#         text_embedder_cfg = None,
+#         cache_dir=None  # disabled
+# )
+
+# target_table  = "facilities"     # entità nodo
+# target_column = "success_rate"   # label di regressione
+# node_type     = target_table
+
+# # --- 1) ID nodi nel grafo (PK 'id' nella tabella facilities) ---
+# fac_df = db_nuovo.table_dict[target_table].df
+# assert "id" in fac_df.columns, f"Colonna 'id' non trovata in {target_table}. Colonne: {fac_df.columns.tolist()}"
+# graph_site_ids = fac_df["id"].to_numpy()
+# id_to_idx = {site_id: idx for idx, site_id in enumerate(graph_site_ids)}
+
+# # --- 2) Prendi la tabella di train e riduci ad UNA riga per sito (ultimo timestamp) ---
 # train_df = train_table.df
-# driver_labels = train_df[target_column].to_numpy()
-# driver_ids = train_df["nct_id"].to_numpy()
+# for col in ["facility_id", "timestamp", target_column]:
+#     assert col in train_df.columns, f"Colonna '{col}' non trovata in train. Colonne: {train_df.columns.tolist()}"
 
-# target_vector = torch.full((len(graph_driver_ids),), float("nan"))
-# for i, driver_id in enumerate(driver_ids):
-#     if driver_id in id_to_idx:
-#         target_vector[id_to_idx[driver_id]] = driver_labels[i]
+# # ordina per timestamp e tieni l'ultima occorrenza per facility_id
+# train_latest = train_df.sort_values("timestamp").drop_duplicates("facility_id", keep="last")
 
+# site_ids    = train_latest["facility_id"].to_numpy()
+# site_labels = train_latest[target_column].astype(float).to_numpy()
+
+# # --- 3) Allinea alle posizioni dei nodi 'facilities' ---
+# import torch
+# target_vector = torch.full((len(graph_site_ids),), float("nan"), dtype=torch.float32)
+
+# # assegna le label solo dove c'è match facility_id -> facilities.id
+# for sid, y in zip(site_ids, site_labels):
+#     idx = id_to_idx.get(sid, None)
+#     if idx is not None:
+#         target_vector[idx] = float(y)
+
+# # --- 4) Salva su data_official ---
 # data_official[target_table].y = target_vector
 # data_official[target_table].train_mask = ~torch.isnan(target_vector)
 
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# data_full, col_stats_dict_full = make_pkey_fkey_graph(
-#     db_nuovo,
-#     col_to_stype_dict=col_to_stype_dict_nuovo,
-#     text_embedder_cfg=None,
-#     cache_dir=None
-# )
-# data_full = data_full.to(device)
+# # graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
+# # id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
-# #retrieve the id from the driver nodes
-# graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
-# id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+# # train_df = train_table.df
+# # driver_labels = train_df[target_column].to_numpy()
+# # driver_ids = train_df["nct_id"].to_numpy()
 
-# #get the labels and the ids of the drivers from the table
-# train_df = train_table.df
-# driver_labels = train_df[target_column].to_numpy()
-# driver_ids = train_df["nct_id"].to_numpy()
+# # target_vector = torch.full((len(graph_driver_ids),), float("nan"))
+# # for i, driver_id in enumerate(driver_ids):
+# #     if driver_id in id_to_idx:
+# #         target_vector[id_to_idx[driver_id]] = driver_labels[i]
 
-# #map the correct labels for all drivers node (which are target ones)
-# target_vector = torch.full((len(graph_driver_ids),), float("nan")) #inizial
-# for i, driver_id in enumerate(driver_ids):
-#     if driver_id in id_to_idx:
-#         target_vector[id_to_idx[driver_id]] = driver_labels[i]
+# # data_official[target_table].y = target_vector
+# # data_official[target_table].train_mask = ~torch.isnan(target_vector)
+
+# # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# # data_full, col_stats_dict_full = make_pkey_fkey_graph(
+# #     db_nuovo,
+# #     col_to_stype_dict=col_to_stype_dict_nuovo,
+# #     text_embedder_cfg=None,
+# #     cache_dir=None
+# # )
+# # data_full = data_full.to(device)
+
+# # #retrieve the id from the driver nodes
+# # graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
+# # id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+# # #get the labels and the ids of the drivers from the table
+# # train_df = train_table.df
+# # driver_labels = train_df[target_column].to_numpy()
+# # driver_ids = train_df["nct_id"].to_numpy()
+
+# # #map the correct labels for all drivers node (which are target ones)
+# # target_vector = torch.full((len(graph_driver_ids),), float("nan")) #inizial
+# # for i, driver_id in enumerate(driver_ids):
+# #     if driver_id in id_to_idx:
+# #         target_vector[id_to_idx[driver_id]] = driver_labels[i]
 
 
-# data_full[target_table].y = target_vector
-# data_full[target_table].train_mask = ~torch.isnan(target_vector)
+# # data_full[target_table].y = target_vector
+# # data_full[target_table].train_mask = ~torch.isnan(target_vector)
 
 #take y and mask complete for the dataset:
 y_full = data_official[target_table].y.float()
