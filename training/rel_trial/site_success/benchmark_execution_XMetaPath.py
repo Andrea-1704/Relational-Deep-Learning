@@ -55,8 +55,8 @@ val_table = task.get_table("val")
 test_table = task.get_table("test") 
 
 print(train_table)
-target_table = "studies"
-target_column = "num_of_adverse_events"
+target_table = "facilities"
+target_column = "success_rate"
 node_type = target_table
 
 out_channels = 1
