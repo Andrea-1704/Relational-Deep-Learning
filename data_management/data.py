@@ -104,15 +104,7 @@ def merge_text_columns_to_categorical(db, stype_dict):
 
         # Assegna il tipo corretto
         #stype_dict[table_name][new_colname] = stype.categorical
-        # categorical_type = get_stype_enum_with_value(stype_dict, "categorical")
-        from torch_frame.stype import stype as tf_stype
-        try:
-            categorical_type = get_stype_enum_with_value(stype_dict, "categorical")
-        except ValueError:
-            from torch_frame.stype import stype as tf_stype
-            categorical_type = tf_stype.categorical
-        stype_dict[table_name][new_colname] = categorical_type
-
+        categorical_type = get_stype_enum_with_value(stype_dict, "categorical")
         stype_dict[table_name][new_colname] = categorical_type
 
 
