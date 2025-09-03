@@ -48,10 +48,10 @@ def to_canonical(mp_outward):
 
 
 dataset = get_dataset("rel-trial", download=True)
-task = get_task("rel-trial", "study-adverse", download=True)
+task = get_task("rel-trial", "site-success", download=True)
 
 train_table = task.get_table("train") 
-val_table = task.get_table("val") 
+val_table = task.get_table("val")
 test_table = task.get_table("test") 
 
 print(train_table)

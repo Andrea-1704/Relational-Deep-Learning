@@ -61,9 +61,9 @@ from utils.utils import evaluate_performance, evaluate_on_full_train, test, trai
 dataset = get_dataset("rel-trial", download=True)
 task = get_task("rel-trial", "site-success", download=True)
 
-train_table = task.get_table("train") #date  driverId  qualifying
-val_table = task.get_table("val") #date  driverId  qualifying
-test_table = task.get_table("test") # date  driverId
+train_table = task.get_table("train")
+val_table = task.get_table("val") 
+test_table = task.get_table("test") 
 
 out_channels = 1
 loss_fn = L1Loss()
