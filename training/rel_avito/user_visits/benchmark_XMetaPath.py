@@ -159,7 +159,6 @@ metapaths, metapath_count = final_metapath_search_with_rl(
 )
 canonical = []
 for mp in metapaths:
-    #change to canonical:
     mp = mp.copy()
     mp_key   = to_canonical(mp)         
     assert mp_key[-1][2] == node_type, \
