@@ -44,7 +44,7 @@ def to_canonical(mp_outward):
 #Configuration for the task:
 #############################################
 task_name = "study-outcome"
-db_name = "rel_trial"
+db_name = "rel-trial"
 node_id = "nct_id"
 target = "qualifying"
 node_type = "studies"
