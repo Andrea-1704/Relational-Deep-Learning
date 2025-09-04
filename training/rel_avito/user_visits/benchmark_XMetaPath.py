@@ -41,12 +41,13 @@ def to_canonical(mp_outward):
 
 #Configuration for the task:
 #############################################
-task_name = "user-clicks"
+task_name = "user-visits"
+db_name = "rel_avito"
 node_id = "UserID"
 target = "num_click"
 node_type = "UserInfo"
-dataset = get_dataset("rel-avito", download=True)
-task = get_task("rel-avito", "user-clicks", download=True)
+dataset = get_dataset(db_name, download=True)
+task = get_task(db_name, task_name, download=True)
 task_type = task.task_type
 out_channels = 1
 tune_metric = "roc_auc"
