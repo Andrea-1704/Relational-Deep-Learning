@@ -1,3 +1,9 @@
+"""
+Solving Driver Position task using XMetaPath and learning the meaningful metapaths.
+This a node regression task.
+"""
+
+
 import torch
 import os
 import torch
@@ -32,7 +38,7 @@ def to_canonical(mp_outward):
 #Configuration for the task:
 #############################################
 task_name = "driver-position"
-db_name = "rel_f1"
+db_name = "rel-f1"
 node_id = "driverId"
 target = "position"
 node_type = "drivers"
