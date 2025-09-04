@@ -33,227 +33,75 @@ from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
 # utility functions:
+#############################################
 def flip_rel(rel_name: str) -> str:
     return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
-
 def to_canonical(mp_outward):
-    
+    if mp_outward[-1][2] == node_type:
+        return mp_outward #if already canonical leave it as it is.
     mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
-    
+    #The assert is done in the caller (see code below)
     return tuple(mp)
+#############################################
 
 
-
-
-
-
-dataset = get_dataset("rel-trial", download=True)
-task = get_task("rel-trial", "site-success", download=True)
-
-train_table = task.get_table("train") 
-val_table = task.get_table("val")
-test_table = task.get_table("test") 
-
-print(train_table)
-# target_table = "facilities"
-# target_column = "success_rate"
-# node_type = target_table
-
+#Configuration for the task:
+#############################################
+task_name = "site-success"
+db_name = "rel-trial"
+node_id = "facility_id"
+target = "success_rate"
+node_type = "facilities"
+dataset = get_dataset(db_name, download=True)
+task = get_task(db_name, task_name, download=True)
+task_type = task.task_type
 out_channels = 1
-loss_fn = L1Loss()
-# this is the mae loss and is used when have regressions tasks.
 tune_metric = "mae"
 higher_is_better = False
+loss_fn = L1Loss()
+#############################################
 
-seed_everything(42)
+
+train_table = task.get_table("train")
+val_table = task.get_table("val")
+test_table = task.get_table("test")
+seed = 42
+seed_everything(seed) 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
+
+#Configuration for a node regression task:
+#############################################
 db = dataset.get_db() #get all tables
 col_to_stype_dict = get_stype_proposal(db)
-#this is used to get the stype of the columns
-
-#let's use the merge categorical values:
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
-
-
-# Create the graph
 data_official, col_stats_dict_official = make_pkey_fkey_graph(
-        db_nuovo,
-        col_to_stype_dict=col_to_stype_dict_nuovo,
-        text_embedder_cfg = None,
-        cache_dir=None  # disabled
+    db_nuovo,
+    col_to_stype_dict=col_to_stype_dict_nuovo,
+    text_embedder_cfg = None,
+    cache_dir=None  # disabled
 )
-
-# === CONFIG per site-success ===
-target_table  = "facilities"     # entità nodo
-target_column = "success_rate"   # label di regressione
-node_type     = target_table
-
-# --- 1) ID nodi nel grafo (PK nella tua facilities è 'facility_id') ---
-fac_df = db_nuovo.table_dict[target_table].df
-
-# autodetect PK: preferisci 'id', altrimenti 'facility_id', altrimenti qualunque *_id unico
-if "id" in fac_df.columns:
-    node_id_col = "id"
-elif "facility_id" in fac_df.columns:
-    node_id_col = "facility_id"
-else:
-    cands = [c for c in fac_df.columns if c.endswith("_id") and fac_df[c].is_unique]
-    assert len(cands) > 0, f"Nessuna PK trovata in {target_table}. Colonne: {fac_df.columns.tolist()}"
-    node_id_col = cands[0]
-
-graph_site_ids = fac_df[node_id_col].to_numpy()
-
-# --- 2) Prendi la tabella di train e riduci ad UNA riga per sito (ultimo timestamp) ---
+graph_driver_ids = db_nuovo.table_dict[node_type].df[node_id].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 train_df = train_table.df
-for col in ["facility_id", "timestamp", target_column]:
-    assert col in train_df.columns, f"Colonna '{col}' non trovata in train. Colonne: {train_df.columns.tolist()}"
-
-train_latest = train_df.sort_values("timestamp").drop_duplicates("facility_id", keep="last")
-
-# allinea i tipi (evita mismatch int/str)
-fk_series = train_latest["facility_id"]
-pk_series = fac_df[node_id_col]
-
-if fk_series.dtype != pk_series.dtype:
-    # prova a castare la FK al dtype della PK; se fallisce, cast a stringa su entrambi
-    try:
-        fk_series = fk_series.astype(pk_series.dtype)
-    except Exception:
-        fk_series = fk_series.astype(str)
-        pk_series = pk_series.astype(str)
-        graph_site_ids = pk_series.to_numpy()
-
-id_to_idx = {sid: idx for idx, sid in enumerate(graph_site_ids)}
-
-site_ids    = fk_series.to_numpy()
-site_labels = train_latest[target_column].astype(float).to_numpy()
-
-# --- 3) Costruisci y e mask allineate ai nodi 'facilities' ---
-import torch
-target_vector = torch.full((len(graph_site_ids),), float("nan"), dtype=torch.float32)
-for sid, y in zip(site_ids, site_labels):
-    idx = id_to_idx.get(sid, None)
-    if idx is not None:
-        target_vector[idx] = float(y)
-
-data_official[target_table].y = target_vector
-data_official[target_table].train_mask = ~torch.isnan(target_vector)
-
-# (opzionale) crea anche val/test mask coerenti (ultima etichetta per sito)
-for split_name, split_table in [("val", val_table), ("test", test_table)]:
-    sdf = split_table.df.sort_values("timestamp").drop_duplicates("facility_id", keep="last")
-    fk = sdf["facility_id"]
-    if fk.dtype != pk_series.dtype:
-        try:
-            fk = fk.astype(pk_series.dtype)
-        except Exception:
-            fk = fk.astype(str)
-    mask = torch.zeros(len(graph_site_ids), dtype=torch.bool)
-    for sid in fk.to_numpy():
-        idx = id_to_idx.get(sid, None)
-        if idx is not None:
-            mask[idx] = True
-    data_official[target_table][f"{split_name}_mask"] = mask
-
-
-# Create the graph
-# data_official, col_stats_dict_official = make_pkey_fkey_graph(
-#         db_nuovo,
-#         col_to_stype_dict=col_to_stype_dict_nuovo,
-#         text_embedder_cfg = None,
-#         cache_dir=None  # disabled
-# )
-
-# target_table  = "facilities"     # entità nodo
-# target_column = "success_rate"   # label di regressione
-# node_type     = target_table
-
-# # --- 1) ID nodi nel grafo (PK 'id' nella tabella facilities) ---
-# fac_df = db_nuovo.table_dict[target_table].df
-# assert "id" in fac_df.columns, f"Colonna 'id' non trovata in {target_table}. Colonne: {fac_df.columns.tolist()}"
-# graph_site_ids = fac_df["id"].to_numpy()
-# id_to_idx = {site_id: idx for idx, site_id in enumerate(graph_site_ids)}
-
-# # --- 2) Prendi la tabella di train e riduci ad UNA riga per sito (ultimo timestamp) ---
-# train_df = train_table.df
-# for col in ["facility_id", "timestamp", target_column]:
-#     assert col in train_df.columns, f"Colonna '{col}' non trovata in train. Colonne: {train_df.columns.tolist()}"
-
-# # ordina per timestamp e tieni l'ultima occorrenza per facility_id
-# train_latest = train_df.sort_values("timestamp").drop_duplicates("facility_id", keep="last")
-
-# site_ids    = train_latest["facility_id"].to_numpy()
-# site_labels = train_latest[target_column].astype(float).to_numpy()
-
-# # --- 3) Allinea alle posizioni dei nodi 'facilities' ---
-# import torch
-# target_vector = torch.full((len(graph_site_ids),), float("nan"), dtype=torch.float32)
-
-# # assegna le label solo dove c'è match facility_id -> facilities.id
-# for sid, y in zip(site_ids, site_labels):
-#     idx = id_to_idx.get(sid, None)
-#     if idx is not None:
-#         target_vector[idx] = float(y)
-
-# # --- 4) Salva su data_official ---
-# data_official[target_table].y = target_vector
-# data_official[target_table].train_mask = ~torch.isnan(target_vector)
-
-
-# # graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
-# # id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
-
-# # train_df = train_table.df
-# # driver_labels = train_df[target_column].to_numpy()
-# # driver_ids = train_df["nct_id"].to_numpy()
-
-# # target_vector = torch.full((len(graph_driver_ids),), float("nan"))
-# # for i, driver_id in enumerate(driver_ids):
-# #     if driver_id in id_to_idx:
-# #         target_vector[id_to_idx[driver_id]] = driver_labels[i]
-
-# # data_official[target_table].y = target_vector
-# # data_official[target_table].train_mask = ~torch.isnan(target_vector)
-
-# # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# # data_full, col_stats_dict_full = make_pkey_fkey_graph(
-# #     db_nuovo,
-# #     col_to_stype_dict=col_to_stype_dict_nuovo,
-# #     text_embedder_cfg=None,
-# #     cache_dir=None
-# # )
-# # data_full = data_full.to(device)
-
-# # #retrieve the id from the driver nodes
-# # graph_driver_ids = db_nuovo.table_dict[target_table].df["nct_id"].to_numpy()
-# # id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
-
-# # #get the labels and the ids of the drivers from the table
-# # train_df = train_table.df
-# # driver_labels = train_df[target_column].to_numpy()
-# # driver_ids = train_df["nct_id"].to_numpy()
-
-# # #map the correct labels for all drivers node (which are target ones)
-# # target_vector = torch.full((len(graph_driver_ids),), float("nan")) #inizial
-# # for i, driver_id in enumerate(driver_ids):
-# #     if driver_id in id_to_idx:
-# #         target_vector[id_to_idx[driver_id]] = driver_labels[i]
-
-
-# # data_full[target_table].y = target_vector
-# # data_full[target_table].train_mask = ~torch.isnan(target_vector)
-
-#take y and mask complete for the dataset:
-y_full = data_official[target_table].y.float()
-train_mask_full = data_official[target_table].train_mask
+driver_labels = train_df[target].to_numpy()
+driver_ids = train_df[node_id].to_numpy()
+target_vector = torch.full((len(graph_driver_ids),), float("nan"))
+for i, driver_id in enumerate(driver_ids):
+    if driver_id in id_to_idx:
+        target_vector[id_to_idx[driver_id]] = driver_labels[i]
+data_official[node_type].y = target_vector
+data_official[node_type].train_mask = ~torch.isnan(target_vector)
+y_full = data_official[node_type].y.float()
+train_mask_full = data_official[node_type].train_mask
 y_bin_full = y_full
+#############################################
 
+
+loss_fn = L1Loss()
 hidden_channels = 128
 out_channels = 128
-
 loader_dict = loader_dict_fn(
     batch_size=512,
     num_neighbours=256,
@@ -263,18 +111,12 @@ loader_dict = loader_dict_fn(
     val_table=val_table,
     test_table=test_table
 )
-lr=1e-02
-wd=0
 
 
-
-#Learning metapaths:
+#Learn the most useful metapaths:
+#############################################
 agent = RLAgent(tau=1.0, alpha=0.5)
-"""
-We build a single agent and perform sequential warmups
-"""
-agent.best_score_by_path_global.clear() #azzera registro punteggi
-
+agent.best_score_by_path_global.clear() 
 warmup_rl_agent(
     agent=agent,
     data=data_official,
@@ -286,18 +128,14 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    num_episodes=2,   
-    L_max=3,          
-    epochs=3         
+    num_episodes=3,   
+    L_max=4,          
+    epochs=3        
 )
-
-#Extract the Top-K metapaths found out with warmup:
 K = 3
 global_best_map = agent.best_score_by_path_global
-
-agent.tau = 0.3   # meno esplorazione
-agent.alpha = 0.2 # update più conservativo
-
+agent.tau = 0.3   
+agent.alpha = 0.2 
 metapaths, metapath_count = final_metapath_search_with_rl(
     agent=agent,
     data=data_official,
@@ -309,92 +147,60 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    L_max=3,                 
+    L_max=4,                 
     epochs=10,
     number_of_metapaths=K    
 )
-
-
-
-print(f"The final metapath are {metapaths}")
-
-
-
-
 canonical = []
 for mp in metapaths:
     #change to canonical:
     mp = mp.copy()
     mp_key   = to_canonical(mp)         
-    
+    assert mp_key[-1][2] == node_type, \
+        f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
     canonical.append(mp_key)
+print(f"Canonical metapaths are: {canonical}")
+#############################################
 
-hidden_channels = 128
-out_channels = 128
-
+#Train the final model with the metapaths found:
+#############################################
 model = XMetaPath2(
     data=data_official,
     col_stats_dict=col_stats_dict_official,
-    #metapath_counts = metapath_count, 
     metapaths=canonical,               
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
 ).to(device)
-
-
-
 lr=1e-02
 wd = 0
-
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
-
-scheduler = CosineAnnealingLR(optimizer, T_max=25)
-
-early_stopping = EarlyStopping(
-    patience=80,
-    delta=0.0,
-    verbose=True,
-    higher_is_better = True,
-    path="best_basic_model.pt"
-)
-
+# optimizer = torch.optim.AdamW(
+#     model.parameters(),
+#     lr=lr,
+#     weight_decay=wd
+# )
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 500
+epochs = 150
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-
     train_pred = test(model, loader_dict["train"], device=device, task=task)
     val_pred = test(model, loader_dict["val"], device=device, task=task)
     test_pred = test(model, loader_dict["test"], device=device, task=task)
-    
     train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
     val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-
-    #scheduler.step(val_metrics[tune_metric])
-
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
         best_val_metric = val_metrics[tune_metric]
         state_dict = copy.deepcopy(model.state_dict())
-
     if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
         best_test_metric = test_metrics[tune_metric]
         state_dict_test = copy.deepcopy(model.state_dict())
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}")
+#############################################
 
-    current_lr = optimizer.param_groups[0]["lr"]
-    
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
-
-    # early_stopping(val_metrics[tune_metric], model)
-
-    # if early_stopping.early_stop:
-    #     print(f"Early stopping triggered at epoch {epoch}")
-    #     break
-
-
-
+#Final results:
 print(f"best validation results: {best_val_metric}")
 print(f"best test results: {best_test_metric}")
