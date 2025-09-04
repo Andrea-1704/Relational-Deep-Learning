@@ -46,7 +46,7 @@ def to_canonical(mp_outward):
 
 
 task_name = "user-clicks"
-node_id = "UserId"
+node_id = "UserID"
 
 node_type = "UserInfo"
 
