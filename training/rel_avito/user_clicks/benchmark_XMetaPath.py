@@ -40,7 +40,7 @@ def flip_rel(rel_name: str) -> str:
 def to_canonical(mp_outward):
     # mp_outward: [(src, rel, dst), ...] dalla costruzione RL (parte da 'drivers')
     mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
-    assert mp[-1][2] == "drivers"
+    
     return tuple(mp)
 
 
@@ -102,7 +102,7 @@ binary_top3_labels_raw = qualifying_positions #do not need to binarize
 target_vector_official = torch.full((len(graph_driver_ids),), float("nan")) #inizialize a vector with all "nan" elements
 for i, driver_id in enumerate(driver_ids_raw):
     if driver_id in id_to_idx:#if the driver is in the training
-        target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+        target_vector_official[id_to_idx[node_id]] = binary_top3_labels_raw[i]
 
 
 data_official[node_type].y = target_vector_official.float()
@@ -144,7 +144,7 @@ loader_dict = loader_dict_fn(
 )
 
 
-node_type="drivers"
+
 
 
 #Learn the most useful metapaths:
@@ -163,7 +163,7 @@ warmup_rl_agent(
     tune_metric=tune_metric,
     higher_is_better=higher_is_better,
     train_mask=train_mask_full,
-    node_type='drivers',
+    node_type=node_type,
     col_stats_dict=col_stats_dict_official,
     num_episodes=3,   
     L_max=4,          
@@ -186,7 +186,7 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     tune_metric=tune_metric,
     higher_is_better=higher_is_better,
     train_mask=train_mask_full,
-    node_type='drivers',
+    node_type=node_type,
     col_stats_dict=col_stats_dict_official,
     L_max=4,                 
     epochs=10,
