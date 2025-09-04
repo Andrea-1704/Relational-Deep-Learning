@@ -108,7 +108,7 @@ def merge_text_columns_to_categorical(db, stype_dict):
             categorical_type = get_stype_enum_with_value(stype_dict, "categorical")
             stype_dict[table_name][new_colname] = categorical_type
         except ValueError as e:
-            # print(f"Errore nell'assegnazione del tipo categorico: {e}")
+            # print(f"Error nell'assegnazione del tipo categorico: {e}")
             continue
 
 
