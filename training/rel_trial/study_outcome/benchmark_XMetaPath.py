@@ -46,7 +46,7 @@ def to_canonical(mp_outward):
 task_name = "study-outcome"
 db_name = "rel-trial"
 node_id = "nct_id"
-target = "qualifying"
+target = "outcome"
 node_type = "studies"
 dataset = get_dataset(db_name, download=True)
 task = get_task(db_name, task_name, download=True)
