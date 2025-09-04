@@ -47,11 +47,11 @@ def to_canonical(mp_outward):
 
 #Configuration for the task:
 #############################################
-task_name = "driver-position"
-db_name = "rel-f1"
-node_id = "driverId"
-target = "position"
-node_type = "drivers"
+task_name = "study-adverse"
+db_name = "rel-trial"
+node_id = "nct_id"
+target = "num_of_adverse_events"
+node_type = "studies"
 dataset = get_dataset(db_name, download=True)
 task = get_task(db_name, task_name, download=True)
 task_type = task.task_type
