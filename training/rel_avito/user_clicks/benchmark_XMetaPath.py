@@ -46,6 +46,9 @@ def to_canonical(mp_outward):
 
 
 task_name = "user-clicks"
+node_id = "UserId"
+
+node_type = "UserInfo"
 
 dataset = get_dataset("rel-avito", download=True)
 task = get_task("rel-avito", "user-clicks", download=True)
@@ -79,12 +82,13 @@ data_official, col_stats_dict_official = make_pkey_fkey_graph(
 )
 #do not use the textual information: this db is mostly not textual
 
-graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
+graph_driver_ids = db_nuovo.table_dict[node_type].df[node_id].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
 
 train_df_raw = train_table.df
-driver_ids_raw = train_df_raw["driverId"].to_numpy()
+driver_ids_raw = train_df_raw[node_id].to_numpy()
+print(f"this is train_df_raw  {train_df_raw}")
 qualifying_positions = train_df_raw["qualifying"].to_numpy() #labels (train)
 
 
