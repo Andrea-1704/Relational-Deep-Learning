@@ -25,7 +25,6 @@ def flip_rel(rel_name: str) -> str:
 def to_canonical(mp_outward):
     # mp_outward: [(src, rel, dst), ...] dalla costruzione RL (parte da 'drivers')
     mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
-    # assert mp[-1][2] == "drivers"
     return tuple(mp)
 
 
@@ -595,7 +594,7 @@ def final_metapath_search_with_rl(
     keys, weights = _make_metapath_weights(
         selected_outward_paths=selected,
         stats_map=agent.metapath_stats,
-        n_drivers_total=data['drivers'].num_nodes,  
+        n_drivers_total=data[node_type].num_nodes,  
         alpha=0.5, beta=0.0, gamma=1.0              
     )
 
