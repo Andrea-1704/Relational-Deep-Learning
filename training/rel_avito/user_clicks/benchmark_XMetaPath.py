@@ -81,6 +81,8 @@ data_official, col_stats_dict_official = make_pkey_fkey_graph(
     cache_dir=None
 )
 #do not use the textual information: this db is mostly not textual
+df = db_nuovo.table_dict[node_type].df
+print(df.columns.tolist())
 
 graph_driver_ids = db_nuovo.table_dict[node_type].df[node_id].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
