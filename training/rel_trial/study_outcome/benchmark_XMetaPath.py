@@ -58,7 +58,6 @@ higher_is_better = True
 
 
 train_table = task.get_table("train")
-print(f"This is the train table: {train_table}")
 val_table = task.get_table("val")
 test_table = task.get_table("test")
 seed = 42

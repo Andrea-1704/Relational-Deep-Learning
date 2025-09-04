@@ -42,7 +42,7 @@ def to_canonical(mp_outward):
 #Configuration for the task:
 #############################################
 task_name = "user-visits"
-db_name = "rel_avito"
+db_name = "rel-avito"
 node_id = "UserID"
 target = "num_click"
 node_type = "UserInfo"
