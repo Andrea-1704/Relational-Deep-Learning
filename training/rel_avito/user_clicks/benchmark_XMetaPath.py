@@ -47,6 +47,7 @@ def to_canonical(mp_outward):
 
 task_name = "user-clicks"
 node_id = "UserID"
+target = "num_click"
 
 node_type = "UserInfo"
 
@@ -91,7 +92,7 @@ id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 train_df_raw = train_table.df
 driver_ids_raw = train_df_raw[node_id].to_numpy()
 print(f"this is train_df_raw  {train_df_raw}")
-qualifying_positions = train_df_raw["qualifying"].to_numpy() #labels (train)
+qualifying_positions = train_df_raw[target].to_numpy() #labels (train)
 
 
 binary_top3_labels_raw = qualifying_positions #do not need to binarize 
@@ -104,25 +105,25 @@ for i, driver_id in enumerate(driver_ids_raw):
         target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
 
 
-data_official['drivers'].y = target_vector_official.float()
-data_official['drivers'].train_mask = ~torch.isnan(target_vector_official)
-y_full = data_official['drivers'].y.float()
-train_mask_full = data_official['drivers'].train_mask
+data_official[node_type].y = target_vector_official.float()
+data_official[node_type].train_mask = ~torch.isnan(target_vector_official)
+y_full = data_official[node_type].y.float()
+train_mask_full = data_official[node_type].train_mask
 num_pos = (y_full[train_mask_full] == 1).sum()
 num_neg = (y_full[train_mask_full] == 0).sum()
 ratio = (num_neg / num_pos) if num_pos > 0 else 1.0
 pos_weight = torch.tensor([ratio], device=device)
-data_official['drivers'].y = target_vector_official
+data_official[node_type].y = target_vector_official
 
 
 
 # Ricava gli ID dei driver nella validation table
 val_df_raw = val_table.df
-val_driver_ids = val_df_raw["driverId"].to_numpy()
+val_driver_ids = val_df_raw[node_id].to_numpy()
 
 # Costruisci la mask come boolean mask sul vettore completo
 val_mask = torch.tensor([driver_id in val_driver_ids for driver_id in graph_driver_ids])
-data_official["drivers"].val_mask = val_mask
+data_official[node_type].val_mask = val_mask
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
