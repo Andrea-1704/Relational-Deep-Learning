@@ -1,6 +1,8 @@
 """
 This function is used for benchmarking the model against the others and improve
 the model performance considering the same metapath.
+
+I did not tune hyper parameter for this task->but maybe I should!
 """
 
 import torch
@@ -41,11 +43,11 @@ def to_canonical(mp_outward):
 
 #Configuration for the task:
 #############################################
-task_name = "driver-top3"
-db_name = "rel_f1"
-node_id = "driverId"
+task_name = "study-outcome"
+db_name = "rel_trial"
+node_id = "nct_id"
 target = "qualifying"
-node_type = "drivers"
+node_type = "studies"
 dataset = get_dataset(db_name, download=True)
 task = get_task(db_name, task_name, download=True)
 task_type = task.task_type
@@ -56,6 +58,7 @@ higher_is_better = True
 
 
 train_table = task.get_table("train")
+print(f"This is the train table: {train_table}")
 val_table = task.get_table("val")
 test_table = task.get_table("test")
 seed = 42
