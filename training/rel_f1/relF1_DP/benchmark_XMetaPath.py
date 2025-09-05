@@ -147,16 +147,17 @@ metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_r
 #     epochs=30,
 #     number_of_metapaths=K    
 # )
-# canonical = []
-# for mp in metapaths:
-#     #change to canonical:
-#     mp = mp.copy()
-#     mp_key   = to_canonical(mp)         
-#     assert mp_key[-1][2] == node_type, \
-#         f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
-#     canonical.append(mp_key)
-# print(f"Canonical metapaths are: {canonical}")
 #############################################
+canonical = []
+for mp in metapaths:
+    #change to canonical:
+    mp = mp.copy()
+    mp_key   = to_canonical(mp)         
+    assert mp_key[-1][2] == node_type, \
+        f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
+    canonical.append(mp_key)
+print(f"Canonical metapaths are: {canonical}")
+
 
 
 #Train the final model with the metapaths found:
