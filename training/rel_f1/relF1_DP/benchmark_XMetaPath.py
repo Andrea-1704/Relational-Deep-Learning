@@ -50,7 +50,10 @@ task_type = task.task_type
 out_channels = 1
 tune_metric = "mae"
 higher_is_better = False
-loss_fn = L1Loss()
+# loss_fn = L1Loss()
+from torch.nn import SmoothL1Loss
+loss_fn = SmoothL1Loss(beta=1.0)  # al posto di L1Loss
+
 #############################################
 
 
@@ -92,7 +95,7 @@ y_bin_full = y_full
 #############################################
 
 
-loss_fn = L1Loss()
+# loss_fn = L1Loss()
 hidden_channels = 128
 out_channels = 128
 loader_dict = loader_dict_fn(
