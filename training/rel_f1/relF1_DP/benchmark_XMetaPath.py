@@ -112,7 +112,7 @@ loader_dict = loader_dict_fn(
 
 #Learn the most useful metapaths:
 #or:
-metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'qualifying'), ('qualifying', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_results'), ('constructor_results', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
+metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')]]
 #############################################
 # agent = RLAgent(tau=1.0, alpha=0.5)
 # agent.best_score_by_path_global.clear() 
@@ -173,7 +173,7 @@ model = XMetaPath2(
     out_channels=out_channels,
     final_out_channels=1,
 ).to(device)
-lr=0.005
+lr=0.0005
 wd = 0
 optimizer = torch.optim.AdamW(
     model.parameters(),
