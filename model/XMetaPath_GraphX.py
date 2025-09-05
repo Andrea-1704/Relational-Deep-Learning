@@ -374,7 +374,7 @@ class MetaPathGNN(nn.Module):
                 h_dst=h_dst_curr,
                 edge_index=edge_index_remapped,
                 x_dst_orig=x_dst_orig,
-                edge_dt=edge_dt                     # <-- NON passare edge_weight qui
+                #edge_dt=edge_dt                     # <-- NON passare edge_weight qui
             )
    
 
