@@ -182,6 +182,7 @@ model = XMetaPath2(
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
+    time_decay=True 
 ).to(device)
 lr=0.0005
 wd = 0

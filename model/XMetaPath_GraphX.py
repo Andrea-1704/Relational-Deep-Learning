@@ -245,7 +245,7 @@ class MetaPathGNN(nn.Module):
             #self.convs.append(MetaPathGNNLayer(hidden_channels))
             self.convs.append(
                 GraphX(d_model=hidden_channels, num_heads=8,
-                    time_bias='none', time_scale=1.0,
+                    time_bias='linear', time_scale=1.0,
                     time_max_bucket=256, time_bucket_base=1.6,
                     dropout=0.1)
             )
@@ -340,6 +340,7 @@ class MetaPathGNN(nn.Module):
             x_dst_orig = x0_dict[dst][dst_nodes]   # ORIGINAL
             h_dst_curr = h_dict[dst][dst_nodes]    # CURRENT
 
+
             #Δt for edge and weight: exp(-λ Δt)
             edge_weight = None
             if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
@@ -356,6 +357,32 @@ class MetaPathGNN(nn.Module):
 
 
             h_src_curr = h_dict[src][src_nodes]
+
+            # Δt per-edge (senza esponenziale): lo userà GraphX come bias nei logits
+            edge_dt = None
+            if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
+                t_src_all = node_time_dict[src].float()
+                t_dst_all = node_time_dict[dst].float()
+                # stessi indici usati da edge_index (prima del remap)
+                t_src_e = t_src_all[edge_index[0]]  # [E_rel]
+                t_dst_e = t_dst_all[edge_index[1]]  # [E_rel]
+                edge_dt = (t_dst_e - t_src_e).clamp(min=0.0)  # [E_rel]
+            else:
+                # fallback neutro (nessun bias)
+                edge_dt = torch.zeros(edge_index.size(1), device=edge_index.device, dtype=torch.float32)
+
+            # chiamata al layer attenzionale (passa edge_dt!)
+            h_dst = self.convs[conv_idx](
+                h_src=h_src_curr,
+                h_dst=h_dst_curr,
+                edge_index=edge_index_remapped,
+                x_dst_orig=x_dst_orig,
+                edge_dt=edge_dt
+            )
+
+
+
+            
 
             # Δt per-edge (u->v), rimappato sui medesimi indici usati in edge_index_remapped
             edge_dt = None
