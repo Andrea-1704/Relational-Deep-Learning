@@ -173,7 +173,7 @@ model = XMetaPath2(
     out_channels=out_channels,
     final_out_channels=1,
 ).to(device)
-lr=0.0005
+lr=0.005
 wd = 0
 optimizer = torch.optim.AdamW(
     model.parameters(),
