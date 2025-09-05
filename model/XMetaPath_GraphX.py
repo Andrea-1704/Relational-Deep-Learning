@@ -356,15 +356,27 @@ class MetaPathGNN(nn.Module):
 
 
             h_src_curr = h_dict[src][src_nodes]
-            
-            edge_dt = delta  # NON l’esponenziale
+
+            # Δt per-edge (u->v), rimappato sui medesimi indici usati in edge_index_remapped
+            edge_dt = None
+            if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
+                t_src_all = node_time_dict[src].float()
+                t_dst_all = node_time_dict[dst].float()
+                # ATTENZIONE: qui usi gli INDICI ORIGINALI DEGLI ARCHI, coerenti con edge_index
+                t_src_e = t_src_all[edge_index[0]]  # [E_rel]
+                t_dst_e = t_dst_all[edge_index[1]]  # [E_rel]
+                dt = (t_dst_e - t_src_e) / float(self.time_scale)
+                edge_dt = dt.clamp(min=0.0)         # [E_rel]
+
+            # chiamata al layer Attentivo (GraphX)
             h_dst = self.convs[conv_idx](
                 h_src=h_src_curr,
                 h_dst=h_dst_curr,
                 edge_index=edge_index_remapped,
                 x_dst_orig=x_dst_orig,
-                edge_dt=edge_dt
-            )   
+                edge_dt=edge_dt                     # <-- NON passare edge_weight qui
+            )
+   
 
             h_dst = F.relu(h_dst)
             h_dst = self.norms[conv_idx](h_dst)
