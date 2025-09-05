@@ -42,7 +42,7 @@ def to_canonical(mp_outward):
 #Configuration for the task:
 #############################################
 task_name = "driver-dnf"
-db_name = "rel_f1"
+db_name = "rel-f1"
 node_id = "driverId"
 target = "qualifying"
 node_type = "drivers"
