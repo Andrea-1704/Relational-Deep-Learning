@@ -243,15 +243,13 @@ class MetaPathGNN(nn.Module):
         for i in range(len(metapath)):
             #self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
             #self.convs.append(MetaPathGNNLayer(hidden_channels))
-            self.convs.append
-            (
+            self.convs.append(
                 GraphX(d_model=hidden_channels, num_heads=8,
-                time_bias='both',           # 'linear' | 'bucket' | 'both' | 'none'
-                time_scale=1.0,             # scala Δt se necessario
-                time_max_bucket=256,
-                time_bucket_base=1.6,
-                dropout=0.1)
+                    time_bias='both', time_scale=1.0,
+                    time_max_bucket=256, time_bucket_base=1.6,
+                    dropout=0.1)
             )
+
 
         
         self.norms = nn.ModuleList([nn.LayerNorm(hidden_channels) for _ in range(len(metapath))])
@@ -357,16 +355,17 @@ class MetaPathGNN(nn.Module):
                 edge_weight = torch.exp(z)    
 
 
-
-            h_src_curr = h_dict[src][src_nodes]   
-
+            h_src_curr = h_dict[src][src_nodes]
+            
+            edge_dt = delta  # NON l’esponenziale
             h_dst = self.convs[conv_idx](
                 h_src=h_src_curr,
                 h_dst=h_dst_curr,
                 edge_index=edge_index_remapped,
                 x_dst_orig=x_dst_orig,
-                edge_weight=edge_weight
-            )
+                edge_dt=edge_dt
+            )   
+
             h_dst = F.relu(h_dst)
             h_dst = self.norms[conv_idx](h_dst)
             h_dst = self.dropouts[conv_idx](h_dst)
