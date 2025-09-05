@@ -344,6 +344,7 @@ class MetaPathGNN(nn.Module):
             #Δt for edge and weight: exp(-λ Δt)
             edge_weight = None
             # Δt per-edge (senza esponenziale): GraphX lo usa come bias nei logits
+            h_src_curr = h_dict[src][src_nodes]
             if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
                 t_src_all = node_time_dict[src].float()
                 t_dst_all = node_time_dict[dst].float()
