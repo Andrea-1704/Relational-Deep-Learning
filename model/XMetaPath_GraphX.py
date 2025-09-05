@@ -343,35 +343,19 @@ class MetaPathGNN(nn.Module):
 
             #Δt for edge and weight: exp(-λ Δt)
             edge_weight = None
+            # Δt per-edge (senza esponenziale): GraphX lo usa come bias nei logits
             if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
                 t_src_all = node_time_dict[src].float()
                 t_dst_all = node_time_dict[dst].float()
-                t_src_e = t_src_all[edge_index[0]]  # [E_rel]
-                t_dst_e = t_dst_all[edge_index[1]]  # [E_rel]
-                delta = (t_dst_e - t_src_e) / float(self.time_scale)
-                delta = delta.clamp(min=0.0)
-
-                lam = pos_lambda(self.raw_lambdas[conv_idx])      # scalare > 0
-                z = (-lam * delta).clamp(min=-60.0)               # stabilità numerica
-                edge_weight = torch.exp(z)    
-
-
-            h_src_curr = h_dict[src][src_nodes]
-
-            # Δt per-edge (senza esponenziale): lo userà GraphX come bias nei logits
-            edge_dt = None
-            if self.use_time_decay and (node_time_dict is not None) and (src in node_time_dict) and (dst in node_time_dict):
-                t_src_all = node_time_dict[src].float()
-                t_dst_all = node_time_dict[dst].float()
-                # stessi indici usati da edge_index (prima del remap)
+                # stessi indici di edge_index (prima del remap)
                 t_src_e = t_src_all[edge_index[0]]  # [E_rel]
                 t_dst_e = t_dst_all[edge_index[1]]  # [E_rel]
                 edge_dt = (t_dst_e - t_src_e).clamp(min=0.0)  # [E_rel]
             else:
-                # fallback neutro (nessun bias)
+                # nessun timestamp: bias neutro
                 edge_dt = torch.zeros(edge_index.size(1), device=edge_index.device, dtype=torch.float32)
 
-            # chiamata al layer attenzionale (passa edge_dt!)
+            # hop attenzionale (una sola chiamata!)
             h_dst = self.convs[conv_idx](
                 h_src=h_src_curr,
                 h_dst=h_dst_curr,
@@ -379,6 +363,7 @@ class MetaPathGNN(nn.Module):
                 x_dst_orig=x_dst_orig,
                 edge_dt=edge_dt
             )
+
 
 
 
