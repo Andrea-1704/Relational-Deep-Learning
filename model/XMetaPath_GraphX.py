@@ -366,9 +366,11 @@ class MetaPathGNN(nn.Module):
             )
 
 
-            h_dst = F.relu(h_dst)
-            h_dst = self.norms[conv_idx](h_dst)
+            # h_dst = F.relu(h_dst)
+            # h_dst = self.norms[conv_idx](h_dst)
+            # h_dst = self.dropouts[conv_idx](h_dst)
             h_dst = self.dropouts[conv_idx](h_dst)
+
             h_dict[dst].index_copy_(0, dst_nodes, h_dst)
 
            
