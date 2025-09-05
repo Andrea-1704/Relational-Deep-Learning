@@ -245,7 +245,7 @@ class MetaPathGNN(nn.Module):
             #self.convs.append(MetaPathGNNLayer(hidden_channels))
             self.convs.append(
                 GraphX(d_model=hidden_channels, num_heads=8,
-                    time_bias='both', time_scale=1.0,
+                    time_bias='none', time_scale=1.0,
                     time_max_bucket=256, time_bucket_base=1.6,
                     dropout=0.1)
             )
