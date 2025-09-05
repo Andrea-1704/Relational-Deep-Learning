@@ -33,6 +33,8 @@ from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent,
 def flip_rel(rel_name: str) -> str:
     return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
 def to_canonical(mp_outward):
+    if mp_outward[-1][2] == node_type:
+        return mp_outward #if already canonical leave it as it is.
     mp = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_outward[::-1]]
     #The assert is done in the caller (see code below)
     return tuple(mp)
