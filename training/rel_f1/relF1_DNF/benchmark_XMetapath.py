@@ -44,7 +44,7 @@ def to_canonical(mp_outward):
 task_name = "driver-dnf"
 db_name = "rel-f1"
 node_id = "driverId"
-target = "qualifying"
+target = "did_not_finish"
 node_type = "drivers"
 dataset = get_dataset(db_name, download=True)
 task = get_task(db_name, task_name, download=True)
