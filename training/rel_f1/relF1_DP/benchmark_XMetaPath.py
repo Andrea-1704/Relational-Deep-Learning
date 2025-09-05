@@ -112,7 +112,7 @@ loader_dict = loader_dict_fn(
 
 #Learn the most useful metapaths:
 #or:
-metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')]]
+metapaths = [[('drivers', 'rev_f2p_driverId', 'standings'), ('standings', 'f2p_raceId', 'races')], [('drivers', 'rev_f2p_driverId', 'results'), ('results', 'f2p_constructorId', 'constructors'), ('constructors', 'rev_f2p_constructorId', 'constructor_standings'), ('constructor_standings', 'f2p_raceId', 'races')]]
 #############################################
 # agent = RLAgent(tau=1.0, alpha=0.5)
 # agent.best_score_by_path_global.clear() 
