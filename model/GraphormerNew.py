@@ -385,6 +385,13 @@ class GraphormerBlock(nn.Module):
         N_tot = X.size(0)
         cache = bias_pack["cache"]
         spd_bias_table = bias_pack["spd_bias_table"]         # Embedding
+        # SPD bias
+        # Assicurati che gli indici siano Long per l'Embedding:
+        if spd_pad.dtype != torch.long:
+            spd_pad = spd_pad.long()
+        spd_head = spd_bias_table(spd_pad)  # [N_tot, N_tot, H]
+        scores = scores + spd_head
+
         adj_rel_bias = bias_pack["adj_rel_bias"]             # [R, H]
         typepair_bias = bias_pack["typepair_bias"]           # [T, T, H]
         temp_bias_table = bias_pack["temp_bias_table"]       # Embedding
