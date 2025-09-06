@@ -207,6 +207,13 @@ class GraphX(nn.Module):
         alpha = softmax(logits, v)          # [E, H]
         alpha = self.attn_drop(alpha)
 
+        #Degree-corrected attention 1/[(deg(u)deg(v))]^(1/2)
+        deg_u = torch.bincount(u, minlength=Ns).clamp(min=1).to(alpha.device).float()
+        deg_v = torch.bincount(v, minlength=Nd).clamp(min=1).to(alpha.device).float()
+        corr = (deg_u[u].rsqrt() * deg_v[v].rsqrt()).unsqueeze(-1)  # [E,1]
+        alpha = alpha * corr
+
+
         # --------- Aggregazione pesata (dst raccoglie da src vicini) ---------
         # --------- Aggregazione pesata (dst raccoglie da src vicini) ---------
         H_attn = torch.zeros(Nd, self.num_heads, self.d_h, device=device)
