@@ -543,9 +543,7 @@ class XMetaPath2(nn.Module):
             for mp in metapaths
         ]) # we construct a specific MetaPathGNN for each metapath
 
-        #self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
-
-        self.regressor = RegressorGating(dim=out_channels, num_paths=len(metapaths), ctx_dim=hidden_channels)
+        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
@@ -588,7 +586,6 @@ class XMetaPath2(nn.Module):
         ] #create a list of the embeddings, one for each metapath
         concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
         #weighted = concat * self.metapath_weights_tensor.view(1, -1, 1) #to consider to add statisitcs
-        ctx = x_dict["drivers"]                  # [N, hidden_channels] (assicurati del nome del tipo target)
-        pred, w = self.regressor(concat, ctx)
-        return pred #finally apply regression; just put weighted instead of concat if statistics
+        
+        return self.regressor(concat) #finally apply regression; just put weighted instead of concat if statistics
      
