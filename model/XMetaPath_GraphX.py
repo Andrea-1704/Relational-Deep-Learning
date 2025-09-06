@@ -314,10 +314,7 @@ class MetaPathGNN(nn.Module):
         
         self.norms = nn.ModuleList([nn.LayerNorm(hidden_channels) for _ in range(len(metapath))])
         self.dropouts = nn.ModuleList([nn.Dropout(p=dropout_p) for _ in range(len(metapath))])
-
-        #embedding for indicating 'l' hop:
-        self.hop_emb = nn.Embedding(len(metapath), hidden_channels)
-
+        
         
         #UPDATE:
         self.use_time_decay = use_time_decay
@@ -384,12 +381,6 @@ class MetaPathGNN(nn.Module):
             x_src = [emb(3), emb(4), emb(5)]
             x_dst = [emb(6), emb(2), emb(3)]
             """
-
-            hop_id = torch.tensor([i], device=x_src.device)
-            hop_vec = self.hop_emb(hop_id).squeeze(0)             # [D]
-            x_src = x_src + hop_vec
-            x_dst = x_dst + hop_vec
-
 
             edge_index_remapped = torch.stack([
                 torch.tensor([src_map[int(x)] for x in edge_index[0].tolist()], device=edge_index.device, dtype=torch.long),
