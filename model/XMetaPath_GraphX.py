@@ -65,6 +65,8 @@ class GraphX(nn.Module):
         self.W_K = nn.Linear(d_model, d_model, bias=False)
         self.W_V = nn.Linear(d_model, d_model, bias=False)
         self.W_O = nn.Linear(d_model, d_model, bias=False)
+        
+        self.mix_attn = nn.Parameter(torch.tensor(0.0))  # scalare learnable in [0,1] via sigmoid
 
         self.log_tau = nn.Parameter(torch.zeros(self.num_heads))  # τ iniziale = 1.0
 
@@ -206,29 +208,60 @@ class GraphX(nn.Module):
         alpha = self.attn_drop(alpha)
 
         # --------- Aggregazione pesata (dst raccoglie da src vicini) ---------
+        # --------- Aggregazione pesata (dst raccoglie da src vicini) ---------
         H_attn = torch.zeros(Nd, self.num_heads, self.d_h, device=device)
-        # index_add_: somma per ogni v (per-head)
-        # Mean aggregator (per dst): somma V[u] e dividi per deg(v)
-        deg_v = torch.bincount(v, minlength=Nd).clamp(min=1).unsqueeze(-1).unsqueeze(-1).to(H_attn.device)  # [Nd,1,1]
-        H_sum = torch.zeros(Nd, self.num_heads, self.d_h, device=H_attn.device)
-        H_sum.index_add_(0, v, V[u])           # somma semplice
-        H_mean = H_sum / deg_v                 # [Nd,H,d_h]
+        # somma per ogni v e per head: [Nd, H, d_h]
+        H_attn.index_add_(0, v, alpha.unsqueeze(-1) * V[u])
 
-        m = torch.sigmoid(self.mix_attn)       # [1] scalare learnable
-        H_attn = m * H_attn + (1 - m) * H_mean
-        H_attn = H_attn.reshape(Nd, D)
-        H_attn = self.W_O(H_attn)
+        # Mean aggregator (safety-net robusta)
+        deg_v = torch.bincount(v, minlength=Nd).clamp(min=1).to(H_attn.device).view(-1, 1, 1)  # [Nd,1,1]
+        H_sum = torch.zeros_like(H_attn)
+        H_sum.index_add_(0, v, V[u])                        # somma semplice dei V dei vicini
+        H_mean = H_sum / deg_v                              # [Nd, H, d_h]
 
-        # H_attn.index_add_(0, v, alpha.unsqueeze(-1) * V[u])   # [Nd, H, d_h]
-        # H_attn = H_attn.reshape(Nd, D)
-        # H_attn = self.W_O(H_attn)
+        # Mix learnable tra attention e mean
+        m = torch.sigmoid(self.mix_attn)                    # scalare in (0,1)
+        H = m * H_attn + (1.0 - m) * H_mean                 # [Nd, H, d_h]
+
+        # proiezione di uscita
+        H = H.reshape(Nd, D)                                # D = self.d_model (già definito sopra)
+        H = self.W_O(H)
 
         # --------- Residuo + gate + FFN (pre-LN) ---------
         g = torch.sigmoid(self.gate)
-        out = self.w_l(H_attn) + (1. - g) * self.w_0(h_dst) + g * self.w_1(x_dst_orig)
-        out = out + self.ffn(self.ffn_ln(out))   # FFN con residuo
-
+        out = self.w_l(H) + (1. - g) * self.w_0(h_dst) + g * self.w_1(x_dst_orig)
+        out = out + self.ffn(self.ffn_ln(out))
         return out
+
+        
+        
+        
+        
+        
+        
+        # H_attn = torch.zeros(Nd, self.num_heads, self.d_h, device=device)
+        # # index_add_: somma per ogni v (per-head)
+        # # Mean aggregator (per dst): somma V[u] e dividi per deg(v)
+        # deg_v = torch.bincount(v, minlength=Nd).clamp(min=1).unsqueeze(-1).unsqueeze(-1).to(H_attn.device)  # [Nd,1,1]
+        # H_sum = torch.zeros(Nd, self.num_heads, self.d_h, device=H_attn.device)
+        # H_sum.index_add_(0, v, V[u])           # somma semplice
+        # H_mean = H_sum / deg_v                 # [Nd,H,d_h]
+
+        # m = torch.sigmoid(self.mix_attn)       # [1] scalare learnable
+        # H_attn = m * H_attn + (1 - m) * H_mean
+        # H_attn = H_attn.reshape(Nd, D)
+        # H_attn = self.W_O(H_attn)
+
+        # # H_attn.index_add_(0, v, alpha.unsqueeze(-1) * V[u])   # [Nd, H, d_h]
+        # # H_attn = H_attn.reshape(Nd, D)
+        # # H_attn = self.W_O(H_attn)
+
+        # # --------- Residuo + gate + FFN (pre-LN) ---------
+        # g = torch.sigmoid(self.gate)
+        # out = self.w_l(H_attn) + (1. - g) * self.w_0(h_dst) + g * self.w_1(x_dst_orig)
+        # out = out + self.ffn(self.ffn_ln(out))   # FFN con residuo
+
+        # return out
 
 
 
