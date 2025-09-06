@@ -385,12 +385,21 @@ class GraphormerBlock(nn.Module):
         N_tot = X.size(0)
         cache = bias_pack["cache"]
         spd_bias_table = bias_pack["spd_bias_table"]         # Embedding
-        # SPD bias
-        # Assicurati che gli indici siano Long per l'Embedding:
-        if spd_pad.dtype != torch.long:
-            spd_pad = spd_pad.long()
-        spd_head = spd_bias_table(spd_pad)  # [N_tot, N_tot, H]
-        scores = scores + spd_head
+        # ------- SPD bias (dense add) -------
+        # cache["spd_idx"]: [N, N] con i bucket della shortest-path distance (spesso int16)
+        # N = #nodi "reali" (senza TypeTokens), N_tot = dimensione totale della sequenza (con eventuali TypeTokens)
+        N = cache["N"]
+        spd_idx = cache["spd_idx"]  # [N, N], poss. torch.int16
+
+        # pad a [N_tot, N_tot] mettendo 0 fuori dal blocco reale (bucket neutro / di default)
+        spd_pad = torch.full((N_tot, N_tot), 0, device=X.device, dtype=torch.long)
+        spd_pad[:N, :N] = spd_idx.to(torch.long)  # <-- cast a long per l'Embedding
+
+        # lookup tabellare: spd_bias_table è nn.Embedding(num_spd_buckets, H)
+        # output: [N_tot, N_tot, H] → permute per sommare su scores: [H, N_tot, N_tot]
+        spd_head = spd_bias_table(spd_pad)                  # [N_tot, N_tot, H]
+        scores = scores + spd_head.permute(2, 0, 1)        # [H, N_tot, N_tot]
+
 
         adj_rel_bias = bias_pack["adj_rel_bias"]             # [R, H]
         typepair_bias = bias_pack["typepair_bias"]           # [T, T, H]
