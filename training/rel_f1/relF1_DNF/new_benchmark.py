@@ -121,44 +121,6 @@ loader_dict = loader_dict_fn(
 
 
 
-#Learn the most useful metapaths:
-#############################################
-# agent = RLAgent(tau=1.0, alpha=0.5)
-# agent.best_score_by_path_global.clear() 
-# warmup_rl_agent(
-#     agent=agent,
-#     data=data_official,
-#     loader_dict=loader_dict,
-#     task=task,
-#     loss_fn=loss_fn,
-#     tune_metric=tune_metric,
-#     higher_is_better=higher_is_better,
-#     train_mask=train_mask_full,
-#     node_type=node_type,
-#     col_stats_dict=col_stats_dict_official,
-#     num_episodes=3,   
-#     L_max=4,          
-#     epochs=3         
-# )
-# K = 3
-# global_best_map = agent.best_score_by_path_global
-# agent.tau = 0.3   
-# agent.alpha = 0.2 
-# metapaths, metapath_count = final_metapath_search_with_rl(
-#     agent=agent,
-#     data=data_official,
-#     loader_dict=loader_dict,
-#     task=task,
-#     loss_fn=loss_fn,
-#     tune_metric=tune_metric,
-#     higher_is_better=higher_is_better,
-#     train_mask=train_mask_full,
-#     node_type=node_type,
-#     col_stats_dict=col_stats_dict_official,
-#     L_max=4,                 
-#     epochs=10,
-#     number_of_metapaths=K    
-# )
 metapaths = [
   [
     ('drivers', 'rev_f2p_driverId', 'qualifying'),
