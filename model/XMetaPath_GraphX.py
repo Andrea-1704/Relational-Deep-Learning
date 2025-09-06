@@ -66,6 +66,8 @@ class GraphX(nn.Module):
         self.W_V = nn.Linear(d_model, d_model, bias=False)
         self.W_O = nn.Linear(d_model, d_model, bias=False)
 
+        self.log_tau = nn.Parameter(torch.zeros(self.num_heads))  # τ iniziale = 1.0
+
         # Centrality encoding (due tabelle: in-degree e out-degree)
         self.deg_in_emb  = nn.Embedding(max_deg_bucket + 1, d_model)
         self.deg_out_emb = nn.Embedding(max_deg_bucket + 1, d_model)
@@ -78,6 +80,11 @@ class GraphX(nn.Module):
         if self.time_bias in ('bucket', 'both'):
             # embedding di bucket di Δt -> per-head scalar
             self.time_bucket_bias = nn.Embedding(time_max_bucket + 1, num_heads)
+
+        self.alpha_c = nn.Parameter(torch.tensor(0.5))   # invece di 1.0
+        self.centrality_drop = nn.Dropout(p=0.1)
+        self.mix_attn = nn.Parameter(torch.tensor(0.5))   # 0.5 = metà attn, metà mean
+
 
         # LayerNorm e FFN (pre-LN)
         self.ln_q = nn.LayerNorm(d_model)
@@ -144,8 +151,13 @@ class GraphX(nn.Module):
         b_in_dst   = self._bucket_log(deg_in_dst.float(),  self.deg_in_emb.num_embeddings - 1,  base=1.6)
         b_out_dst  = self._bucket_log(deg_out_dst.float(), self.deg_out_emb.num_embeddings - 1, base=1.6)
 
-        h_src = h_src + self.alpha_c * (self.deg_in_emb(b_in_src) + self.deg_out_emb(b_out_src))
-        h_dst = h_dst + self.alpha_c * (self.deg_in_emb(b_in_dst) + self.deg_out_emb(b_out_dst))
+        cent_src = self.deg_in_emb(b_in_src) + self.deg_out_emb(b_out_src)
+        cent_dst = self.deg_in_emb(b_in_dst) + self.deg_out_emb(b_out_dst)
+        h_src = h_src + self.alpha_c * self.centrality_drop(cent_src)
+        h_dst = h_dst + self.alpha_c * self.centrality_drop(cent_dst)
+
+        # h_src = h_src + self.alpha_c * (self.deg_in_emb(b_in_src) + self.deg_out_emb(b_out_src))
+        # h_dst = h_dst + self.alpha_c * (self.deg_in_emb(b_in_dst) + self.deg_out_emb(b_out_dst))
 
         # --------- Pre-LN ---------
         Hq = self.ln_q(h_dst)  # queries da dst
@@ -185,6 +197,10 @@ class GraphX(nn.Module):
                                       base=self.time_bucket_base)  # [E]
                 logits = logits + self.time_bucket_bias(tb)         # [E, H]
 
+        # ... dopo aver sommato i bias temporali nei logits
+        tau = torch.exp(self.log_tau).clamp(min=0.5, max=2.0)   # [H]
+        logits = logits / tau                                   # [E, H], broadcast
+
         # --------- Softmax segmentata su ogni dst (riga v) ---------
         alpha = softmax(logits, v)          # [E, H]
         alpha = self.attn_drop(alpha)
@@ -192,9 +208,20 @@ class GraphX(nn.Module):
         # --------- Aggregazione pesata (dst raccoglie da src vicini) ---------
         H_attn = torch.zeros(Nd, self.num_heads, self.d_h, device=device)
         # index_add_: somma per ogni v (per-head)
-        H_attn.index_add_(0, v, alpha.unsqueeze(-1) * V[u])   # [Nd, H, d_h]
+        # Mean aggregator (per dst): somma V[u] e dividi per deg(v)
+        deg_v = torch.bincount(v, minlength=Nd).clamp(min=1).unsqueeze(-1).unsqueeze(-1).to(H_attn.device)  # [Nd,1,1]
+        H_sum = torch.zeros(Nd, self.num_heads, self.d_h, device=H_attn.device)
+        H_sum.index_add_(0, v, V[u])           # somma semplice
+        H_mean = H_sum / deg_v                 # [Nd,H,d_h]
+
+        m = torch.sigmoid(self.mix_attn)       # [1] scalare learnable
+        H_attn = m * H_attn + (1 - m) * H_mean
         H_attn = H_attn.reshape(Nd, D)
         H_attn = self.W_O(H_attn)
+
+        # H_attn.index_add_(0, v, alpha.unsqueeze(-1) * V[u])   # [Nd, H, d_h]
+        # H_attn = H_attn.reshape(Nd, D)
+        # H_attn = self.W_O(H_attn)
 
         # --------- Residuo + gate + FFN (pre-LN) ---------
         g = torch.sigmoid(self.gate)
@@ -244,8 +271,8 @@ class MetaPathGNN(nn.Module):
             #self.convs.append(MetaPathGNNLayer(hidden_channels, hidden_channels, relation_index=i))
             #self.convs.append(MetaPathGNNLayer(hidden_channels))
             self.convs.append(
-                GraphX(d_model=hidden_channels, num_heads=32,
-                    time_bias='linear', time_scale=1.0,
+                GraphX(d_model=hidden_channels, num_heads=8,
+                    time_bias='linear', time_scale=30.0,
                     time_max_bucket=256, time_bucket_base=1.6,
                     dropout=0.1)
             )
@@ -351,7 +378,7 @@ class MetaPathGNN(nn.Module):
                 # stessi indici di edge_index (prima del remap)
                 t_src_e = t_src_all[edge_index[0]]  # [E_rel]
                 t_dst_e = t_dst_all[edge_index[1]]  # [E_rel]
-                edge_dt = (t_dst_e - t_src_e).clamp(min=0.0)  # [E_rel]
+                edge_dt = (t_dst_e - t_src_e).clamp(min=0.0) / float(self.time_scale)
             else:
                 # nessun timestamp: bias neutro
                 edge_dt = torch.zeros(edge_index.size(1), device=edge_index.device, dtype=torch.float32)
