@@ -217,14 +217,25 @@ class HeteroGraphormerStructuralBias(nn.Module):
         # 3) I gather per-node timestamps in fused order (TypeTokens will come later)
         time_vec_list = []
         for nt, sl in slices.items():
-            if "time" in time_dict.get(nt, {}):  # HeteroTemporalEncoder may use dict[str]->Tensor
-                # If time_dict[nt] is a Tensor aligned to nodes of that type
-                t = time_dict[nt]["time"] if isinstance(time_dict[nt], dict) else time_dict[nt]
-                time_vec_list.append(t.to(device))
+            t_val = time_dict.get(nt, None) if time_dict is not None else None
+
+            # Accept both: Tensor OR dict-like with key "time"
+            if isinstance(t_val, dict):
+                t_nt = t_val.get("time", None)
+            elif torch.is_tensor(t_val):
+                t_nt = t_val
             else:
-                # If this type has no explicit time, I set 0
+                t_nt = None
+
+            if t_nt is not None:
+                # expected shape: [num_nodes_of_type nt]
+                time_vec_list.append(t_nt.to(device))
+            else:
+                # If this type has no explicit time, fill with zeros for its slice
                 time_vec_list.append(torch.zeros(sl.stop - sl.start, device=device))
+
         time_vec = torch.cat(time_vec_list, dim=0)  # [N]
+
 
         # 4) I collect seed indices of entity_table at the front
         et_slice = slices[entity_table]
