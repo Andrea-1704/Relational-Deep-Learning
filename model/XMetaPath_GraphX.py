@@ -439,6 +439,29 @@ class MetaPathGNN(nn.Module):
 
 
 
+class RegressorGating(nn.Module):
+    def __init__(self, dim, num_paths, ctx_dim=None, p_drop=0.1):
+        super().__init__()
+        self.ctx_dim = ctx_dim or dim
+        # proiettiamo ogni embedding di metapath a un logit scalare, condizionato dal contesto
+        self.ctx_proj = nn.Linear(self.ctx_dim, dim)
+        self.scorer = nn.Sequential(
+            nn.Linear(dim, dim), nn.ReLU(),
+            nn.Dropout(p_drop),
+            nn.Linear(dim, 1)
+        )
+        self.out = nn.Linear(dim, 1)
+
+    def forward(self, metapath_embeddings: torch.Tensor, ctx: torch.Tensor):
+        # metapath_embeddings: [N, M, D]  ; ctx: [N, C]
+        N, M, D = metapath_embeddings.size()
+        ctx_e = self.ctx_proj(ctx).unsqueeze(1)            # [N,1,D]
+        feats = torch.tanh(metapath_embeddings + ctx_e)    # conditioning
+        logits = self.scorer(feats).squeeze(-1)            # [N, M]
+        w = torch.softmax(logits, dim=1)                   # [N, M]
+        pooled = (w.unsqueeze(-1) * metapath_embeddings).sum(dim=1)  # [N, D]
+        return self.out(pooled).squeeze(-1), w
+
 
 
 class MetaPathSelfAttention(nn.Module):
@@ -520,7 +543,9 @@ class XMetaPath2(nn.Module):
             for mp in metapaths
         ]) # we construct a specific MetaPathGNN for each metapath
 
-        self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
+        #self.regressor = MetaPathSelfAttention(out_channels, num_heads=num_heads, out_dim=final_out_channels, num_layers=num_layers)
+
+        self.regressor = RegressorGating(dim=out_channels, num_paths=len(metapaths), ctx_dim=hidden_channels)
 
         self.encoder = HeteroEncoder(
             channels=hidden_channels,
