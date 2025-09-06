@@ -588,6 +588,7 @@ class XMetaPath2(nn.Module):
         ] #create a list of the embeddings, one for each metapath
         concat = torch.stack(embeddings, dim=1) #concatenate the embeddings 
         #weighted = concat * self.metapath_weights_tensor.view(1, -1, 1) #to consider to add statisitcs
-        
-        return self.regressor(concat) #finally apply regression; just put weighted instead of concat if statistics
+        ctx = x_dict["drivers"]                  # [N, hidden_channels] (assicurati del nome del tipo target)
+        pred, w = self.regressor(concat, ctx)
+        return pred #finally apply regression; just put weighted instead of concat if statistics
      
