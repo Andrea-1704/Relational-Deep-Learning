@@ -151,6 +151,7 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     epochs=20,
     number_of_metapaths=K    
 )
+print(f"Metapaths found by RL: {metapaths}")
 canonical = []
 for mp in metapaths:
     #change to canonical:
