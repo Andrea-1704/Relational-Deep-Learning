@@ -51,7 +51,7 @@ from torch.nn import ModuleDict, Linear
 import torch.nn.functional as F
 from torch import nn
 import random
-from model.GraphormerNew import Model
+from model.GraphormerNew_ToFinish import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
