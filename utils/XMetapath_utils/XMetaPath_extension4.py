@@ -120,8 +120,8 @@ def get_legal_relations_for_state(data, node_type, current_path):
     return [
         (src, rel, dst)
         for (src, rel, dst) in data.edge_index_dict
-        #if src == last_ntype and dst != node_type and dst not in used_dst
-        if src == last_ntype and dst not in used_dst
+        if src == last_ntype and dst != node_type and dst not in used_dst
+        #if src == last_ntype and dst not in used_dst
     ]
 
 
