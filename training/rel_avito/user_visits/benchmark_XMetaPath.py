@@ -86,9 +86,11 @@ driver_ids_raw = train_df_raw[node_id].to_numpy()
 print(f"this is train_df_raw  {train_df_raw}")
 binary_top3_labels_raw = train_df_raw[target].to_numpy() 
 target_vector_official = torch.full((len(graph_driver_ids),), float("nan")) #inizialize a vector with all "nan" elements
+
 for i, driver_id in enumerate(driver_ids_raw):
     if driver_id in id_to_idx:#if the driver is in the training
-        target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+        target_vector_official[id_to_idx[driver_id]] = float(binary_top3_labels_raw[i])
+
 data_official[node_type].y = target_vector_official.float()
 data_official[node_type].train_mask = ~torch.isnan(target_vector_official)
 y_full = data_official[node_type].y.float()
