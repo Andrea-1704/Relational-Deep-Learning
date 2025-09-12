@@ -102,7 +102,7 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="mean",
     norm="batch_norm",
     predictor_n_layers=2
 ).to(device)
