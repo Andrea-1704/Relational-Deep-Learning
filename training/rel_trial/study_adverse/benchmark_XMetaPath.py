@@ -131,7 +131,7 @@ warmup_rl_agent(
     num_episodes=10,   
     L_max=10,          
     epochs=10 ,
-    lr=0.00005,
+    lr=0.005,
     wd =0,      
 )
 K = 3
