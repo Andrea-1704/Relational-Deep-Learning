@@ -25,7 +25,7 @@ sys.path.append(os.path.abspath("."))
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
-from utils.XMetapath_utils.rel_trial_version import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
 
 # utility functions:

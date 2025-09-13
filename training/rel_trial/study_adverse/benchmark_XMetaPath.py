@@ -30,7 +30,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
-from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_utils.rel_trial_version import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
 # utility functions:
 #############################################
@@ -130,7 +130,9 @@ warmup_rl_agent(
     col_stats_dict=col_stats_dict_official,
     num_episodes=10,   
     L_max=10,          
-    epochs=10        
+    epochs=10 ,
+    lr=0.001,
+    wd =0,      
 )
 K = 3
 global_best_map = agent.best_score_by_path_global
