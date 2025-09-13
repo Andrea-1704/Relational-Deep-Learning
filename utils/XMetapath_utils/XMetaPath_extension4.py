@@ -540,7 +540,11 @@ def final_metapath_search_with_rl(
     episodes_for_search=None,     #how many episods to run in the final
     lambda_diversity=0.5,         #trade off: score vs diversity
     require_full_length=True,     #if True we only require metapths of length L_max
-    reset_registry=True           #remove candidates from the warm up
+    reset_registry=True,           #remove candidates from the warm up
+    lr: float = 0.0001,
+    wd: float = 0,
+    epsilon: float = 0.35,
+    num_improvements_L: int = 3
 ):
     print("\n\n Launching final metapath search using trained RL agent \n")
 
@@ -568,6 +572,10 @@ def final_metapath_search_with_rl(
             agent=agent,
             L_max=L_max,
             epochs=epochs,
+            lr=lr,
+            wd=wd,
+            epsilon=epsilon,
+            num_improvements_L=num_improvements_L
         )
         # greedy registers candidates and relative scores in agent.best_score_by_path_global
 
