@@ -130,8 +130,8 @@ warmup_rl_agent(
     col_stats_dict=col_stats_dict_official,
     num_episodes=10,   
     L_max=10,          
-    epochs=10 ,
-    lr=0.0005,
+    epochs=100 ,
+    lr=0.0001,
     wd =0,      
 )
 K = 3
