@@ -309,7 +309,7 @@ def greedy_metapath_search_rl(
             out_channels=out_channels,
             final_out_channels=final_out_channels,
         ).to(device)
-        optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
         #initialize best_val, which keeps track of the performances (best) given by adding the current path to mp:
         best_val = -math.inf if higher_is_better else math.inf
