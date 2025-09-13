@@ -439,7 +439,11 @@ def warmup_rl_agent(
     col_stats_dict,
     num_episodes=5,
     L_max=2,
-    epochs=5
+    epochs=5,
+    lr: float = 0.0001,
+    wd: float = 0,
+    epsilon: float = 0.35,
+    num_improvements_L: int = 3
 ):
     print(f"Starting RL agent warm-up for {num_episodes} episodes...")
     for i in range(num_episodes):
@@ -457,6 +461,10 @@ def warmup_rl_agent(
             col_stats_dict=col_stats_dict,
             L_max=L_max,
             epochs=epochs,
+            lr=lr,
+            wd=wd,
+            epsilon=epsilon,
+            num_improvements_L=num_improvements_L
         )
     print(f"Now the agent is warmed up!!")
 
