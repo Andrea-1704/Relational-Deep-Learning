@@ -63,32 +63,6 @@ import torch
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
-# class SBERTTextEmbedding:
-#     def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu"):
-#         self.model = SentenceTransformer(model_name, device=device)
-#         self.device = device
-#     def __call__(self, sentences):
-#         # ritorna torch.FloatTensor [N, D]
-#         arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
-#         return torch.from_numpy(np.asarray(arr)).to(self.device)
-
-# device = "cuda" if torch.cuda.is_available() else "cpu"
-# text_embedder_cfg = TextEmbedderConfig(
-#     text_embedder=SBERTTextEmbedding(device=device),
-#     batch_size=256,
-# )
-
-class SBERTTextEmbedding:
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu"):
-        self.model = SentenceTransformer(model_name, device=device)
-        self.device = device
-
-    def __call__(self, sentences):
-        arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
-        import torch, numpy as np
-        # -> CPU + (opzionale) fp16 per ridurre footprint
-        return torch.from_numpy(np.asarray(arr)).to(dtype=torch.float16)  # niente .to("cuda") qui
-
 
 
 dataset = get_dataset("rel-trial", download=True)
@@ -108,19 +82,15 @@ seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
-db_nuovo = dataset.get_db() #get all tables
-col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
+db = dataset.get_db() #get all tables
+col_to_stype_dict = get_stype_proposal(db)
 #this is used to get the stype of the columns
+db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
-# Create the graph
-text_embedder_cfg = TextEmbedderConfig(
-    text_embedder=SBERTTextEmbedding(device="cpu"),  # <- CPU!
-    batch_size=128,                                   # più piccolo = meno picchi durante l’encoding
-)
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    text_embedder_cfg=text_embedder_cfg,
+    text_embedder_cfg=None,
     cache_dir=None,
 )
 

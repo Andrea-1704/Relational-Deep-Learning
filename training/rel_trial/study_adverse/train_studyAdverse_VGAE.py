@@ -1,5 +1,5 @@
 #####
-# Training Heterogeneous Graph SAGE 
+# Training Heterogeneous Graph SAGE using the VGAE pre-training style.
 # This code is designed to work with the RelBench framework and PyTorch Geometric.
 # It includes data loading, model training, and evaluation.
 ####
@@ -59,20 +59,7 @@ from utils.utils import evaluate_performance, evaluate_on_full_train, test, trai
 
 from torch_frame.config.text_embedder import TextEmbedderConfig
 import torch
-from sentence_transformers import SentenceTransformer
 import numpy as np
-
-
-class SBERTTextEmbedding:
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu"):
-        self.model = SentenceTransformer(model_name, device=device)
-        self.device = device
-
-    def __call__(self, sentences):
-        arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
-        import torch, numpy as np
-        # -> CPU + (opzionale) fp16 per ridurre footprint
-        return torch.from_numpy(np.asarray(arr)).to(dtype=torch.float16)  # niente .to("cuda") qui
 
 
 
@@ -93,19 +80,16 @@ seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
-db_nuovo = dataset.get_db() #get all tables
-col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
+db = dataset.get_db() #get all tables
+col_to_stype_dict = get_stype_proposal(db)
+db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
+
 #this is used to get the stype of the columns
 
-# Create the graph
-text_embedder_cfg = TextEmbedderConfig(
-    text_embedder=SBERTTextEmbedding(device="cpu"),  # <- CPU!
-    batch_size=128,                                   
-)
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    text_embedder_cfg=text_embedder_cfg,
+    text_embedder_cfg=None,
     cache_dir=None,
 )
 
