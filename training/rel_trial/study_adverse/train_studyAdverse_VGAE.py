@@ -146,7 +146,7 @@ loader_dict = loader_dict_fn(
     val_table=val_table, 
     test_table=test_table
 )
-
+print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
 #pre training VGAE:
 for batch in loader_dict["train"]:
     edge_types=batch.edge_types
