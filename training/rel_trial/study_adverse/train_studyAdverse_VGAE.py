@@ -100,7 +100,7 @@ col_to_stype_dict_nuovo = get_stype_proposal(db_nuovo)
 # Create the graph
 text_embedder_cfg = TextEmbedderConfig(
     text_embedder=SBERTTextEmbedding(device="cpu"),  # <- CPU!
-    batch_size=128,                                   # più piccolo = meno picchi durante l’encoding
+    batch_size=128,                                   
 )
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,

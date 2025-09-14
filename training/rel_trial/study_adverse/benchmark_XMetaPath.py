@@ -18,7 +18,9 @@ from relbench.modeling.graph import make_pkey_fkey_graph
 import copy
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import torch
+from torch_frame.config.text_embedder import TextEmbedderConfig
 import math
+from sentence_transformers import SentenceTransformer
 import torch.nn as nn
 from torch.nn import L1Loss
 
@@ -44,6 +46,21 @@ def to_canonical(mp_outward):
     return tuple(mp)
 #############################################
 
+class SBERTTextEmbedding:
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu"):
+        self.model = SentenceTransformer(model_name, device=device)
+        self.device = device
+
+    def __call__(self, sentences):
+        arr = self.model.encode(sentences, convert_to_numpy=True, normalize_embeddings=False)
+        import torch, numpy as np
+        # -> CPU + (opzionale) fp16 per ridurre footprint
+        return torch.from_numpy(np.asarray(arr)).to(dtype=torch.float16)  # niente .to("cuda") qui
+
+text_embedder_cfg = TextEmbedderConfig(
+    text_embedder=SBERTTextEmbedding(device="cpu"),  # <- CPU!
+    batch_size=128,                                   # più piccolo = meno picchi durante l’encoding
+)
 
 #Configuration for the task:
 #############################################
@@ -76,11 +93,12 @@ root_dir = "./data"
 db = dataset.get_db() #get all tables
 col_to_stype_dict = get_stype_proposal(db)
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
+
 data_official, col_stats_dict_official = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    text_embedder_cfg = None,
-    cache_dir=None  # disabled
+    text_embedder_cfg=text_embedder_cfg,
+    cache_dir=None,
 )
 graph_driver_ids = db_nuovo.table_dict[node_type].df[node_id].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
