@@ -61,7 +61,8 @@ from utils.utils import evaluate_performance, evaluate_on_full_train, test, trai
 from torch_frame.config.text_embedder import TextEmbedderConfig
 import torch
 import numpy as np
-
+from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder
+from pre_training.MaskedAttributePrediction.Utils_mask import mask_attributes, extract_categorical_values_from_db, train_map
 
 
 dataset = get_dataset("rel-trial", download=True)
@@ -111,15 +112,6 @@ model = Model(
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
-#scheduler = CosineAnnealingLR(optimizer, T_max=100)
-
-
-# early_stopping = EarlyStopping(
-#     patience=30,
-#     delta=0.0,
-#     verbose=True,
-#     path="best_basic_model.pt"
-# )
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
@@ -131,30 +123,24 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-# from relbench.modeling.graph import get_node_train_table_input
-# from utils.utils import alignment_check
 
-# # === Ottieni i node id attesi (ordinati come val/test table) ===
-# val_input = get_node_train_table_input(
-#     data=data,
-#     task=task,
-#     split="val",              # oppure table=val_table in alcune versioni
-#     mask_input_cols=False
-# )
-# expected_val_ids = val_input["input_nodes"][task.entity_table].cpu()
+maskable_attributes = {
+    "studies": {
+        "categorical": ["study_type", "phase", "is_fda_regulated_drug", "is_fda_regulated_device"],
+        "numerical": ["enrollment"]
+    },
+    "outcomes": {
+        "categorical": ["outcome_type"]
+    },
+    "reported_event_totals": {
+        "categorical": ["event_type", "classification"]
+    }
+}
 
-# test_input = get_node_train_table_input(
-#     data=data,
-#     task=task,
-#     split="test",             # oppure table=test_table in alcune versioni
-#     mask_input_cols=False
-# )
-# expected_test_ids = test_input["input_nodes"][task.entity_table].cpu()
+cat_values = extract_categorical_values_from_db(db, maskable_attributes)
+print(cat_values)
 
-# # === Check: i batch del loader devono rispettare esattamente quell’ordine ===
-# alignment_check(loader_dict["val"],  expected_val_ids,  device=device, task=task)
-# alignment_check(loader_dict["test"], expected_test_ids, device=device, task=task)
-
+train_map(model, loader_dict, maskable_attributes, encoder_out_dim=128, device=device, cat_values = cat_values, epochs=20)
 
 
 # Training loop
