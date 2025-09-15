@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-import torch.nn.functional as Fç
+import torch.nn.functional as F
 
 class MAPDecoder(nn.Module):
     def __init__(self, encoder_out_dim: int, hidden_dim: int = 128):
