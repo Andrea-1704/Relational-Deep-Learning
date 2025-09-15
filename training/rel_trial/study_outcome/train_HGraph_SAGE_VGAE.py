@@ -110,16 +110,6 @@ model = Model(
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
 
-#scheduler = CosineAnnealingLR(optimizer, T_max=100)
-
-
-# early_stopping = EarlyStopping(
-#     patience=30,
-#     delta=0.0,
-#     verbose=True,
-#     path="best_basic_model.pt"
-# )
-
 loader_dict = loader_dict_fn(
     batch_size=512, 
     num_neighbours=256, 
@@ -142,13 +132,11 @@ model = train_vgae(
     edge_types=edge_types,
     encoder_out_dim=channels,
     entity_table=task.entity_table,
-    latent_dim=16,
-    hidden_dim=64,
-    epochs=150,
+    latent_dim=32,
+    hidden_dim=128,
+    epochs=50,
     device=device
 )
-
-
 
 
 # Training loop
