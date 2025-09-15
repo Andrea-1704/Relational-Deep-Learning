@@ -122,7 +122,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
-    num_neighbours=256, 
+    num_neighbours=128, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -134,7 +134,7 @@ loader_dict = loader_dict_fn(
 
 
 # Training loop
-epochs = 100
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
