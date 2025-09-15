@@ -132,7 +132,7 @@ model = Model(
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
+optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, weight_decay=1e-5)
 
 
 loader_dict = loader_dict_fn(
