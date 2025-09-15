@@ -143,7 +143,7 @@ model = train_vgae(
     entity_table=task.entity_table,
     latent_dim=32,
     hidden_dim=128,
-    epochs=150,
+    epochs=50,
     device=device
 )
 
