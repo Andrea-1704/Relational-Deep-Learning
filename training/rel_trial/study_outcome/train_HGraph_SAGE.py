@@ -55,6 +55,8 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from torch.nn import BCEWithLogitsLoss
+
 
 
 
@@ -66,7 +68,7 @@ val_table = task.get_table("val")
 test_table = task.get_table("test") 
 
 out_channels = 1
-loss_fn = L1Loss()
+# loss_fn = L1Loss()
 # this is the mae loss and is used when have regressions tasks.
 tune_metric = "roc_auc"
 higher_is_better = True #is referred to the tune metric
@@ -91,9 +93,34 @@ data, col_stats_dict = make_pkey_fkey_graph(
     cache_dir=None  # disabled
 )
 
+graph_driver_ids = db_nuovo.table_dict["studies"].df["nct_id"].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+train_df_raw = train_table.df
+driver_ids_raw = train_df_raw["nct_id"].to_numpy()
+qualifying_positions = train_df_raw["outcome"].to_numpy() #labels (train)
+binary_top3_labels_raw = qualifying_positions
+
+target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
+for i, driver_id in enumerate(driver_ids_raw):
+    if driver_id in id_to_idx:#if the driver is in the training
+        target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+
+data['studies'].y = target_vector_official.float()
+data['studies'].train_mask = ~torch.isnan(target_vector_official)
+
+
+y_full = data['studies'].y.float()
+train_mask_full = data['studies'].train_mask
+num_pos = (y_full[train_mask_full] == 1).sum()
+num_neg = (y_full[train_mask_full] == 0).sum()
+pos_weight = torch.tensor([num_neg / num_pos], device=device)
+loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
 
 # pre training phase with the VGAE
 channels = 128
+
 
 model = Model(
     data=data,
@@ -110,15 +137,6 @@ model = Model(
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
 
-#scheduler = CosineAnnealingLR(optimizer, T_max=100)
-
-
-# early_stopping = EarlyStopping(
-#     patience=30,
-#     delta=0.0,
-#     verbose=True,
-#     path="best_basic_model.pt"
-# )
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
@@ -132,8 +150,6 @@ loader_dict = loader_dict_fn(
 
 
 
-
-# Training loop
 epochs = 100
 
 state_dict = None
