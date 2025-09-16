@@ -30,7 +30,6 @@ from typing import Any, Dict, List
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
-from torch.nn import BCEWithLogitsLoss
 
 import sys
 import os
@@ -56,6 +55,8 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from torch.nn import BCEWithLogitsLoss
+
 
 
 
@@ -119,6 +120,7 @@ loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
 # pre training phase with the VGAE
 channels = 128
+print(f"ora max")
 
 model = Model(
     data=data,
@@ -126,13 +128,14 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="max",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, weight_decay=1e-5)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0)
+
 
 
 loader_dict = loader_dict_fn(
@@ -145,7 +148,9 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-
+#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
+#pre training VGAE:
 for batch in loader_dict["train"]:
     edge_types=batch.edge_types
     break
@@ -162,10 +167,7 @@ model = train_vgae(
     epochs=50,
     device=device
 )
-
-
-# Training loop
-epochs = 50
+epochs = 100
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
@@ -184,7 +186,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    #scheduler.step(val_metrics[tune_metric])
+   # scheduler.step(val_metrics[tune_metric])
 
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
