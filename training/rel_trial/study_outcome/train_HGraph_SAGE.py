@@ -120,7 +120,7 @@ loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
 # pre training phase with the VGAE
 channels = 128
-
+print(f"ora max")
 
 model = Model(
     data=data,
@@ -128,19 +128,19 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="max",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0)
 
 
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=1024, 
+    num_neighbours=512, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -148,7 +148,7 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
 
 epochs = 100
 
@@ -169,7 +169,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    scheduler.step(val_metrics[tune_metric])
+   # scheduler.step(val_metrics[tune_metric])
 
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
