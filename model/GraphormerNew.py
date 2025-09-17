@@ -151,8 +151,8 @@ class HeteroGraphormerStructuralBias(nn.Module):
 
         # SPD bias: I keep an embedding per distance bucket and per head
         # vocab: {-1 (no path), 0, 1, ..., s_max, >s_max -> s_max}
-        # self.spd_bias = nn.Embedding(s_max + 2, num_heads)  # index 0 => -1, index d+1 => distance d
-        # nn.init.normal_(self.spd_bias.weight, std=0.02)
+        self.spd_bias = nn.Embedding(s_max + 2, num_heads)  # index 0 => -1, index d+1 => distance d
+        nn.init.normal_(self.spd_bias.weight, std=0.02)
 
         # Adjacency-by-relation bias: one scalar per relation and head
         self.adj_rel_bias = nn.Parameter(torch.zeros(self.R, num_heads))
@@ -241,52 +241,52 @@ class HeteroGraphormerStructuralBias(nn.Module):
         et_slice = slices[entity_table]
         seed_indices = torch.arange(et_slice.start, et_slice.start + seed_count, device=device, dtype=torch.long)
 
-        # # 5) I build adjacency lists for BFS
-        # adj = [[] for _ in range(N)]
-        # for s, d, r in edges:
-        #     adj[s].append((d, r))
+        # 5) I build adjacency lists for BFS
+        adj = [[] for _ in range(N)]
+        for s, d, r in edges:
+            adj[s].append((d, r))
 
-        # # 6) I compute SPD (directed) with optional undirected fallback; I clip to s_max
-        # spd = torch.full((N, N), fill_value=-1, dtype=torch.int16, device=device)
-        # # I also compute first-edge-on-SP relation type (optional)
-        # first_edge_rel = torch.full((N, N), fill_value=-1, dtype=torch.int16, device=device) if self.use_first_edge_bias else None
+        # 6) I compute SPD (directed) with optional undirected fallback; I clip to s_max
+        spd = torch.full((N, N), fill_value=-1, dtype=torch.int16, device=device)
+        # I also compute first-edge-on-SP relation type (optional)
+        first_edge_rel = torch.full((N, N), fill_value=-1, dtype=torch.int16, device=device) if self.use_first_edge_bias else None
 
-        # # I do BFS from each source; for medium subgraphs this is fine and keeps the code clear
-        # for src in range(N):
-        #     dist = [-1] * N
-        #     first_rel = [-1] * N
-        #     q = deque()
-        #     dist[src] = 0
-        #     q.append(src)
-        #     while q:
-        #         u = q.popleft()
-        #         for v, rel_id in adj[u]:
-        #             if dist[v] == -1:
-        #                 dist[v] = dist[u] + 1
-        #                 # I record the first edge type on the path from src to v
-        #                 first_rel[v] = rel_id if u == src else first_rel[u]
-        #                 q.append(v)
-        #     # Optional undirected fallback to reduce -1s
-        #     if use_undirected_fallback:
-        #         # I expand with reverse edges to capture undirected reachability
-        #         q.clear()
-        #         # I reuse dist; I only care to replace -1 with some value to mark reachability
-        #         # but I won't change first_rel in fallback to stay conservative
-        #         # (pairs remaining -1 keep the special SPD bucket)
-        #         # I run a quick undirected BFS starting from src where edges can be traversed both ways
-        #         und_adj = adj
-        #         # I push all already discovered; then I traverse backwards using a reverse scan
-        #         # For simplicity (and cost containment), I skip second BFS and accept remaining -1 as "no path"
-        #         pass  # keeping it simple; the special -1 bucket already handles disconnections
+        # I do BFS from each source; for medium subgraphs this is fine and keeps the code clear
+        for src in range(N):
+            dist = [-1] * N
+            first_rel = [-1] * N
+            q = deque()
+            dist[src] = 0
+            q.append(src)
+            while q:
+                u = q.popleft()
+                for v, rel_id in adj[u]:
+                    if dist[v] == -1:
+                        dist[v] = dist[u] + 1
+                        # I record the first edge type on the path from src to v
+                        first_rel[v] = rel_id if u == src else first_rel[u]
+                        q.append(v)
+            # Optional undirected fallback to reduce -1s
+            if use_undirected_fallback:
+                # I expand with reverse edges to capture undirected reachability
+                q.clear()
+                # I reuse dist; I only care to replace -1 with some value to mark reachability
+                # but I won't change first_rel in fallback to stay conservative
+                # (pairs remaining -1 keep the special SPD bucket)
+                # I run a quick undirected BFS starting from src where edges can be traversed both ways
+                und_adj = adj
+                # I push all already discovered; then I traverse backwards using a reverse scan
+                # For simplicity (and cost containment), I skip second BFS and accept remaining -1 as "no path"
+                pass  # keeping it simple; the special -1 bucket already handles disconnections
 
-        #     # I write results to tensors
-        #     spd[src, :] = torch.tensor(dist, dtype=torch.int16, device=device)
-        #     if self.use_first_edge_bias:
-        #         first_edge_rel[src, :] = torch.tensor(first_rel, dtype=torch.int16, device=device)
+            # I write results to tensors
+            spd[src, :] = torch.tensor(dist, dtype=torch.int16, device=device)
+            if self.use_first_edge_bias:
+                first_edge_rel[src, :] = torch.tensor(first_rel, dtype=torch.int16, device=device)
 
-        # # I clip SPD and remap to embedding indices: -1 -> 0, d -> d+1, d > s_max -> s_max+1
-        # spd_clipped = spd.clamp(min=-1, max=self.s_max)
-        # spd_idx = spd_clipped + 1  # -1 -> 0; 0..s_max -> 1..s_max+1  (int16 ok)
+        # I clip SPD and remap to embedding indices: -1 -> 0, d -> d+1, d > s_max -> s_max+1
+        spd_clipped = spd.clamp(min=-1, max=self.s_max)
+        spd_idx = spd_clipped + 1  # -1 -> 0; 0..s_max -> 1..s_max+1  (int16 ok)
 
         # 7) I collect adjacency pairs per relation type for scatter-add
         adj_rel_pairs: Dict[int, Tuple[Tensor, Tensor]] = defaultdict(lambda: (torch.empty(0, dtype=torch.long, device=device),
@@ -315,11 +315,11 @@ class HeteroGraphormerStructuralBias(nn.Module):
             "token_type": token_type,     # [N]
             "slices": slices,
             "edges": edges,               # list of (s, d, r)
-            #"spd_idx": spd_idx,           # [N, N], int in [0..s_max+1]
+            "spd_idx": spd_idx,           # [N, N], int in [0..s_max+1]
             "adj_rel_pairs": adj_rel_pairs,
             "time_vec": time_vec,         # [N]
             "seed_indices": seed_indices, # [S]
-            #"first_edge_rel": first_edge_rel,  # [N, N] or None
+            "first_edge_rel": first_edge_rel,  # [N, N] or None
             "type_token_indices": type_token_indices,  # [T] or None
         }
         return cache
@@ -336,7 +336,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         return {
             "cache": cache,
             # tables to be used by layers
-            #"spd_bias_table": self.spd_bias,             # Embedding
+            "spd_bias_table": self.spd_bias,             # Embedding
             "adj_rel_bias": self.adj_rel_bias,           # [R, H]
             "typepair_bias": self.typepair_bias,         # [T, T, H]
             "temp_bias_table": self.temp_bias,           # Embedding
@@ -384,7 +384,7 @@ class GraphormerBlock(nn.Module):
         H, D = self.num_heads, self.head_dim
         N_tot = X.size(0)
         cache = bias_pack["cache"]
-        #spd_bias_table = bias_pack["spd_bias_table"]         # Embedding
+        spd_bias_table = bias_pack["spd_bias_table"]         # Embedding
         # ------- SPD bias (dense add) -------
         # cache["spd_idx"]: [N, N] con i bucket della shortest-path distance (spesso int16)
         # N = #nodi "reali" (senza TypeTokens), N_tot = dimensione totale della sequenza (con eventuali TypeTokens)
@@ -407,7 +407,7 @@ class GraphormerBlock(nn.Module):
 
         # 1) Shortest-Path Distance (SPD) bias
         # Assumo che cache contenga: N (nodi reali prima dei token) e spd_idx [N, N] con indici di bucket SPD
-        N = cache["N"]
+        # N = cache["N"]
         # spd_idx = cache["spd_idx"]  # tipicamente int16 nel tuo preprocess
 
         # # Prepariamo una matrice [N_tot, N_tot] con pad=0 e riempiamo il blocco reale [0:N, 0:N]
@@ -417,26 +417,26 @@ class GraphormerBlock(nn.Module):
         # spd_pad[:N, :N] = spd_idx.to(torch.long)
         # scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
         # 1) prepara gli indici SPD (ok)
-        #N = cache["N"]
-        #spd_idx = cache["spd_idx"]  # int16 dal preprocess
-        #spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
-        #spd_pad[:N, :N] = spd_idx.to(torch.long)
+        N = cache["N"]
+        spd_idx = cache["spd_idx"]  # int16 dal preprocess
+        spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
+        spd_pad[:N, :N] = spd_idx.to(torch.long)
 
         # >>> ELIMINA questa riga che usa spd_head prima di crearlo <<<
         # scores = scores + spd_head.permute(2, 0, 1)
 
         # 2) calcola il bias SPD per head
-        #spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
+        spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
 
         # 3) aggiungi una sola volta ai punteggi
-        #scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
-        #N = cache["N"]
+        scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
+
 
         # spd_bias_table: nn.Embedding(num_buckets, H) -> [N_tot, N_tot, H]
         #spd_head = self.spd_bias_table(spd_pad)  # [N_tot, N_tot, H]
-        #spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
+        spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
 
-        #scores = scores + spd_head.permute(2, 0, 1)           # [H, N_tot, N_tot]
+        scores = scores + spd_head.permute(2, 0, 1)           # [H, N_tot, N_tot]
 
 
         adj_rel_bias = bias_pack["adj_rel_bias"]             # [R, H]
