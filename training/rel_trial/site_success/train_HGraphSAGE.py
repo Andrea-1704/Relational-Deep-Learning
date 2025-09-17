@@ -101,24 +101,15 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="max",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0)
 
 
-#scheduler = CosineAnnealingLR(optimizer, T_max=100)
-
-
-# early_stopping = EarlyStopping(
-#     patience=30,
-#     delta=0.0,
-#     verbose=True,
-#     path="best_basic_model.pt"
-# )
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
