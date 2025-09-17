@@ -125,7 +125,7 @@ print(f"ora max")
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
     aggr="max",
@@ -134,13 +134,13 @@ model = Model(
 
 
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.00005, weight_decay=0)
 
 
 
 loader_dict = loader_dict_fn(
-    batch_size=1024, 
-    num_neighbours=512, 
+    batch_size=512, 
+    num_neighbours=256, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -149,7 +149,24 @@ loader_dict = loader_dict_fn(
 )
 
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+#print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
+##pre training VGAE:
+# for batch in loader_dict["train"]:
+#     edge_types=batch.edge_types
+#     break
 
+
+# model = train_vgae(
+#     model=model,
+#     loader_dict=loader_dict,
+#     edge_types=edge_types,
+#     encoder_out_dim=channels,
+#     entity_table=task.entity_table,
+#     latent_dim=32,
+#     hidden_dim=128,
+#     epochs=50,
+#     device=device
+# )
 epochs = 50
 
 state_dict = None
