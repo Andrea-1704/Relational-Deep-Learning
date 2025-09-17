@@ -125,7 +125,7 @@ def train2():
         num_layers=4,
         channels=channels,
         out_channels=1,
-        aggr="max",
+        aggr="sum",
         norm="batch_norm",
     ).to(device)
 
@@ -137,14 +137,14 @@ def train2():
     #     weight_decay=0
     # )
 
-    lr = 1e-4
+    lr = 5e-3
     wd = 0
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
 
     early_stopping = EarlyStopping(
-        patience=60,
+        patience=100,
         delta=0.0,
         verbose=True,
         path="best_basic_model.pt"
