@@ -24,6 +24,7 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
+
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from model.others.HGraphSAGE import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
@@ -122,39 +123,14 @@ def train2():
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        num_layers=2,
+        num_layers=4,
         channels=channels,
         out_channels=1,
         aggr="max",
         norm="batch_norm",
     ).to(device)
 
-    loader_dict = loader_dict_fn(
-        batch_size=512, 
-        num_neighbours=256, 
-        data=data_official, 
-        task=task,
-        train_table=train_table, 
-        val_table=val_table, 
-        test_table=test_table
-    )
 
-    
-    for batch in loader_dict["train"]:
-        edge_types=batch.edge_types
-        break
-
-    model = train_vgae(
-        model=model,
-        loader_dict=loader_dict,
-        edge_types=edge_types,
-        encoder_out_dim=channels,
-        entity_table=task.entity_table,
-        latent_dim=16,
-        hidden_dim=64,
-        epochs=150,
-        device=device
-    )
 
     # optimizer = torch.optim.Adam(
     #     model.parameters(),
@@ -162,8 +138,8 @@ def train2():
     #     weight_decay=0
     # )
 
-    lr = 1e-3
-    wd = 1e-4
+    lr = 1e-4
+    wd = 0
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
@@ -175,8 +151,31 @@ def train2():
         path="best_basic_model.pt"
     )
 
-    
+    loader_dict = loader_dict_fn(
+        batch_size=512, 
+        num_neighbours=256, 
+        data=data_official, 
+        task=task,
+        train_table=train_table, 
+        val_table=val_table, 
+        test_table=test_table
+    )
 
+    for batch in loader_dict["train"]:
+        edge_types=batch.edge_types
+        break
+
+    model = train_vgae(
+        model=model,
+        loader_dict=loader_dict,
+        edge_types=edge_types,
+        encoder_out_dim=channels,
+        entity_table=task.entity_table,
+        latent_dim=32,
+        hidden_dim=128,
+        epochs=50,
+        device=device
+    )
 
 
     
