@@ -105,13 +105,36 @@ driver_ids_raw = train_df_raw[node_id].to_numpy()
 qualifying_positions = train_df_raw[target].to_numpy() #labels (train)
 binary_top3_labels_raw = qualifying_positions
 
-target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
-for i, driver_id in enumerate(driver_ids_raw):
-    if driver_id in id_to_idx:#if the driver is in the training
-        target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
 
-data['studies'].y = target_vector_official.float()
-data['studies'].train_mask = ~torch.isnan(target_vector_official)
+
+
+
+
+
+train_df_raw = train_table.df
+driver_ids_raw = train_df_raw[node_id].to_numpy()
+
+# Se i label sono booleani, converti a float32.
+# Se invece vuoi una binarizzazione esplicita, vedi la nota più sotto.
+binary_top3_labels_raw = train_df_raw[target].to_numpy().astype(np.float32)
+
+target_vector_official = torch.full((len(graph_driver_ids),), float("nan"), dtype=torch.float32)
+for i, driver_id in enumerate(driver_ids_raw):
+    if driver_id in id_to_idx:
+        target_vector_official[id_to_idx[driver_id]] = float(binary_top3_labels_raw[i])
+
+# Usa il node_type corretto qui:
+data[node_type].y = target_vector_official
+data[node_type].train_mask = ~torch.isnan(target_vector_official)
+
+
+# target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
+# for i, driver_id in enumerate(driver_ids_raw):
+#     if driver_id in id_to_idx:#if the driver is in the training
+#         target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+
+# data['studies'].y = target_vector_official.float()
+# data['studies'].train_mask = ~torch.isnan(target_vector_official)
 
 
 y_full = data[node_type].y.float()
