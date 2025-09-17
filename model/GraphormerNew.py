@@ -401,7 +401,7 @@ class GraphormerBlock(nn.Module):
         V = self.v(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
 
         # Dot-product attention scores
-        #scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
+        scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
 
         # === A PARTIRE DA QUI aggiungiamo i bias ADDITIVI ai punteggi ===
 
