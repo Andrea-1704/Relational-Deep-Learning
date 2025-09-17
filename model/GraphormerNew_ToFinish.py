@@ -388,17 +388,55 @@ class GraphormerBlock(nn.Module):
         # ------- SPD bias (dense add) -------
         # cache["spd_idx"]: [N, N] con i bucket della shortest-path distance (spesso int16)
         # N = #nodi "reali" (senza TypeTokens), N_tot = dimensione totale della sequenza (con eventuali TypeTokens)
+        
+        # --- Pre-LN e proiezioni (lascia com’è il tuo Pre-LN) ---
+        Y = self.ln1(X)                    # [N_tot, d_model]
+        N_tot = Y.size(0)
+        H = self.num_heads
+        D = self.head_dim
+
+        # Proiezioni Q, K, V
+        Q = self.q(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
+        K = self.k(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
+        V = self.v(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
+
+        # Dot-product attention scores
+        scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
+
+        # === A PARTIRE DA QUI aggiungiamo i bias ADDITIVI ai punteggi ===
+
+        # 1) Shortest-Path Distance (SPD) bias
+        # Assumo che cache contenga: N (nodi reali prima dei token) e spd_idx [N, N] con indici di bucket SPD
+        # N = cache["N"]
+        # spd_idx = cache["spd_idx"]  # tipicamente int16 nel tuo preprocess
+
+        # # Prepariamo una matrice [N_tot, N_tot] con pad=0 e riempiamo il blocco reale [0:N, 0:N]
+        # # spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
+        # # spd_pad[:N, :N] = spd_idx.to(torch.long)  # nn.Embedding richiede indici long
+        # spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
+        # spd_pad[:N, :N] = spd_idx.to(torch.long)
+        # scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
+        # 1) prepara gli indici SPD (ok)
         N = cache["N"]
-        spd_idx = cache["spd_idx"]  # [N, N], poss. torch.int16
+        spd_idx = cache["spd_idx"]  # int16 dal preprocess
+        spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
+        spd_pad[:N, :N] = spd_idx.to(torch.long)
 
-        # pad a [N_tot, N_tot] mettendo 0 fuori dal blocco reale (bucket neutro / di default)
-        spd_pad = torch.full((N_tot, N_tot), 0, device=X.device, dtype=torch.long)
-        spd_pad[:N, :N] = spd_idx.to(torch.long)  # <-- cast a long per l'Embedding
+        # >>> ELIMINA questa riga che usa spd_head prima di crearlo <<<
+        # scores = scores + spd_head.permute(2, 0, 1)
 
-        # lookup tabellare: spd_bias_table è nn.Embedding(num_spd_buckets, H)
-        # output: [N_tot, N_tot, H] → permute per sommare su scores: [H, N_tot, N_tot]
-        spd_head = spd_bias_table(spd_pad)                  # [N_tot, N_tot, H]
-        scores = scores + spd_head.permute(2, 0, 1)        # [H, N_tot, N_tot]
+        # 2) calcola il bias SPD per head
+        spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
+
+        # 3) aggiungi una sola volta ai punteggi
+        scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
+
+
+        # spd_bias_table: nn.Embedding(num_buckets, H) -> [N_tot, N_tot, H]
+        #spd_head = self.spd_bias_table(spd_pad)  # [N_tot, N_tot, H]
+        spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
+
+        scores = scores + spd_head.permute(2, 0, 1)           # [H, N_tot, N_tot]
 
 
         adj_rel_bias = bias_pack["adj_rel_bias"]             # [R, H]
@@ -407,29 +445,7 @@ class GraphormerBlock(nn.Module):
         first_edge_bias = bias_pack.get("first_edge_bias")
         type_token_link_bias_q2t = bias_pack.get("type_token_link_bias_q2t")
         type_token_link_bias_t2q = bias_pack.get("type_token_link_bias_t2q")
-
-        # Pre-LN
-        Y = self.ln1(X)
-
-        # Projections and reshape to heads
-        Q = self.q(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
-        K = self.k(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
-        V = self.v(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
-
-        # Raw attention scores
-        scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
-
-        # ------- Structural biases (I add scalars per head) -------
-
-        # SPD bias (dense add)
-        # cache["spd_idx"] is [N, N] over real nodes; if TypeTokens exist, I pad to N_tot
-        N = cache["N"]
-        spd_idx = cache["spd_idx"]
-        spd_pad = torch.full((N_tot, N_tot), 0, dtype=spd_idx.dtype, device=X.device)
-        spd_pad[:N, :N] = spd_idx
-        spd_head = spd_bias_table(spd_pad)  # [N_tot, N_tot, H]
-        scores = scores + spd_head.permute(2, 0, 1)        # [H, N_tot, N_tot]
-
+        
         # Type-pair bias (dense via outer gather)
         tt = torch.full((N_tot,), -1, dtype=torch.long, device=X.device)
         tt[:N] = cache["token_type"]
@@ -491,7 +507,9 @@ class GraphormerBlock(nn.Module):
                 # I need per-type node masks; I precomputed a boolean mask [T, N]
                 tmask = attach_type_tokens_masks["type_to_nodes_mask"]        # [T, N] bool
                 for h in range(H):
-                    scores[h, tt_rows, :] += (tmask.float() * type_token_link_bias_t2q[h])
+                    #scores[h, tt_rows, :] += (tmask.float() * type_token_link_bias_t2q[h])
+                    scores[h, tt_rows, :N] += (tmask.float() * type_token_link_bias_t2q[h])
+
 
         # ------------------------------------------------------------
 
