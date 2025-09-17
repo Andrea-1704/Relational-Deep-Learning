@@ -401,13 +401,13 @@ class GraphormerBlock(nn.Module):
         V = self.v(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
 
         # Dot-product attention scores
-        scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
+        #scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
 
         # === A PARTIRE DA QUI aggiungiamo i bias ADDITIVI ai punteggi ===
 
         # 1) Shortest-Path Distance (SPD) bias
         # Assumo che cache contenga: N (nodi reali prima dei token) e spd_idx [N, N] con indici di bucket SPD
-        # N = cache["N"]
+        N = cache["N"]
         # spd_idx = cache["spd_idx"]  # tipicamente int16 nel tuo preprocess
 
         # # Prepariamo una matrice [N_tot, N_tot] con pad=0 e riempiamo il blocco reale [0:N, 0:N]
@@ -418,7 +418,7 @@ class GraphormerBlock(nn.Module):
         # scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
         # 1) prepara gli indici SPD (ok)
         #N = cache["N"]
-        spd_idx = cache["spd_idx"]  # int16 dal preprocess
+        #spd_idx = cache["spd_idx"]  # int16 dal preprocess
         #spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
         #spd_pad[:N, :N] = spd_idx.to(torch.long)
 
@@ -430,7 +430,7 @@ class GraphormerBlock(nn.Module):
 
         # 3) aggiungi una sola volta ai punteggi
         #scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
-        N = cache["N"]
+        #N = cache["N"]
 
         # spd_bias_table: nn.Embedding(num_buckets, H) -> [N_tot, N_tot, H]
         #spd_head = self.spd_bias_table(spd_pad)  # [N_tot, N_tot, H]
