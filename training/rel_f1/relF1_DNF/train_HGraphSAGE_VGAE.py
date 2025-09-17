@@ -36,6 +36,9 @@ labels some of the nodes, not all of them.
 So we must manually exclude all the unlabeled nodes: this step is 
 avoided in the dirver position task since all the node in such task
 are labeled and usable for prediction.
+
+Remember to add:
+!pip install -U relbench pooch
 """
 
 def train2():
