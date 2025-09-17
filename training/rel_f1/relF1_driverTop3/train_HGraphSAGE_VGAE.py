@@ -24,7 +24,6 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from model.others.HGraphSAGE import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
@@ -161,6 +160,7 @@ def train2():
         test_table=test_table
     )
 
+
     for batch in loader_dict["train"]:
         edge_types=batch.edge_types
         break
@@ -176,6 +176,7 @@ def train2():
         epochs=50,
         device=device
     )
+
 
 
     
