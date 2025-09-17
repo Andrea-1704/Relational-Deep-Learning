@@ -223,7 +223,7 @@ for epoch in range(1, epochs + 1):
         state_dict_test = copy.deepcopy(model.state_dict())
 
     current_lr = optimizer.param_groups[0]["lr"]
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.4f}, Validation {tune_metric}: {val_metrics[tune_metric]:.4f}, Test {tune_metric}: {test_metrics[tune_metric]:.4f}, LR: {current_lr:.6f}")
 
     # early_stopping(val_metrics[tune_metric], model)
 
