@@ -121,7 +121,7 @@ def train2():
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        num_layers=2,
+        num_layers=4,
         channels=channels,
         out_channels=1,
         aggr="max",
@@ -136,8 +136,8 @@ def train2():
     #     weight_decay=0
     # )
 
-    lr = 1e-3
-    wd = 1e-4
+    lr = 1e-4
+    wd = 0
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
