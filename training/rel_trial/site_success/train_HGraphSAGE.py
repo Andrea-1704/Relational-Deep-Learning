@@ -98,16 +98,16 @@ channels = 128
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
-    aggr="max",
+    aggr="sum",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0)
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.00001, weight_decay=0.0001)
 
 
 
