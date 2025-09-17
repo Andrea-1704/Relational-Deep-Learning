@@ -125,7 +125,7 @@ print(f"ora max")
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
     aggr="max",
@@ -134,7 +134,7 @@ model = Model(
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.00005, weight_decay=0)
 
 
 
@@ -148,7 +148,6 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
 print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
 #pre training VGAE:
 for batch in loader_dict["train"]:
