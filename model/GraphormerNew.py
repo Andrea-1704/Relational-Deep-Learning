@@ -466,7 +466,7 @@ class GraphormerBlock(nn.Module):
             scores[:, s_idx, d_idx] += adj_rel_bias[r].view(H, 1)
 
         # First-edge-on-SP (optional; dense add on nodes area)
-        if first_edge_bias is not None :
+        if first_edge_bias is not None and cache["first_edge_rel"] is not None:
             fe = cache["first_edge_rel"]  # [N, N] with -1 if missing
             fe = fe.clamp(min=-1)
             # I remap -1 -> no-add by selecting a zeros vector; I just mask
