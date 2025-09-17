@@ -150,7 +150,7 @@ loader_dict = loader_dict_fn(
 
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
 
-epochs = 100
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)

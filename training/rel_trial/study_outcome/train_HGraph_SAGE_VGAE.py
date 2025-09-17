@@ -167,7 +167,7 @@ model = train_vgae(
     epochs=50,
     device=device
 )
-epochs = 100
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
