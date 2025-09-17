@@ -184,6 +184,22 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
+# for batch in loader_dict["train"]:
+#     edge_types=batch.edge_types
+#     break
+
+
+# model = train_vgae(
+#     model=model,
+#     loader_dict=loader_dict,
+#     edge_types=edge_types,
+#     encoder_out_dim=channels,
+#     entity_table=task.entity_table,
+#     latent_dim=16,
+#     hidden_dim=64,
+#     epochs=150,
+#     device=device
+# )
 
 
 

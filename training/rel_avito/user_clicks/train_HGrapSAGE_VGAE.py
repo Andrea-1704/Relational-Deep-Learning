@@ -56,10 +56,14 @@ from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
+task_name = "user-clicks"
+db_name = "rel-avito"
+node_id = "UserID"
+target = "num_click"
+node_type = "UserInfo"
 
-
-dataset = get_dataset("rel-avito", download=True)
-task = get_task("rel-avito", "user-clicks", download=True)
+dataset = get_dataset(db_name, download=True)
+task = get_task(db_name, task_name, download=True)
 
 train_table = task.get_table("train")
 val_table = task.get_table("val") 
@@ -92,22 +96,72 @@ data, col_stats_dict = make_pkey_fkey_graph(
 )
 
 
+
+graph_driver_ids = db_nuovo.table_dict[node_type].df[node_id].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+train_df_raw = train_table.df
+driver_ids_raw = train_df_raw[node_id].to_numpy()
+qualifying_positions = train_df_raw[target].to_numpy() #labels (train)
+binary_top3_labels_raw = qualifying_positions
+
+
+
+
+
+
+
+train_df_raw = train_table.df
+driver_ids_raw = train_df_raw[node_id].to_numpy()
+
+# Se i label sono booleani, converti a float32.
+# Se invece vuoi una binarizzazione esplicita, vedi la nota più sotto.
+binary_top3_labels_raw = train_df_raw[target].to_numpy().astype(np.float32)
+
+target_vector_official = torch.full((len(graph_driver_ids),), float("nan"), dtype=torch.float32)
+for i, driver_id in enumerate(driver_ids_raw):
+    if driver_id in id_to_idx:
+        target_vector_official[id_to_idx[driver_id]] = float(binary_top3_labels_raw[i])
+
+# Usa il node_type corretto qui:
+data[node_type].y = target_vector_official
+data[node_type].train_mask = ~torch.isnan(target_vector_official)
+
+
+# target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
+# for i, driver_id in enumerate(driver_ids_raw):
+#     if driver_id in id_to_idx:#if the driver is in the training
+#         target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+
+# data['studies'].y = target_vector_official.float()
+# data['studies'].train_mask = ~torch.isnan(target_vector_official)
+
+
+y_full = data[node_type].y.float()
+train_mask_full = data[node_type].train_mask
+num_pos = (y_full[train_mask_full] == 1).sum()
+num_neg = (y_full[train_mask_full] == 0).sum()
+pos_weight = torch.tensor([num_neg / num_pos], device=device)
+loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+
+
 # pre training phase with the VGAE
 channels = 128
 
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="max",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0)
 
 
 #scheduler = CosineAnnealingLR(optimizer, T_max=100)
@@ -130,7 +184,6 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-
 for batch in loader_dict["train"]:
     edge_types=batch.edge_types
     break
@@ -151,7 +204,7 @@ model = train_vgae(
 
 
 # Training loop
-epochs = 100
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
@@ -186,7 +239,7 @@ for epoch in range(1, epochs + 1):
         state_dict_test = copy.deepcopy(model.state_dict())
 
     current_lr = optimizer.param_groups[0]["lr"]
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.4f}, Validation {tune_metric}: {val_metrics[tune_metric]:.4f}, Test {tune_metric}: {test_metrics[tune_metric]:.4f}, LR: {current_lr:.6f}")
 
     # early_stopping(val_metrics[tune_metric], model)
 
