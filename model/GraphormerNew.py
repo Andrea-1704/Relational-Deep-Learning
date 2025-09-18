@@ -579,8 +579,8 @@ class HeteroGraphormer(nn.Module):
                  num_layers: int = 3,
                  num_heads: int = 8,
                  time_buckets: int = 21,
-                 use_first_edge_bias: bool = True,
-                 use_type_tokens: bool = True,
+                 use_first_edge_bias: bool = False,
+                 use_type_tokens: bool = False,
                  dropout: float = 0.1):
         super().__init__()
         self.channels = channels
