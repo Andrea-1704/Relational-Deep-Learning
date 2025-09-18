@@ -593,8 +593,6 @@ class HeteroGraphormer(nn.Module):
             edge_types=edge_types,
             num_heads=num_heads,
             time_buckets=time_buckets,
-            use_first_edge_bias=use_first_edge_bias,
-            use_type_tokens=use_type_tokens,
         )
         self.layers = nn.ModuleList([GraphormerBlock(channels, num_heads, dropout) for _ in range(num_layers)])
 
