@@ -138,7 +138,7 @@ cat_values = extract_categorical_values_from_db(db, maskable_attributes)
 print(cat_values)
 
 train_map(model, loader_dict, maskable_attributes, encoder_out_dim=128, device=device, 
-          cat_values = cat_values, epochs=20)
+          cat_values = cat_values, db=db_nuovo, epochs=20)
 
 
 # Training loop

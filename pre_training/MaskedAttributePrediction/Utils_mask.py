@@ -42,7 +42,7 @@ def extract_categorical_values_from_db(db, maskable_attributes):
 
 
 
-def train_map(model, loader_dict, maskable_attributes, encoder_out_dim: int, device: str, cat_values ,epochs: int = 20):
+def train_map(model, loader_dict, maskable_attributes, encoder_out_dim: int, device: str, cat_values, db ,epochs: int = 20):
     model.train()
     decoder = MAPDecoder(encoder_out_dim)
 
