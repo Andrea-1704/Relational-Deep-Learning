@@ -10,55 +10,65 @@ sys.path.append(os.path.abspath("."))
 from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder
 
 # aggiungi import
-from torch_frame.data import TensorFrame
 
-from typing import Dict, List, Tuple
+# --- IMPORT ---
+from typing import Dict, List
 import numpy as np
 import torch
 from torch_geometric.data import HeteroData
-from torch_frame.data import TensorFrame, Table  # assicurati dell'import
-# Se il tuo TorchFrame non ha Table, rimuovi l'import di Table e gestisci i casi 1) e 2)
+from torch_frame.data import TensorFrame  # <-- rimosso Table
 
-def _tf_get_table(tf: TensorFrame, col_stats_node, db_table=None):
-    # 1) versione nuova
+# --- HELPERS COMPAT ---
+def _get_table_like(tf: TensorFrame):
+    """
+    Ritorna un oggetto 'table-like' con almeno un attributo .df
+    provando prima tf.to_table() poi tf.table.
+    Se nessuno dei due esiste, solleva un errore con istruzioni per Colab.
+    """
+    # 1) API più recente
     if hasattr(tf, "to_table"):
         try:
-            return tf.to_table()
+            tbl = tf.to_table()
+            # controllo minimo
+            if hasattr(tbl, "df"):
+                return tbl
         except Exception:
             pass
-    # 2) versione intermedia
-    if hasattr(tf, "table") and tf.table is not None:
+    # 2) API intermedia/vecchia
+    if hasattr(tf, "table") and tf.table is not None and hasattr(tf.table, "df"):
         return tf.table
-    # 3) fallback da DB se disponibile
-    if db_table is not None:
-        # ricava le colonne realmente usate dal TensorFrame
-        cols = []
-        for _, cols_in in tf.col_names_dict.items():
-            cols.extend(cols_in)
-        cols = [c for c in cols if c in db_table.df.columns]
-        # copia subset, mantieni indici globali
-        df_subset = db_table.df.loc[:, cols].copy()
-        # se Table non esiste nella tua versione, commenta le 2 righe sotto e alza errore
-        return Table(df=df_subset, col_stats=col_stats_node)
-    raise AttributeError("Impossibile ottenere un Table dal TensorFrame: mancano to_table e table, e nessun db_table fornito.")
 
-def _tf_from_table(table_obj, col_stats_node):
-    # versione nuova
+    # 3) non c'è modo affidabile: spiega come aggiornare
+    raise RuntimeError(
+        "Questo TensorFrame non espone né .to_table() né .table; "
+        "per usare il masking batch-local serve una versione di TorchFrame compatibile. "
+        "Su Colab puoi provare:\n"
+        "  !pip install -U 'git+https://github.com/pyg-team/torch-frame.git'\n"
+        "oppure reinstallare la versione del tuo progetto che espone almeno uno dei due."
+    )
+
+def _rebuild_tensorframe_from_table(table_obj, col_stats_node):
+    """
+    Ricostruisce un TensorFrame a partire da un oggetto table-like.
+    Usa TensorFrame.from_table se esiste; altrimenti prova il costruttore legacy.
+    """
+    # preferisci API nuova
     if hasattr(TensorFrame, "from_table"):
         return TensorFrame.from_table(table=table_obj, col_stats=col_stats_node)
-    # versione legacy
+
+    # fallback: alcune versioni accettano (table_obj, col_stats) nel costruttore
     try:
         return TensorFrame(table_obj, col_stats=col_stats_node)
     except TypeError:
-        # alcune versioni vogliono positional args
+        # altra variante legacy
         return TensorFrame(table_obj, col_stats_node)
 
+# --- FUNZIONE PRINCIPALE ---
 def mask_attributes(batch: HeteroData,
                     maskable_attributes: Dict[str, Dict[str, List[str]]],
                     p_mask=0.3,
                     device="cuda",
-                    col_stats_dict=None,
-                    db=None):
+                    col_stats_dict=None):
     if col_stats_dict is None:
         raise ValueError("mask_attributes richiede col_stats_dict per ricostruire il TensorFrame.")
 
@@ -69,24 +79,23 @@ def mask_attributes(batch: HeteroData,
             print(f"node type {node_type} non trovato, questo grafo ha nodi {batch.node_types}")
             continue
 
-        db_table = None
-        if db is not None and hasattr(db, "table_dict") and node_type in db.table_dict:
-            db_table = db.table_dict[node_type]
-
-        # ottieni il Table in modo compatibile
-        table = _tf_get_table(batch[node_type].tf, col_stats_dict[node_type], db_table)
+        # ottieni un oggetto con .df indipendentemente dalla versione
+        table = _get_table_like(batch[node_type].tf)
         df = table.df.copy(deep=True)
 
-        # colonne effettivamente presenti nel TensorFrame
+        # colonne effettive del TF
         table_columns = []
-        for _, cols_in in batch[node_type].tf.col_names_dict.items():
-            table_columns.extend(cols_in)
+        if hasattr(batch[node_type].tf, "col_names_dict"):
+            for _, cols_in in batch[node_type].tf.col_names_dict.items():
+                table_columns.extend(cols_in)
+        else:
+            # fallback conservativo: usa colonne del df
+            table_columns = list(df.columns)
 
         # indici globali presenti nel batch
         if hasattr(batch[node_type], "n_id"):
             local_ids = batch[node_type].n_id.cpu().numpy()
         else:
-            # fallback, se la tua versione usa un altro nome
             local_ids = np.arange(df.shape[0])
 
         if local_ids.size == 0:
@@ -117,9 +126,9 @@ def mask_attributes(batch: HeteroData,
                 else:
                     raise ValueError(f"Tipo non supportato: {attr_type}")
 
-        # scrivi indietro e ricostruisci un TensorFrame
+        # scrivi indietro nel table-like e ricostruisci il TensorFrame
         table.df = df
-        batch[node_type].tf = _tf_from_table(table, col_stats_dict[node_type])
+        batch[node_type].tf = _rebuild_tensorframe_from_table(table, col_stats_dict[node_type])
 
     return batch, target_values
 
