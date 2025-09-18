@@ -129,9 +129,6 @@ maskable_attributes = {
         "categorical": ["study_type", "phase", "is_fda_regulated_drug", "is_fda_regulated_device"],
         "numerical": ["enrollment"]
     },
-    "outcomes": {
-        "categorical": ["outcome_type"]
-    },
     "reported_event_totals": {
         "categorical": ["event_type", "classification"]
     }
