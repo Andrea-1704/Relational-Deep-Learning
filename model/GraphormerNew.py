@@ -720,8 +720,6 @@ class Model(nn.Module):
             num_layers=num_layers,
             num_heads=num_heads,
             time_buckets=time_buckets,
-            use_first_edge_bias=use_first_edge_bias,
-            use_type_tokens=use_type_tokens,
         )
 
         # Task head (node-level)
