@@ -437,14 +437,15 @@ class HeteroGraphormerStructuralBias(nn.Module):
 # -----------------------------
 
 class GraphormerBlock(nn.Module):
-    def __init__(self, channels: int, num_heads: int, dropout: float = 0.1):
+    def __init__(self, channels: int, num_heads: int, dropout: float = 0.1, rel_count: int = 0):
         super().__init__()
         assert channels % num_heads == 0, "channels must be divisible by num_heads"
         self.channels = channels
         self.num_heads = num_heads
         self.head_dim = channels // num_heads
 
-        self.rel_mlps = nn.ModuleDict()  # id->Linear
+        self.rel_mlps = nn.ModuleDict({str(r): nn.Linear(channels, channels, bias=True)
+                                       for r in range(rel_count)})
         self.mp_alpha = nn.Parameter(torch.tensor(0.0))  
 
         self.q = Linear(channels, channels, bias=True)
@@ -610,15 +611,27 @@ class HeteroGraphormer(nn.Module):
         self.num_layers = num_layers
         self.num_heads = num_heads
 
+        # self.bias = HeteroGraphormerStructuralBias(
+        #     node_types=node_types,
+        #     edge_types=edge_types,
+        #     num_heads=num_heads,
+        #     time_buckets=time_buckets,
+        # )
+        # self.layers = nn.ModuleList([GraphormerBlock(channels, num_heads, dropout) for _ in range(num_layers)])
+
         self.bias = HeteroGraphormerStructuralBias(
             node_types=node_types,
             edge_types=edge_types,
             num_heads=num_heads,
             time_buckets=time_buckets,
         )
-        self.layers = nn.ModuleList([GraphormerBlock(channels, num_heads, dropout) for _ in range(num_layers)])
+        R = self.bias.R  # numero di edge types
 
-        
+        self.layers = nn.ModuleList([
+            GraphormerBlock(channels, num_heads, dropout, rel_count=R)  # <— passalo
+            for _ in range(num_layers)
+        ])
+
 
     def forward(self,
                 x_dict: Dict[str, Tensor],
