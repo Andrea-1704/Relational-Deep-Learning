@@ -73,8 +73,7 @@ def train_map(model, loader_dict, maskable_attributes, encoder_out_dim: int, dev
             batch, mask_info = mask_attributes(batch, maskable_attributes, db=db, device=device)
             z_dict = model.encode_node_types(
                 batch,
-                node_types=list(maskable_attributes.keys()),
-                mask_info=mask_info 
+                node_types=list(maskable_attributes.keys())
             )
             loss = decoder(z_dict, batch, mask_info)
 
