@@ -97,6 +97,7 @@ def train_map(model,
               encoder_out_dim: int,
               device: str,
               cat_values,
+              entity_table,
               epochs: int = 20,
               **kwargs):
     """
@@ -125,7 +126,7 @@ def train_map(model,
 
             # ENCODE solo i node_types mascherati
             node_types = list(maskable_attributes.keys())
-            z_dict = model.encode_node_types(batch, node_types=node_types)
+            z_dict = model.encode_node_types(batch, node_types=node_types, entity_table=entity_table)
 
             loss = 0.0
             for (node_type, col), info in mask_info.items():
