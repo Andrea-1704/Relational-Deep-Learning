@@ -9,52 +9,70 @@ sys.path.append(os.path.abspath("."))
 
 from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder
 
+# aggiungi import
+from torch_frame.data import TensorFrame
+
 def mask_attributes(batch: HeteroData,
                     maskable_attributes: Dict[str, Dict[str, List[str]]],
                     p_mask=0.3,
-                    device="cuda") -> Tuple[HeteroData, Dict]:
+                    device="cuda",
+                    col_stats_dict=None):  # <--- nuovo arg
     """
     Maschera dinamicamente alcune feature nel batch, e restituisce anche i valori originali mascherati.
+    Applicazione batch-local: si materializza il Table dal TensorFrame, si modifica df
+    e si ricostruisce il TensorFrame per riflettere le modifiche nell'encoder.
     """
-    target_values = {}  # per il decoder: quali campi/righe sono stati mascherati e con quali valori originali
+    if col_stats_dict is None:
+        raise ValueError("mask_attributes richiede col_stats_dict per ricostruire il TensorFrame.")
+
+    target_values = {}
 
     for node_type, type_dict in maskable_attributes.items():
         if node_type not in batch.node_types:
             print(f"node type {node_type} non trovato, questo grafo ha nodi {batch.node_types}")
             continue
 
+        # materializza il Table dal TensorFrame
+        try:
+            table = batch[node_type].tf.to_table()
+        except AttributeError:
+            # per massima compatibilità se stai usando una versione più vecchia (dove .table esisteva)
+            table = getattr(batch[node_type].tf, "table", None)
+            if table is None:
+                raise
+
+        df = table.df.copy(deep=True)
+
+        # lista colonne disponibili nel batch
+        table_columns = []
+        for stype, cols_in in batch[node_type].tf.col_names_dict.items():
+            table_columns.extend(cols_in)
+
+        # id globali presenti nel batch
+        local_ids = batch[node_type].n_id.cpu().numpy()
+        if local_ids.size == 0:
+            continue
+
         for attr_type, cols in type_dict.items():
             for col in cols:
-
-                table_columns = []
-                for stype, cols_in in batch[node_type].tf.col_names_dict.items():
-                    table_columns.extend(cols_in)
-
                 if col not in table_columns:
                     print(f"non abbiamo trovato la colonna {col} nella tabella {node_type}")
-                    continue  # Colonna non disponibile nel batch
-
-                # --- batch-only: lavora sul DF del batch, non sul DB globale ---
-                table = batch[node_type].tf.table
-                df = table.df.copy(deep=True)
-
-                # ID globali presenti nel batch e maschera Bernoulli batch-local
-                local_ids = batch[node_type].n_id.cpu().numpy()
-                if local_ids.size == 0:
                     continue
+
+                # Bernoulli mask su indici batch-local
                 bern = (torch.rand(len(local_ids), device=device) < p_mask).cpu().numpy()
                 masked_pos = np.nonzero(bern)[0]  # indici batch-local
                 if masked_pos.size == 0:
                     continue
                 masked_global = local_ids[masked_pos]
 
-                # salva indici batch-local e valori originali
+                # salva indici (batch-local) e valori originali
                 target_values[(node_type, col)] = {
                     "indices": masked_pos.tolist(),
                     "values": df.loc[masked_global, col].tolist()
                 }
 
-                # applica sentinel SOLO nel batch
+                # applica sentinel nel df
                 if attr_type == "categorical":
                     df.loc[masked_global, col] = 0
                 elif attr_type == "numerical":
@@ -62,10 +80,15 @@ def mask_attributes(batch: HeteroData,
                 else:
                     raise ValueError(f"Tipo non supportato: {attr_type}")
 
-                # scrivi indietro SOLO al batch
-                table.df = df
+        # scrivi indietro nel Table e ricostruisci il TensorFrame
+        table.df = df
+        batch[node_type].tf = TensorFrame.from_table(
+            table=table,
+            col_stats=col_stats_dict[node_type]  # fondamentali per ricodifica coerente
+        )
 
     return batch, target_values
+
 
 
 
@@ -104,7 +127,9 @@ def extract_categorical_values_from_db(db, maskable_attributes):
 
 
 
-def train_map(model, loader_dict, maskable_attributes, encoder_out_dim: int, device: str, cat_values ,epochs: int = 20):
+def train_map(model, loader_dict, maskable_attributes, encoder_out_dim: int, device: str, cat_values, epochs: int = 20, col_stats_dict=None):
+    if col_stats_dict is None:
+        raise ValueError("train_map richiede col_stats_dict per il masking batch-local.")
     model.train()
     decoder = MAPDecoder(encoder_out_dim)
 
