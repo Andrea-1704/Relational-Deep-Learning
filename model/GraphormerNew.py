@@ -20,14 +20,29 @@ from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 
 def build_type_indexers(node_types: List[str]) -> Dict[str, int]:
     #map node type strings to contiguous integer ids
+    #basically for each node type we have an index value to represent it.
     return {nt: i for i, nt in enumerate(node_types)}
 
 def build_rel_indexers(edge_types: List[Tuple[str, str, str]]) -> Dict[Tuple[str, str, str], int]:
-    #map (src, rel, dst) triplets to contiguous integer ids
+    #map (src, rel, dst) triplets to contiguous integer ids, the same as above but for relations.
     return {et: i for i, et in enumerate(edge_types)}
 
 def fuse_x_dict(x_dict: Dict[str, Tensor], type2id: Dict[str, int]) -> Tuple[Tensor, Tensor, Dict[str, slice]]:
-    #concatenate node embeddings across types into one big [N, C] tensor
+    """
+    This function basicly fuses node features from different types into a single tensor. If 
+    we have 3 nodes of type drivers with an embedding size of 4 and 2 nodes of type cars with an embedding size of 4,
+    the output will be a tensor of size [5, 4]. It also returns a token_type tensor that indicates the type of each node in the fused tensor.
+    Additionally, it returns a dictionary of slices that indicate the position of each node type in the fused tensor.
+    1. X: [N, C] fused node features
+    2. token_type: [N] long tensor with type ids per node
+    3. slices: dict of node_type -> slice(start, end) in X
+
+    ex:
+    slices = {
+        "driver": slice(0, 3),  # driver occupy global indices 0,1,2
+        "race": slice(3, 5),    # race occupy global indices 3,4
+    }
+    """
     parts = []
     token_types = []
     slices = {}
@@ -45,7 +60,50 @@ def fuse_x_dict(x_dict: Dict[str, Tensor], type2id: Dict[str, int]) -> Tuple[Ten
 def fuse_edges_to_global(edge_index_dict: Dict[Tuple[str, str, str], Tensor],
                          slices: Dict[str, slice],
                          rel2id: Dict[Tuple[str, str, str], int]) -> Tuple[List[Tuple[int, int, int]], int]:
-    #convert hetero edge_index_dict to a list of (src_global, dst_global, rel_id)
+    """
+    Convert a heterogeneous edge_index_dict into a flat list of global edges.
+
+    This function "fuses" per-type edges into a single global index space, so that
+    all nodes can be treated as if they were part of one big homogeneous graph.
+    For each edge type (src_type, relation, dst_type):
+      1. We take its edge_index (two tensors [src, dst] of local indices)
+      2. We shift the indices by the slice.start for the corresponding node type
+         to obtain global indices in the fused representation
+      3. We attach the numeric relation ID (from rel2id) so each edge carries
+         information about its type
+
+    Returns:
+        edges: list of (global_src, global_dst, rel_id)
+        total_nodes: total number of fused nodes (max index + 1)
+
+    Example:
+        Suppose we have two node types:
+            driver: 3 nodes  -> occupy global positions [0, 1, 2] (slices returned by fuse_x_dict)
+            race:   2 nodes  -> occupy global positions [3, 4]
+
+        slices = {
+            "driver": slice(0, 3),
+            "race": slice(3, 5)
+        }
+
+        And one relation ("driver", "participated_in", "race") with local edge_index:
+
+            src = [0, 1, 2]  # local driver indices
+            dst = [1, 0, 1]  # local race indices
+            rel2id = {("driver", "participated_in", "race"): 0}
+
+        After fusion:
+            - src_global = src + slices["driver"].start = [0, 1, 2]
+            - dst_global = dst + slices["race"].start   = [4, 3, 4]
+
+        Result:
+            edges = [
+                (0, 4, 0),  # driver0 -> race1
+                (1, 3, 0),  # driver1 -> race0
+                (2, 4, 0),  # driver2 -> race1
+            ]
+            total_nodes = 5 (because we have 3 drivers + 2 races)
+    """
     edges = []
     total_nodes = 0
     for nt, sl in slices.items():
@@ -54,7 +112,6 @@ def fuse_edges_to_global(edge_index_dict: Dict[Tuple[str, str, str], Tensor],
         src_nt, _, dst_nt = et
         sl_s, sl_d = slices[src_nt], slices[dst_nt]
         src, dst = eidx
-        # I shift per-type indices into fused global indices
         edges.extend([(int(sl_s.start + int(s)), int(sl_d.start + int(d)), rel2id[et]) for s, d in zip(src.tolist(), dst.tolist())])
     return edges, total_nodes
 
@@ -64,6 +121,109 @@ def fuse_edges_to_global(edge_index_dict: Dict[Tuple[str, str, str], Tensor],
 # ---------------------------------
 
 class CentralityEncoder(nn.Module):
+    """
+    Add learnable degree-based encodings to each node representation in a heterogeneous graph.
+
+    Overview
+    --------
+    For every node, we compute its directed in-degree and out-degree across all relations,
+    bucketize those counts with a logarithmic rule, then add two learnable embeddings:
+    one for the in-degree bucket and one for the out-degree bucket. This gives the
+    transformer a lightweight topological prior without explicitly constructing
+    higher-order structural features.
+
+    Arguments
+    ---------
+    channels : int
+        Feature dimensionality of each node embedding.
+    num_buckets : int, default 16
+        Number of logarithmic buckets used to discretize degree values.
+    share_in_out : bool, default False
+        If True, reuse the same embedding table for in-degree and out-degree.
+        If False, learn two separate tables.
+
+    Inputs
+    ------
+    x_dict : Dict[str, Tensor]
+        A mapping from node type to a tensor of shape [num_nodes_of_type, channels].
+        These are the current node features that will be enriched with centrality signals.
+    edge_index_dict : Dict[Tuple[str, str, str], LongTensor]
+        A mapping from (src_type, relation, dst_type) to a LongTensor of shape [2, num_edges],
+        with per-type local indices for src and dst.
+
+    Returns
+    -------
+    Dict[str, Tensor]
+        Same keys as x_dict, each value has shape [num_nodes_of_type, channels].
+        For every node feature x, the output is:
+            x + in_emb[bucket_in(x)] + out_emb[bucket_out(x)]
+
+    Degree Bucketization
+    --------------------
+    We map raw degrees to integer buckets with:
+        bucket = floor( log2(degree + 1) )
+    Then we clamp to [0, num_buckets - 1].
+    This compresses large counts while preserving resolution for small counts.
+
+    Numeric Example
+    ---------------
+    Suppose:
+      channels = 2, num_buckets = 4, share_in_out = False
+
+      Node types:
+        - "driver" has 3 nodes
+        - "race"   has 2 nodes
+
+      Let x_dict be zeros for simplicity:
+        x_dict["driver"] = zeros([3, 2])
+        x_dict["race"]   = zeros([2, 2])
+
+      Edges (directed from drivers to races):
+        edge_index_dict[("driver", "participated_in", "race")] =
+            [[0, 0, 1, 2],   # src local indices in "driver"
+             [0, 1, 1, 1]]   # dst local indices in "race"
+
+      Degrees computed across all relations:
+        driver out-degree: counts by index -> [2, 1, 1]
+        driver in-degree:  no incoming edges here -> [0, 0, 0]
+        race   in-degree:  counts by index -> [1, 3]
+        race   out-degree: none here -> [0, 0]
+
+      Bucketization with floor(log2(deg + 1)):
+        deg=0 -> 0,  deg=1 -> 1,  deg=2 -> 1,  deg=3 -> 2
+
+      Therefore:
+        driver in-buckets  = [0, 0, 0]
+        driver out-buckets = [1, 1, 1]
+        race   in-buckets  = [1, 2]
+        race   out-buckets = [0, 0]
+
+      For illustration, assume the learnable embeddings currently equal:
+        in_emb[0] = [0.00, 0.00]
+        in_emb[1] = [0.10, 0.10]
+        in_emb[2] = [0.20, 0.20]
+        out_emb[0] = [0.00, 0.00]
+        out_emb[1] = [1.00, 1.00]
+        out_emb[2] = [2.00, 2.00]
+
+      Updated node features (x is zero everywhere in this toy example):
+        driver:
+          node 0: x + in_emb[0] + out_emb[1] = [1.00, 1.00]
+          node 1: x + in_emb[0] + out_emb[1] = [1.00, 1.00]
+          node 2: x + in_emb[0] + out_emb[1] = [1.00, 1.00]
+        race:
+          node 0: x + in_emb[1] + out_emb[0] = [0.10, 0.10]
+          node 1: x + in_emb[2] + out_emb[0] = [0.20, 0.20]
+
+    Implementation Notes
+    --------------------
+    - Degrees are counted with efficient index_add on device.
+    - Bucketization is vectorized and numerically stable.
+    - Shapes and devices follow the inputs.
+    - When share_in_out=True the same table is used for both directions,
+      which reduces parameters but ties the two signals.
+
+    """
     def __init__(self, channels: int, num_buckets: int = 16, share_in_out: bool = False):
         super().__init__()
         self.num_buckets = num_buckets
@@ -129,26 +289,18 @@ class HeteroGraphormerStructuralBias(nn.Module):
                  node_types: List[str],
                  edge_types: List[Tuple[str, str, str]],
                  num_heads: int,
-                 s_max: int = 6,
-                 time_buckets: int = 21,
-                 use_first_edge_bias: bool = True,
-                 use_type_tokens: bool = True):
+                 time_buckets: int = 21,):
         super().__init__()
         self.node_types = node_types
         self.edge_types = edge_types
-        self.T = len(node_types)
-        self.R = len(edge_types)
+        self.T = len(node_types) #num_node types
+        self.R = len(edge_types) #num_edge types
         self.num_heads = num_heads
-        self.s_max = s_max
-        self.use_first_edge_bias = use_first_edge_bias
-        self.use_type_tokens = use_type_tokens
 
-        # build small lookups for fast indexing
         self.type2id = build_type_indexers(node_types)
         self.rel2id = build_rel_indexers(edge_types)
 
-       
-        # Adjacency-by-relation bias: one scalar per relation and head
+        # Per ogni relazione aggiungiamo un bias learnable:
         self.adj_rel_bias = nn.Parameter(torch.zeros(self.R, num_heads))
 
         # Type-pair bias: one scalar per (src_type, dst_type) and head
@@ -158,15 +310,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         self.time_buckets = time_buckets
         self.temp_bias = nn.Embedding(time_buckets, num_heads)
         nn.init.normal_(self.temp_bias.weight, std=0.02)
-
-        # First-edge-on-SP bias: one scalar per relation and head (optional)
-        if self.use_first_edge_bias:
-            self.first_edge_bias = nn.Parameter(torch.zeros(self.R, num_heads))
-
-        # TypeToken link bias: I connect node <-> its TypeToken with a small constant bias per head (optional)
-        if self.use_type_tokens:
-            self.type_token_link_bias_q2t = nn.Parameter(torch.zeros(num_heads))  # node -> TypeToken(type(node))
-            self.type_token_link_bias_t2q = nn.Parameter(torch.zeros(num_heads))  # TypeToken -> node of that type
+        
 
     # ---- Helper: Δt bucketization around 0 with symmetric log buckets ----
     @staticmethod
@@ -254,9 +398,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
 
         # add TypeToken indices at the end if enabled
         type_token_indices = None
-        if self.use_type_tokens:
-            #place one TypeToken per type, appended after nodes: [N ... N+T-1]
-            type_token_indices = torch.arange(N, N + self.T, device=device, dtype=torch.long)
+        
 
         cache = {
             "N": N,
@@ -436,7 +578,6 @@ class HeteroGraphormer(nn.Module):
                  channels: int,
                  num_layers: int = 3,
                  num_heads: int = 8,
-                 s_max: int = 6,
                  time_buckets: int = 21,
                  use_first_edge_bias: bool = True,
                  use_type_tokens: bool = True,
@@ -451,7 +592,6 @@ class HeteroGraphormer(nn.Module):
             node_types=node_types,
             edge_types=edge_types,
             num_heads=num_heads,
-            s_max=s_max,
             time_buckets=time_buckets,
             use_first_edge_bias=use_first_edge_bias,
             use_type_tokens=use_type_tokens,
@@ -486,7 +626,6 @@ class HeteroGraphormer(nn.Module):
         token_type = token_type.to(device)
         N = X.size(0)
 
-        #attach TypeTokens (optional)
         attach_masks = None
         if self.use_type_tokens:
             T = len(self.bias.node_types)
@@ -513,14 +652,11 @@ class HeteroGraphormer(nn.Module):
                 "type_token_type_id": type_ids,
             }
 
-        # 4) I build bias pack (tables + cache) to be reused by all layers
         bias_pack = self.bias.build_bias_per_head(cache, num_tokens_total=X.size(0))
 
-        # 5) I stack Graphormer blocks
         for layer in self.layers:
             X = layer(X, token_type, bias_pack, attach_type_tokens_masks=attach_masks)
 
-        # 6) I split X back into per-type dict (I drop TypeTokens)
         out_dict = {}
         for nt, sl in slices.items():
             out_dict[nt] = X[sl.start:sl.stop, :]
@@ -557,7 +693,6 @@ class Model(nn.Module):
         id_awareness: bool = False,
         predictor_n_layers: int = 1,
         num_heads: int = 8,
-        s_max: int = 6,
         time_buckets: int = 21,
         use_first_edge_bias: bool = True,
         use_type_tokens: bool = True,
@@ -586,7 +721,6 @@ class Model(nn.Module):
             channels=channels,
             num_layers=num_layers,
             num_heads=num_heads,
-            s_max=s_max,
             time_buckets=time_buckets,
             use_first_edge_bias=use_first_edge_bias,
             use_type_tokens=use_type_tokens,
