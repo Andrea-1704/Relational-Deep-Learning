@@ -645,30 +645,30 @@ class HeteroGraphormer(nn.Module):
         N = X.size(0)
 
         attach_masks = None
-        if self.use_type_tokens:
-            T = len(self.bias.node_types)
-            #append T tokens; their "type id" is the actual type they represent
-            type_ids = torch.arange(T, device=device, dtype=torch.long)
-            TT = self.type_token_emb(type_ids)             # [T, C]
-            X = torch.cat([X, TT], dim=0)                  # [N+T, C]
-            token_type = torch.cat([token_type, type_ids], dim=0)  # [N+T]
-            # I prepare masks for biasing
-            # node -> its TypeToken column index
-            type_token_col = cache["type_token_indices"]    # [T] = [N..N+T-1]
-            node_to_type_token_col = type_token_col[token_type[:N]]  # [N]
-            # TypeToken rows
-            tt_rows = torch.arange(N, N + T, device=device, dtype=torch.long)
-            # Per-type node masks [T, N] (bool)
-            type_to_nodes_mask = torch.zeros(T, N, dtype=torch.bool, device=device)
-            for nt, sl in slices.items():
-                t_id = type2id[nt]
-                type_to_nodes_mask[t_id, sl.start:sl.stop] = True
-            attach_masks = {
-                "node_to_type_token_col": node_to_type_token_col,
-                "type_token_to_node_rows": tt_rows,
-                "type_to_nodes_mask": type_to_nodes_mask,
-                "type_token_type_id": type_ids,
-            }
+        # if self.use_type_tokens:
+        #     T = len(self.bias.node_types)
+        #     #append T tokens; their "type id" is the actual type they represent
+        #     type_ids = torch.arange(T, device=device, dtype=torch.long)
+        #     TT = self.type_token_emb(type_ids)             # [T, C]
+        #     X = torch.cat([X, TT], dim=0)                  # [N+T, C]
+        #     token_type = torch.cat([token_type, type_ids], dim=0)  # [N+T]
+        #     # I prepare masks for biasing
+        #     # node -> its TypeToken column index
+        #     type_token_col = cache["type_token_indices"]    # [T] = [N..N+T-1]
+        #     node_to_type_token_col = type_token_col[token_type[:N]]  # [N]
+        #     # TypeToken rows
+        #     tt_rows = torch.arange(N, N + T, device=device, dtype=torch.long)
+        #     # Per-type node masks [T, N] (bool)
+        #     type_to_nodes_mask = torch.zeros(T, N, dtype=torch.bool, device=device)
+        #     for nt, sl in slices.items():
+        #         t_id = type2id[nt]
+        #         type_to_nodes_mask[t_id, sl.start:sl.stop] = True
+        #     attach_masks = {
+        #         "node_to_type_token_col": node_to_type_token_col,
+        #         "type_token_to_node_rows": tt_rows,
+        #         "type_to_nodes_mask": type_to_nodes_mask,
+        #         "type_token_type_id": type_ids,
+        #     }
 
         bias_pack = self.bias.build_bias_per_head(cache, num_tokens_total=X.size(0))
 
