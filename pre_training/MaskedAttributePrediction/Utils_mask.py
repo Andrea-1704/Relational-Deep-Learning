@@ -126,7 +126,30 @@ def train_map(model,
 
             # ENCODE solo i node_types mascherati
             node_types = list(maskable_attributes.keys())
+            #z_dict = model.encode_node_types(batch, node_types=node_types, entity_table=entity_table)
+            node_types = list(maskable_attributes.keys())
+
+            # Autodetect del node type che espone 'seed_time'
+            entity_table = None
+            for nt in batch.node_types:
+                # alcuni rilasci usano attributi, altri li tengono in __dict__
+                if hasattr(batch[nt], "seed_time") or ("seed_time" in getattr(batch[nt], "__dict__", {})):
+                    entity_table = nt
+                    break
+
+            # fallback: se non troviamo seed_time, prendi il primo dei node_types mascherati
+            if entity_table is None and len(node_types) > 0:
+                entity_table = node_types[0]
+
+            if entity_table is None:
+                raise ValueError(
+                    "Impossibile determinare automaticamente 'entity_table'. "
+                    "Nessun node type ha 'seed_time' e 'maskable_attributes' è vuoto."
+                )
+
+            # Ora chiama encode_node_types con UNA stringa, non con un dict:
             z_dict = model.encode_node_types(batch, node_types=node_types, entity_table=entity_table)
+
 
             loss = 0.0
             for (node_type, col), info in mask_info.items():
