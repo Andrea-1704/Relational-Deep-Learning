@@ -97,26 +97,26 @@ def train_map(model,
               encoder_out_dim: int,
               device: str,
               cat_values,
-              entity_table,
               epochs: int = 20,
+              db=None,
+              entity_table=None,
               **kwargs):
-    """
-    Addestra MAPDecoder usando masking in-place su feat_dict.
-    """
     from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder
-    model.train()
-    decoder = MAPDecoder(encoder_out_dim).to(device)
 
-    opt = torch.optim.Adam(list(model.parameters()) + list(decoder.parameters()), lr=1e-3)
-    loss_fn = torch.nn.CrossEntropyLoss(reduction="mean")
-    mse = torch.nn.MSELoss(reduction="mean")
+    model.train()
+    decoder = MAPDecoder(encoder_out_dim, cat_values=cat_values).to(device)
+
+    opt = torch.optim.Adam(
+        list(model.parameters()) + list(decoder.parameters()),
+        lr=1e-3
+    )
 
     for epoch in range(1, epochs + 1):
         total = 0.0
         for batch in loader_dict["train"]:
             batch = batch.to(device)
 
-            # MASK
+            # 1) Applica il masking IN-PLACE sui tensori (versione che hai già)
             batch, mask_info = mask_attributes(
                 batch,
                 maskable_attributes,
@@ -124,54 +124,30 @@ def train_map(model,
                 device=device,
             )
 
-            # ENCODE solo i node_types mascherati
+            # 2) Determina entity_table come NOME del node type (non un dict!)
+            if isinstance(entity_table, str):
+                ent_tab = entity_table
+            else:
+                # autodetect: prendi il node type che ha 'seed_time'
+                ent_tab = None
+                for nt in batch.node_types:
+                    if hasattr(batch[nt], "seed_time") or ("seed_time" in getattr(batch[nt], "__dict__", {})):
+                        ent_tab = nt
+                        break
+                if ent_tab is None:
+                    # fallback: primo tra quelli mascherati
+                    nts = list(maskable_attributes.keys())
+                    ent_tab = nts[0] if len(nts) > 0 else batch.node_types[0]
+
+            # 3) Encode embeddings per i node types di interesse
             node_types = list(maskable_attributes.keys())
-            #z_dict = model.encode_node_types(batch, node_types=node_types, entity_table=entity_table)
-            node_types = list(maskable_attributes.keys())
+            try:
+                z_dict = model.encode_node_types(batch, ent_tab, node_types=node_types)
+            except TypeError:
+                z_dict = model.encode_node_types(batch=batch, entity_table=ent_tab, node_types=node_types)
 
-            # Autodetect del node type che espone 'seed_time'
-            entity_table = None
-            for nt in batch.node_types:
-                # alcuni rilasci usano attributi, altri li tengono in __dict__
-                if hasattr(batch[nt], "seed_time") or ("seed_time" in getattr(batch[nt], "__dict__", {})):
-                    entity_table = nt
-                    break
-
-            # fallback: se non troviamo seed_time, prendi il primo dei node_types mascherati
-            if entity_table is None and len(node_types) > 0:
-                entity_table = node_types[0]
-
-            if entity_table is None:
-                raise ValueError(
-                    "Impossibile determinare automaticamente 'entity_table'. "
-                    "Nessun node type ha 'seed_time' e 'maskable_attributes' è vuoto."
-                )
-
-            # Ora chiama encode_node_types con UNA stringa, non con un dict:
-            z_dict = model.encode_node_types(batch, node_types=node_types, entity_table=entity_table)
-
-
-            loss = 0.0
-            for (node_type, col), info in mask_info.items():
-                idxs_list = info["indices"]
-                if not idxs_list:
-                    continue
-                idxs = torch.as_tensor(idxs_list, device=z_dict[node_type].device, dtype=torch.long)
-                z = z_dict[node_type].index_select(0, idxs)
-                out = decoder(node_type, col, z)
-
-                gt_tensor = info["values"].to(device)  # già long o float
-                # decidi loss guardando la testa del decoder
-                if decoder.is_categorical(node_type, col):
-                    # atteso LongTensor con indici nella vocab
-                    if gt_tensor.dtype != torch.long:
-                        gt_tensor = gt_tensor.long()
-                    loss = loss + loss_fn(out, gt_tensor)
-                else:
-                    # numeriche: shape [B, 1]
-                    if gt_tensor.dtype != torch.float32:
-                        gt_tensor = gt_tensor.float()
-                    loss = loss + mse(out.view(-1, 1), gt_tensor.view(-1, 1))
+            # 4) LASCIA che il decoder calcoli la LOSS usando (z_dict, batch, mask_info)
+            loss = decoder(z_dict, batch, mask_info)
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -180,6 +156,7 @@ def train_map(model,
             total += float(loss.detach().cpu())
 
         print(f"[MAP] epoch {epoch}/{epochs} - loss {total:.4f}")
+
 
 
 
