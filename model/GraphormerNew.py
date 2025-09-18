@@ -19,15 +19,15 @@ from relbench.modeling.nn import HeteroEncoder, HeteroTemporalEncoder
 # ----------------------------
 
 def build_type_indexers(node_types: List[str]) -> Dict[str, int]:
-    # I map node type strings to contiguous integer ids
+    #map node type strings to contiguous integer ids
     return {nt: i for i, nt in enumerate(node_types)}
 
 def build_rel_indexers(edge_types: List[Tuple[str, str, str]]) -> Dict[Tuple[str, str, str], int]:
-    # I map (src, rel, dst) triplets to contiguous integer ids
+    #map (src, rel, dst) triplets to contiguous integer ids
     return {et: i for i, et in enumerate(edge_types)}
 
 def fuse_x_dict(x_dict: Dict[str, Tensor], type2id: Dict[str, int]) -> Tuple[Tensor, Tensor, Dict[str, slice]]:
-    # I concatenate node embeddings across types into one big [N, C] tensor
+    #concatenate node embeddings across types into one big [N, C] tensor
     parts = []
     token_types = []
     slices = {}
@@ -45,7 +45,7 @@ def fuse_x_dict(x_dict: Dict[str, Tensor], type2id: Dict[str, int]) -> Tuple[Ten
 def fuse_edges_to_global(edge_index_dict: Dict[Tuple[str, str, str], Tensor],
                          slices: Dict[str, slice],
                          rel2id: Dict[Tuple[str, str, str], int]) -> Tuple[List[Tuple[int, int, int]], int]:
-    # I convert hetero edge_index_dict to a list of (src_global, dst_global, rel_id)
+    #convert hetero edge_index_dict to a list of (src_global, dst_global, rel_id)
     edges = []
     total_nodes = 0
     for nt, sl in slices.items():
@@ -79,8 +79,8 @@ class CentralityEncoder(nn.Module):
 
     @staticmethod
     def _bucketize_deg(deg: Tensor, num_buckets: int) -> Tensor:
-        # I put degrees into log buckets for stability
-        # bucket k ~ floor(log2(deg+1)), clipped to [0, num_buckets-1]
+        # put degrees into log buckets for stability
+        # bucket k =floor(log2(deg+1)), clipped to [0, num_buckets-1]
         deg = deg.to(torch.float32)
         buck = torch.floor(torch.log2(deg + 1.0))
         buck = buck.clamp(min=0, max=num_buckets - 1).to(torch.long)
@@ -90,7 +90,7 @@ class CentralityEncoder(nn.Module):
                 x_dict: Dict[str, Tensor],
                 edge_index_dict: Dict[Tuple[str, str, str], Tensor]) -> Dict[str, Tensor]:
         device = next(self.parameters()).device
-        # I compute directed in/out degree per node type
+        # compute directed in/out degree per node type
         in_deg = {nt: torch.zeros(x.size(0), device=device) for nt, x in x_dict.items()}
         out_deg = {nt: torch.zeros(x.size(0), device=device) for nt, x in x_dict.items()}
 
@@ -99,7 +99,7 @@ class CentralityEncoder(nn.Module):
             out_deg[src_nt].index_add_(0, src.to(device), torch.ones_like(src, dtype=torch.float32, device=device))
             in_deg[dst_nt].index_add_(0, dst.to(device), torch.ones_like(dst, dtype=torch.float32, device=device))
 
-        # I add the embeddings to input features
+        # Add the embeddings to input features
         out = {}
         for nt, x in x_dict.items():
             in_b = self._bucketize_deg(in_deg[nt], self.num_buckets)
@@ -114,7 +114,7 @@ class CentralityEncoder(nn.Module):
 
 class HeteroGraphormerStructuralBias(nn.Module):
     """
-    I hold trainable bias tables and compute/cache the index tensors
+    hold trainable bias tables and compute/cache the index tensors
     used to inject structural signals into attention scores.
 
     Biases included:
@@ -143,7 +143,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         self.use_first_edge_bias = use_first_edge_bias
         self.use_type_tokens = use_type_tokens
 
-        # I build small lookups for fast indexing
+        # build small lookups for fast indexing
         self.type2id = build_type_indexers(node_types)
         self.rel2id = build_rel_indexers(edge_types)
 
@@ -176,7 +176,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         eps = 1e-6
         signed_log = torch.sign(dt) * torch.log1p(torch.abs(dt) + eps)  # R -> R
         # I scale into [0, num_buckets-1], keeping 0 near dt=0
-        min_v, max_v = -5.0, 5.0  # ~exp(5) ≈ 148; tune if timespan is larger
+        min_v, max_v = -5.0, 5.0 
         norm = (signed_log.clamp(min=min_v, max=max_v) - min_v) / (max_v - min_v + 1e-9)
         idx = torch.floor(norm * (num_buckets - 1)).to(torch.long)
         return idx.clamp(0, num_buckets - 1)
@@ -201,14 +201,14 @@ class HeteroGraphormerStructuralBias(nn.Module):
         """
         device = next(self.parameters()).device
 
-        # 1) I fuse node features (for shape info only), and I build per-type slices
+        # fuse node features (for shape info only), and I build per-type slices
         X_stub, token_type, slices = fuse_x_dict({k: v.detach() for k, v in x_dict.items()}, self.type2id)
         N = X_stub.size(0)
 
-        # 2) I fuse edges to global indices
+        # fuse edges to global indices
         edges, _ = fuse_edges_to_global(edge_index_dict, slices, self.rel2id)
 
-        # 3) I gather per-node timestamps in fused order (TypeTokens will come later)
+        # gather per-node timestamps in fused order (TypeTokens will come later)
         time_vec_list = []
         for nt, sl in slices.items():
             t_val = time_dict.get(nt, None) if time_dict is not None else None
@@ -231,12 +231,12 @@ class HeteroGraphormerStructuralBias(nn.Module):
         time_vec = torch.cat(time_vec_list, dim=0)  # [N]
 
 
-        # 4) I collect seed indices of entity_table at the front
+        # collect seed indices of entity_table at the front
         et_slice = slices[entity_table]
         seed_indices = torch.arange(et_slice.start, et_slice.start + seed_count, device=device, dtype=torch.long)
 
        
-        # 7) I collect adjacency pairs per relation type for scatter-add
+        #collect adjacency pairs per relation type for scatter-add
         adj_rel_pairs: Dict[int, Tuple[Tensor, Tensor]] = defaultdict(lambda: (torch.empty(0, dtype=torch.long, device=device),
                                                                                torch.empty(0, dtype=torch.long, device=device)))
         tmp_pairs: Dict[int, List[Tuple[int, int]]] = defaultdict(list)
@@ -248,14 +248,14 @@ class HeteroGraphormerStructuralBias(nn.Module):
                 dst_idx = torch.tensor([p[1] for p in pairs], dtype=torch.long, device=device)
                 adj_rel_pairs[r] = (src_idx, dst_idx)
 
-        # 8) I build type-pair indices by broadcast
+        # build type-pair indices by broadcast
         # To avoid [N,N,2] materialization, I keep token_type and will gather on the fly
         # (layers can do outer gather using token_type[row] and token_type[col])
 
-        # 9) I add TypeToken indices at the end if enabled
+        # add TypeToken indices at the end if enabled
         type_token_indices = None
         if self.use_type_tokens:
-            # I place one TypeToken per type, appended after nodes: [N ... N+T-1]
+            #place one TypeToken per type, appended after nodes: [N ... N+T-1]
             type_token_indices = torch.arange(N, N + self.T, device=device, dtype=torch.long)
 
         cache = {
@@ -275,7 +275,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
                             cache: Dict[str, Any],
                             num_tokens_total: int) -> Dict[str, Any]:
         """
-        I return a dict of callable-updates to apply to attention scores per head.
+        return a dict of callable-updates to apply to attention scores per head.
         For efficiency, I keep factorized representations (indices) and add them into
         full [H, N_tot, N_tot] scores inside the layer.
         """
@@ -412,9 +412,6 @@ class GraphormerBlock(nn.Module):
                 for h in range(H):
                     #scores[h, tt_rows, :] += (tmask.float() * type_token_link_bias_t2q[h])
                     scores[h, tt_rows, :N] += (tmask.float() * type_token_link_bias_t2q[h])
-
-
-        # ------------------------------------------------------------
 
         attn = torch.softmax(scores, dim=-1)  # [H, N_tot, N_tot]
         attn = self.drop(attn)
