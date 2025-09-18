@@ -104,7 +104,32 @@ def train_map(model,
     from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder
 
     model.train()
+
+
+
+
+
+
+    # Utils_mask.py  (dentro train_map, subito dopo decoder = MAPDecoder(...).to(device))
     decoder = MAPDecoder(encoder_out_dim).to(device)
+
+    # >>> AGGIUNGI QUESTO BLOCCO <<<
+    for nt, type_dict in maskable_attributes.items():
+        # categoriche: out_dim = numero di classi
+        for col in type_dict.get("categorical", []):
+            vocab = cat_values.get(nt, {}).get(col, None)
+            if vocab is None:
+                print(f"[MAP] Nessun vocab per {nt}__{col}, salto la testa di classificazione")
+                continue
+            decoder.add_decoder(f"{nt}__{col}", out_dim=len(vocab), task="classification")
+
+        # numeriche: out_dim = 1
+        for col in type_dict.get("numerical", []):
+            decoder.add_decoder(f"{nt}__{col}", out_dim=1, task="regression")
+
+
+
+    #decoder = MAPDecoder(encoder_out_dim).to(device)
 
     opt = torch.optim.Adam(
         list(model.parameters()) + list(decoder.parameters()),
