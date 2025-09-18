@@ -17,114 +17,90 @@ import torch
 from torch_geometric.data import HeteroData
 from torch_frame.data import TensorFrame
 
-# ---------- helper: ricrea un TensorFrame da un DataFrame pandas ----------
-def _rebuild_tensorframe_from_df(df, col_stats_node):
-    """
-    Ricostruisce un TensorFrame a partire da un pandas.DataFrame.
-    Prova più vie per essere compatibile con torch-frame 0.2.5.
-    """
-    # Alcune build espongono factory diverse: prova in ordine
-    for fn_name in ["from_dataframe", "from_pandas", "from_df"]:
-        fn = getattr(TensorFrame, fn_name, None)
-        if callable(fn):
-            return fn(df=df, col_stats=col_stats_node)
+# --- Utils_mask.py ---
 
-    # Fallback: costruttore diretto (alcune versioni accettano (df, col_stats))
-    try:
-        return TensorFrame(df, col_stats=col_stats_node)
-    except TypeError:
-        # Variante positional-only
-        return TensorFrame(df, col_stats_node)
+from typing import Dict, List
+import numpy as np
+import torch
+from torch_geometric.data import HeteroData
 
-# ---------- masking che lavora direttamente sul DB.df ----------
 def mask_attributes(batch: HeteroData,
                     maskable_attributes: Dict[str, Dict[str, List[str]]],
                     p_mask: float = 0.3,
-                    device: str = "cuda",
-                    col_stats_dict: Dict = None,
-                    db=None):
+                    device: str = "cuda"):
     """
-    Maschera attributi lavorando sul DataFrame sorgente in db.table_dict[node_type].df,
-    limitandosi alle colonne realmente usate dal TensorFrame nel batch corrente (col_names_dict)
-    e alle righe presenti nel batch (n_id). Poi ricrea il TensorFrame dal DataFrame.
+    Versione compatibile con torch-frame 0.2.5:
+    - NON usa Table né DataFrame
+    - maschera direttamente batch[node_type].tf.feat_dict[stype]
+    - salva i valori originali:
+        * categoriche: indici interi (torch.long)
+        * numeriche: float (torch.float)
+    - indices sono POSIZIONI NEL BATCH (0..N-1), non id globali
     """
-    if col_stats_dict is None:
-        raise ValueError("mask_attributes richiede col_stats_dict.")
-    if db is None or not hasattr(db, "table_dict"):
-        raise ValueError("mask_attributes richiede `db` con `table_dict`.")
-
-    target_values = {}
+    target_values = {}  # chiave: (node_type, col) -> {"indices": [...], "values": Tensor 1D}
 
     for node_type, type_dict in maskable_attributes.items():
         if node_type not in batch.node_types:
             print(f"[mask_attributes] node type {node_type} non presente in questo batch: {batch.node_types}")
             continue
-        if node_type not in db.table_dict:
-            print(f"[mask_attributes] {node_type} non presente nel DB.")
-            continue
 
-        # df completo dal DB
-        df_full = db.table_dict[node_type].df
-
-        # colonne effettivamente usate dal TF del batch
         tf = batch[node_type].tf
-        cols_used = []
-        if hasattr(tf, "col_names_dict"):
-            for _, cols_in in tf.col_names_dict.items():
-                cols_used.extend(cols_in)
-        else:
-            cols_used = list(df_full.columns)  # fallback
+        # mappa colonna -> (stype_key, col_idx)
+        col2loc = {}
+        for stype_key, cols in tf.col_names_dict.items():
+            for j, col_name in enumerate(cols):
+                col2loc[col_name] = (stype_key, j)
 
-        cols_used = [c for c in cols_used if c in df_full.columns]
-        if not cols_used:
+        # posizioni riga nel batch (0..num_nodes_batch-1)
+        num_rows = None
+        # prendi la prima stype per leggere la dimensione righe
+        for stype_key, tensor in tf.feat_dict.items():
+            num_rows = tensor.size(0)
+            break
+        if num_rows is None or num_rows == 0:
             continue
 
-        # copia profonda solo delle colonne usate
-        df = df_full.loc[:, cols_used].copy(deep=True)
-
-        # global ids presenti nel batch
-        if hasattr(batch[node_type], "n_id"):
-            local_ids = batch[node_type].n_id.detach().cpu().numpy()
-        else:
-            print(f"[mask_attributes] {node_type} non espone n_id, salto.")
-            continue
-        if local_ids.size == 0:
-            continue
-
-        # masking colonna per colonna
+        # per ogni colonna da mascherare
         for attr_type, cols in type_dict.items():
             for col in cols:
-                if col not in df.columns:
-                    print(f"[mask_attributes] colonna {col} non trovata per {node_type}")
+                if col not in col2loc:
+                    print(f"[mask_attributes] colonna {col} non trovata in tf.col_names_dict per {node_type}")
                     continue
 
-                bern = (torch.rand(len(local_ids), device=device) < p_mask).detach().cpu().numpy()
-                masked_pos = np.nonzero(bern)[0]
-                if masked_pos.size == 0:
+                stype_key, j = col2loc[col]
+                X = tf.feat_dict[stype_key]  # shape: [N, C_stype]
+                # genera maschera Bernoulli su righe del BATCH
+                bern = (torch.rand(num_rows, device=device) < p_mask).nonzero(as_tuple=False).view(-1).cpu()
+                if bern.numel() == 0:
                     continue
-                masked_global = local_ids[masked_pos]
 
-                # salva ground truth
+                # salva ground-truth PRIMA di mascherare
+                orig = X.index_select(0, bern)[:, j]  # 1D
+                # memorizza come tensore già tipizzato
                 target_values[(node_type, col)] = {
-                    "indices": masked_pos.tolist(),              # posizioni nel batch
-                    "values": df.loc[masked_global, col].tolist() # valori originali
+                    "indices": bern.tolist(),           # posizioni batch-local
+                    "values": orig.detach().cpu()        # Long per cat, Float per num (come in X)
                 }
 
                 # applica sentinel
                 if attr_type == "categorical":
-                    df.loc[masked_global, col] = 0
+                    # categoriche in torch-frame sono tipicamente long
+                    X[bern, j] = 0
                 elif attr_type == "numerical":
-                    df.loc[masked_global, col] = 0.0
+                    # numeriche float
+                    X[bern, j] = 0.0
                 else:
                     raise ValueError(f"Tipo non supportato: {attr_type}")
 
-        # ricostruisci il TensorFrame dal df mascherato e rimontalo nel batch
-        batch[node_type].tf = _rebuild_tensorframe_from_df(df, col_stats_dict[node_type])
+                # scrivi indietro (X è mutato in place, spesso non serve riassegnare)
+                tf.feat_dict[stype_key] = X
+
+        # riassegna tf (non strettamente necessario, ma esplicito)
+        batch[node_type].tf = tf
 
     return batch, target_values
 
 
-# ---------- train_map: ricordati di passare anche db ----------
 def train_map(model,
               loader_dict,
               maskable_attributes,
@@ -132,19 +108,13 @@ def train_map(model,
               device: str,
               cat_values,
               epochs: int = 20,
-              col_stats_dict=None,
-              db=None):
+              **kwargs):
     """
-    Addestra MAPDecoder usando il masking batch-local. Richiede db e col_stats_dict.
+    Addestra MAPDecoder usando masking in-place su feat_dict.
     """
-    if col_stats_dict is None:
-        raise ValueError("train_map richiede col_stats_dict.")
-    if db is None:
-        raise ValueError("train_map richiede db (Database) per il masking.")
-
-    from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder  # import locale per evitare dipendenze circolari
+    from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder
     model.train()
-    decoder = MAPDecoder(encoder_out_dim).to(device)
+    decoder = MAPDecoder(encoder_out_dim, cat_values=cat_values).to(device)
 
     opt = torch.optim.Adam(list(model.parameters()) + list(decoder.parameters()), lr=1e-3)
     loss_fn = torch.nn.CrossEntropyLoss(reduction="mean")
@@ -155,37 +125,39 @@ def train_map(model,
         for batch in loader_dict["train"]:
             batch = batch.to(device)
 
-            # MASKING
+            # MASK
             batch, mask_info = mask_attributes(
                 batch,
                 maskable_attributes,
                 p_mask=0.3,
                 device=device,
-                col_stats_dict=col_stats_dict,
-                db=db
             )
 
-            # ENCODE solo i node_types effettivamente mascherati
+            # ENCODE solo i node_types mascherati
             node_types = list(maskable_attributes.keys())
             z_dict = model.encode_node_types(batch, node_types=node_types)
 
-            # DECODIFICA e LOSS
             loss = 0.0
             for (node_type, col), info in mask_info.items():
-                if info["indices"]:
-                    z = z_dict[node_type][info["indices"]]
-                    out = decoder(node_type, col, z)
+                idxs = info["indices"]
+                if not idxs:
+                    continue
 
-                    gt = info["values"]
-                    # cat vs num
-                    if decoder.is_categorical(node_type, col):
-                        # mappa gt al vocab index usando decoder.cat2idx
-                        idx = torch.tensor([decoder.cat2idx[node_type][col].get(v, 0) for v in gt],
-                                           device=device, dtype=torch.long)
-                        loss = loss + loss_fn(out, idx)
-                    else:
-                        y = torch.tensor(gt, device=device, dtype=torch.float32).view(-1, 1)
-                        loss = loss + mse(out, y)
+                z = z_dict[node_type][idxs]  # embeddings allineate alle righe mascherate
+                out = decoder(node_type, col, z)
+
+                gt_tensor = info["values"].to(device)  # già long o float
+                # decidi loss guardando la testa del decoder
+                if decoder.is_categorical(node_type, col):
+                    # atteso LongTensor con indici nella vocab
+                    if gt_tensor.dtype != torch.long:
+                        gt_tensor = gt_tensor.long()
+                    loss = loss + loss_fn(out, gt_tensor)
+                else:
+                    # numeriche: shape [B, 1]
+                    if gt_tensor.dtype != torch.float32:
+                        gt_tensor = gt_tensor.float()
+                    loss = loss + mse(out.view(-1, 1), gt_tensor.view(-1, 1))
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -194,7 +166,6 @@ def train_map(model,
             total += float(loss.detach().cpu())
 
         print(f"[MAP] epoch {epoch}/{epochs} - loss {total:.4f}")
-
 
 
 
