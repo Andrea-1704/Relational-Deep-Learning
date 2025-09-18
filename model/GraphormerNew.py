@@ -618,9 +618,7 @@ class HeteroGraphormer(nn.Module):
         )
         self.layers = nn.ModuleList([GraphormerBlock(channels, num_heads, dropout) for _ in range(num_layers)])
 
-        if self.use_type_tokens:
-            self.type_token_emb = nn.Embedding(len(node_types), channels)
-            nn.init.normal_(self.type_token_emb.weight, std=0.02)
+        
 
     def forward(self,
                 x_dict: Dict[str, Tensor],
