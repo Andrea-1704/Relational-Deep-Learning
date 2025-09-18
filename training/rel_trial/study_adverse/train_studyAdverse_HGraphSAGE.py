@@ -131,32 +131,6 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-# from relbench.modeling.graph import get_node_train_table_input
-# from utils.utils import alignment_check
-
-# # === Ottieni i node id attesi (ordinati come val/test table) ===
-# val_input = get_node_train_table_input(
-#     data=data,
-#     task=task,
-#     split="val",              # oppure table=val_table in alcune versioni
-#     mask_input_cols=False
-# )
-# expected_val_ids = val_input["input_nodes"][task.entity_table].cpu()
-
-# test_input = get_node_train_table_input(
-#     data=data,
-#     task=task,
-#     split="test",             # oppure table=test_table in alcune versioni
-#     mask_input_cols=False
-# )
-# expected_test_ids = test_input["input_nodes"][task.entity_table].cpu()
-
-# # === Check: i batch del loader devono rispettare esattamente quell’ordine ===
-# alignment_check(loader_dict["val"],  expected_val_ids,  device=device, task=task)
-# alignment_check(loader_dict["test"], expected_test_ids, device=device, task=task)
-
-
-
 # Training loop
 epochs = 50
 
