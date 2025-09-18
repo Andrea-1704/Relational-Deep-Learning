@@ -583,9 +583,12 @@ class GraphormerBlock(nn.Module):
             proj = self.rel_mlps[str(r)](Y_norm[s_idx])        # [E_r, C]
             msg.index_add_(0, d_idx, proj)                     # somma per destinatario
             deg.index_add_(0, d_idx, torch.ones_like(d_idx, dtype=torch.float32).unsqueeze(1))
-        deg.clamp_min_(1.0)
+        deg = deg.clamp_min(1.0)                       # non modifica in-place
         mp_out = msg / deg
-        X[:N] = X[:N] + self.drop(torch.sigmoid(self.mp_alpha) * mp_out)
+
+        delta = torch.zeros_like(X)                    # [N_tot, C]
+        delta[:N] = self.drop(torch.sigmoid(self.mp_alpha) * mp_out)
+        X = X + delta
         #
 
 
