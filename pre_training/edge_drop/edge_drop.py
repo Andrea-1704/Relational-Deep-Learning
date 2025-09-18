@@ -49,7 +49,7 @@ def edge_dropout(data: HeteroData, drop_prob: float = 0.1) -> HeteroData:
     return new_data
 
 
-def train(model, optimizer, loader_dict, device, task, loss_fn, entity_table) -> float:
+def train(model, optimizer, loader_dict, device, task, loss_fn) -> float:
     model.train()
 
     loss_accum = count_accum = 0
@@ -65,7 +65,7 @@ def train(model, optimizer, loader_dict, device, task, loss_fn, entity_table) ->
         )
         pred = pred.view(-1) if pred.size(1) == 1 else pred
 
-        loss = loss_fn(pred.float(), batch[entity_table].y.float())
+        loss = loss_fn(pred.float(), batch[task.entity_table].y.float())
         loss.backward()
         optimizer.step()
 
