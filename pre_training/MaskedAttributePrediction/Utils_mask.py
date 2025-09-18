@@ -111,31 +111,29 @@ def train_map(model,
 
 
     # Utils_mask.py  (dentro train_map, subito dopo decoder = MAPDecoder(...).to(device))
-    decoder = MAPDecoder(encoder_out_dim).to(device)
+    decoder = MAPDecoder(encoder_out_dim)
 
-    # >>> AGGIUNGI QUESTO BLOCCO <<<
+    # registra TUTTE le teste prima di .to(device)
     for nt, type_dict in maskable_attributes.items():
-        # categoriche: out_dim = numero di classi
         for col in type_dict.get("categorical", []):
             vocab = cat_values.get(nt, {}).get(col, None)
             if vocab is None:
-                print(f"[MAP] Nessun vocab per {nt}__{col}, salto la testa di classificazione")
+                print(f"[MAP] Nessun vocab per {nt}__{col}, salto testa")
                 continue
             decoder.add_decoder(f"{nt}__{col}", out_dim=len(vocab), task="classification")
-
-        # numeriche: out_dim = 1
         for col in type_dict.get("numerical", []):
             decoder.add_decoder(f"{nt}__{col}", out_dim=1, task="regression")
 
+    # ora sposta TUTTO il decoder su CUDA
+    decoder.to(device)
 
-
-    #decoder = MAPDecoder(encoder_out_dim).to(device)
-
+    # crea l’optimizer SOLO ora, così include i parametri giusti sul device giusto
     opt = torch.optim.Adam(
         list(model.parameters()) + list(decoder.parameters()),
         lr=1e-3
     )
 
+    
     for epoch in range(1, epochs + 1):
         total = 0.0
         for batch in loader_dict["train"]:
