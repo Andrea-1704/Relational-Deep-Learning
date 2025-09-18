@@ -144,7 +144,7 @@ def train_map(model,
 
     from pre_training.MaskedAttributePrediction.Decoder import MAPDecoder  # import locale per evitare dipendenze circolari
     model.train()
-    decoder = MAPDecoder(encoder_out_dim, cat_values=cat_values).to(device)
+    decoder = MAPDecoder(encoder_out_dim).to(device)
 
     opt = torch.optim.Adam(list(model.parameters()) + list(decoder.parameters()), lr=1e-3)
     loss_fn = torch.nn.CrossEntropyLoss(reduction="mean")
