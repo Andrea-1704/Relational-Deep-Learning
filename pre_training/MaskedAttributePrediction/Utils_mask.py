@@ -70,28 +70,18 @@ def mask_attributes(batch: HeteroData,
                 stype_key, j = col2loc[col]
                 X = tf.feat_dict[stype_key]  # shape: [N, C_stype]
                 # genera maschera Bernoulli su righe del BATCH
-                bern = (torch.rand(num_rows, device=device) < p_mask).nonzero(as_tuple=False).view(-1).cpu()
-                if bern.numel() == 0:
-                    continue
+                bern_idx = (torch.rand(num_rows, device=X.device) < p_mask).nonzero(as_tuple=False).view(-1)
+                orig = X.index_select(0, bern_idx)[:, j]  # 1D
 
-                # salva ground-truth PRIMA di mascherare
-                orig = X.index_select(0, bern)[:, j]  # 1D
-                # memorizza come tensore già tipizzato
                 target_values[(node_type, col)] = {
-                    "indices": bern.tolist(),           # posizioni batch-local
-                    "values": orig.detach().cpu()        # Long per cat, Float per num (come in X)
+                    "indices": bern_idx.detach().cpu().tolist(),  # salvi come lista su CPU
+                    "values":  orig.detach().cpu()                # GT su CPU
                 }
 
-                # applica sentinel
                 if attr_type == "categorical":
-                    # categoriche in torch-frame sono tipicamente long
-                    X[bern, j] = 0
+                    X[bern_idx, j] = 0
                 elif attr_type == "numerical":
-                    # numeriche float
-                    X[bern, j] = 0.0
-                else:
-                    raise ValueError(f"Tipo non supportato: {attr_type}")
-
+                    X[bern_idx, j] = 0.0
                 # scrivi indietro (X è mutato in place, spesso non serve riassegnare)
                 tf.feat_dict[stype_key] = X
 
@@ -139,11 +129,11 @@ def train_map(model,
 
             loss = 0.0
             for (node_type, col), info in mask_info.items():
-                idxs = info["indices"]
-                if not idxs:
+                idxs_list = info["indices"]
+                if not idxs_list:
                     continue
-
-                z = z_dict[node_type][idxs]  # embeddings allineate alle righe mascherate
+                idxs = torch.as_tensor(idxs_list, device=z_dict[node_type].device, dtype=torch.long)
+                z = z_dict[node_type].index_select(0, idxs)
                 out = decoder(node_type, col, z)
 
                 gt_tensor = info["values"].to(device)  # già long o float
