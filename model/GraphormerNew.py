@@ -147,13 +147,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         self.type2id = build_type_indexers(node_types)
         self.rel2id = build_rel_indexers(edge_types)
 
-        # ---- Trainable tables (shared across layers) ----
-
-        # SPD bias: I keep an embedding per distance bucket and per head
-        # vocab: {-1 (no path), 0, 1, ..., s_max, >s_max -> s_max}
-        self.spd_bias = nn.Embedding(s_max + 2, num_heads)  # index 0 => -1, index d+1 => distance d
-        nn.init.normal_(self.spd_bias.weight, std=0.02)
-
+       
         # Adjacency-by-relation bias: one scalar per relation and head
         self.adj_rel_bias = nn.Parameter(torch.zeros(self.R, num_heads))
 
@@ -241,53 +235,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         et_slice = slices[entity_table]
         seed_indices = torch.arange(et_slice.start, et_slice.start + seed_count, device=device, dtype=torch.long)
 
-        # 5) I build adjacency lists for BFS
-        adj = [[] for _ in range(N)]
-        for s, d, r in edges:
-            adj[s].append((d, r))
-
-        # 6) I compute SPD (directed) with optional undirected fallback; I clip to s_max
-        spd = torch.full((N, N), fill_value=-1, dtype=torch.int16, device=device)
-        # I also compute first-edge-on-SP relation type (optional)
-        first_edge_rel = torch.full((N, N), fill_value=-1, dtype=torch.int16, device=device) if self.use_first_edge_bias else None
-
-        # I do BFS from each source; for medium subgraphs this is fine and keeps the code clear
-        for src in range(N):
-            dist = [-1] * N
-            first_rel = [-1] * N
-            q = deque()
-            dist[src] = 0
-            q.append(src)
-            while q:
-                u = q.popleft()
-                for v, rel_id in adj[u]:
-                    if dist[v] == -1:
-                        dist[v] = dist[u] + 1
-                        # I record the first edge type on the path from src to v
-                        first_rel[v] = rel_id if u == src else first_rel[u]
-                        q.append(v)
-            # Optional undirected fallback to reduce -1s
-            if use_undirected_fallback:
-                # I expand with reverse edges to capture undirected reachability
-                q.clear()
-                # I reuse dist; I only care to replace -1 with some value to mark reachability
-                # but I won't change first_rel in fallback to stay conservative
-                # (pairs remaining -1 keep the special SPD bucket)
-                # I run a quick undirected BFS starting from src where edges can be traversed both ways
-                und_adj = adj
-                # I push all already discovered; then I traverse backwards using a reverse scan
-                # For simplicity (and cost containment), I skip second BFS and accept remaining -1 as "no path"
-                pass  # keeping it simple; the special -1 bucket already handles disconnections
-
-            # I write results to tensors
-            spd[src, :] = torch.tensor(dist, dtype=torch.int16, device=device)
-            if self.use_first_edge_bias:
-                first_edge_rel[src, :] = torch.tensor(first_rel, dtype=torch.int16, device=device)
-
-        # I clip SPD and remap to embedding indices: -1 -> 0, d -> d+1, d > s_max -> s_max+1
-        spd_clipped = spd.clamp(min=-1, max=self.s_max)
-        spd_idx = spd_clipped + 1  # -1 -> 0; 0..s_max -> 1..s_max+1  (int16 ok)
-
+       
         # 7) I collect adjacency pairs per relation type for scatter-add
         adj_rel_pairs: Dict[int, Tuple[Tensor, Tensor]] = defaultdict(lambda: (torch.empty(0, dtype=torch.long, device=device),
                                                                                torch.empty(0, dtype=torch.long, device=device)))
@@ -315,11 +263,9 @@ class HeteroGraphormerStructuralBias(nn.Module):
             "token_type": token_type,     # [N]
             "slices": slices,
             "edges": edges,               # list of (s, d, r)
-            "spd_idx": spd_idx,           # [N, N], int in [0..s_max+1]
             "adj_rel_pairs": adj_rel_pairs,
             "time_vec": time_vec,         # [N]
             "seed_indices": seed_indices, # [S]
-            "first_edge_rel": first_edge_rel,  # [N, N] or None
             "type_token_indices": type_token_indices,  # [T] or None
         }
         return cache
@@ -336,11 +282,9 @@ class HeteroGraphormerStructuralBias(nn.Module):
         return {
             "cache": cache,
             # tables to be used by layers
-            "spd_bias_table": self.spd_bias,             # Embedding
             "adj_rel_bias": self.adj_rel_bias,           # [R, H]
             "typepair_bias": self.typepair_bias,         # [T, T, H]
             "temp_bias_table": self.temp_bias,           # Embedding
-            "first_edge_bias": getattr(self, "first_edge_bias", None),  # [R, H] or None
             "type_token_link_bias_q2t": getattr(self, "type_token_link_bias_q2t", None),  # [H] or None
             "type_token_link_bias_t2q": getattr(self, "type_token_link_bias_t2q", None),  # [H] or None
         }
@@ -378,18 +322,10 @@ class GraphormerBlock(nn.Module):
                 token_type: Tensor,        # [N_tot]
                 bias_pack: Dict[str, Any], # from HeteroGraphormerStructuralBias.build_bias_per_head(...)
                 attach_type_tokens_masks: Dict[str, Tensor] = None) -> Tensor:
-        """
-        I run one Pre-LN Transformer encoder layer with global attention and structural bias.
-        """
+        
         H, D = self.num_heads, self.head_dim
         N_tot = X.size(0)
-        cache = bias_pack["cache"]
-        spd_bias_table = bias_pack["spd_bias_table"]         # Embedding
-        # ------- SPD bias (dense add) -------
-        # cache["spd_idx"]: [N, N] con i bucket della shortest-path distance (spesso int16)
-        # N = #nodi "reali" (senza TypeTokens), N_tot = dimensione totale della sequenza (con eventuali TypeTokens)
         
-        # --- Pre-LN e proiezioni (lascia com’è il tuo Pre-LN) ---
         Y = self.ln1(X)                    # [N_tot, d_model]
         N_tot = Y.size(0)
         H = self.num_heads
@@ -402,43 +338,10 @@ class GraphormerBlock(nn.Module):
 
         # Dot-product attention scores
         scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
+        cache = bias_pack["cache"]       
+        N = cache["N"]                   
 
-        # === A PARTIRE DA QUI aggiungiamo i bias ADDITIVI ai punteggi ===
-
-        # 1) Shortest-Path Distance (SPD) bias
-        # Assumo che cache contenga: N (nodi reali prima dei token) e spd_idx [N, N] con indici di bucket SPD
-        # N = cache["N"]
-        # spd_idx = cache["spd_idx"]  # tipicamente int16 nel tuo preprocess
-
-        # # Prepariamo una matrice [N_tot, N_tot] con pad=0 e riempiamo il blocco reale [0:N, 0:N]
-        # # spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
-        # # spd_pad[:N, :N] = spd_idx.to(torch.long)  # nn.Embedding richiede indici long
-        # spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
-        # spd_pad[:N, :N] = spd_idx.to(torch.long)
-        # scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
-        # 1) prepara gli indici SPD (ok)
-        N = cache["N"]
-        spd_idx = cache["spd_idx"]  # int16 dal preprocess
-        spd_pad = torch.zeros((N_tot, N_tot), dtype=torch.long, device=Y.device)
-        spd_pad[:N, :N] = spd_idx.to(torch.long)
-
-        # >>> ELIMINA questa riga che usa spd_head prima di crearlo <<<
-        # scores = scores + spd_head.permute(2, 0, 1)
-
-        # 2) calcola il bias SPD per head
-        spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
-
-        # 3) aggiungi una sola volta ai punteggi
-        scores = scores + spd_head.permute(2, 0, 1)  # [H, N_tot, N_tot]
-
-
-        # spd_bias_table: nn.Embedding(num_buckets, H) -> [N_tot, N_tot, H]
-        #spd_head = self.spd_bias_table(spd_pad)  # [N_tot, N_tot, H]
-        spd_head = spd_bias_table(spd_pad)       # [N_tot, N_tot, H]
-
-        scores = scores + spd_head.permute(2, 0, 1)           # [H, N_tot, N_tot]
-
-
+        
         adj_rel_bias = bias_pack["adj_rel_bias"]             # [R, H]
         typepair_bias = bias_pack["typepair_bias"]           # [T, T, H]
         temp_bias_table = bias_pack["temp_bias_table"]       # Embedding
@@ -527,6 +430,9 @@ class GraphormerBlock(nn.Module):
 
 
 class HeteroGraphormer(nn.Module):
+    """
+    This is the gnn module that applies multiple Graphormer blocks.
+    """
     def __init__(self,
                  node_types: List[str],
                  edge_types: List[Tuple[str, str, str]],
@@ -555,7 +461,6 @@ class HeteroGraphormer(nn.Module):
         )
         self.layers = nn.ModuleList([GraphormerBlock(channels, num_heads, dropout) for _ in range(num_layers)])
 
-        # I create per-type "TypeToken" embeddings if enabled
         if self.use_type_tokens:
             self.type_token_emb = nn.Embedding(len(node_types), channels)
             nn.init.normal_(self.type_token_emb.weight, std=0.02)
@@ -650,7 +555,6 @@ class Model(nn.Module):
         num_layers: int,
         channels: int,
         out_channels: int,
-        aggr: str,    # unused here but kept for compatibility
         norm: str,
         shallow_list: List[NodeType] = [],
         id_awareness: bool = False,
@@ -665,7 +569,6 @@ class Model(nn.Module):
         super().__init__()
         self.channels = channels
 
-        # Encoders (kept as in your pipeline)
         self.encoder = HeteroEncoder(
             channels=channels,
             node_to_col_names_dict={nt: data[nt].tf.col_names_dict for nt in data.node_types},
@@ -717,27 +620,21 @@ class Model(nn.Module):
             nn.init.normal_(self.id_awareness_emb.weight, std=0.02)
 
     def forward(self, batch: HeteroData, entity_table: NodeType) -> Tensor:
-        # 1) I encode tabular features into per-node embeddings
         x_dict = self.encoder(batch.tf_dict)
 
-        # 2) I add temporal encodings per node (as you already do)
         seed_time = batch[entity_table].seed_time
         rel_time_dict = self.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
         for nt, rel_t in rel_time_dict.items():
             x_dict[nt] = x_dict[nt] + rel_t
 
-        # 3) I add optional shallow embeddings
         for nt, emb in self.embedding_dict.items():
             x_dict[nt] = x_dict[nt] + emb(batch[nt].n_id)
 
-        # 4) I add centrality (in/out degree) to node features
         x_dict = self.centrality(x_dict, batch.edge_index_dict)
 
-        # 5) I optionally mark the seed queries for the entity_table with an ID-awareness tag
         if self.id_awareness_emb is not None:
             x_dict[entity_table][: seed_time.size(0)] += self.id_awareness_emb.weight
 
-        # 6) I apply Graphormer with global attention and structural biases
         x_dict = self.gnn(
             x_dict=x_dict,
             edge_index_dict=batch.edge_index_dict,
@@ -746,14 +643,12 @@ class Model(nn.Module):
             seed_count=seed_time.size(0),
         )
 
-        # 7) I read out predictions on the seeds of the entity_table
         return self.head(x_dict[entity_table][: seed_time.size(0)])
 
-    # (Optional) Alternate readout onto a different dst_table
     def forward_dst_readout(self, batch: HeteroData, entity_table: NodeType, dst_table: NodeType) -> Tensor:
         if self.id_awareness_emb is None:
             raise RuntimeError("id_awareness must be set True to use forward_dst_readout")
-        # I mark seeds on the root table
+        
         seed_time = batch[entity_table].seed_time
         x_dict = self.encoder(batch.tf_dict)
         x_dict[entity_table][: seed_time.size(0)] += self.id_awareness_emb.weight
