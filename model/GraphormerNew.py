@@ -444,6 +444,9 @@ class GraphormerBlock(nn.Module):
         self.num_heads = num_heads
         self.head_dim = channels // num_heads
 
+        self.rel_mlps = nn.ModuleDict()  # id->Linear
+        self.mp_alpha = nn.Parameter(torch.tensor(0.0))  
+
         self.q = Linear(channels, channels, bias=True)
         self.k = Linear(channels, channels, bias=True)
         self.v = Linear(channels, channels, bias=True)
@@ -563,6 +566,28 @@ class GraphormerBlock(nn.Module):
 
         # FFN
         X = X + self.drop(self.ffn(self.ln2(X)))
+
+        # ----- Residuo 1-hop stile SAGE 
+        N = cache["N"]
+        Y_norm = self.ln2(X)  
+        if len(self.rel_mlps) == 0:
+            R = bias_pack["adj_rel_bias"].size(0)
+            for r in range(R):
+                self.rel_mlps[str(r)] = nn.Linear(self.channels, self.channels, bias=True)
+
+        msg = torch.zeros(N, self.channels, device=X.device)
+        deg = torch.zeros(N, 1, device=X.device)
+        for r, (s_idx, d_idx) in cache["adj_rel_pairs"].items():
+            if s_idx.numel() == 0: continue
+            proj = self.rel_mlps[str(r)](Y_norm[s_idx])        # [E_r, C]
+            msg.index_add_(0, d_idx, proj)                     # somma per destinatario
+            deg.index_add_(0, d_idx, torch.ones_like(d_idx, dtype=torch.float32).unsqueeze(1))
+        deg.clamp_min_(1.0)
+        mp_out = msg / deg
+        X[:N] = X[:N] + self.drop(torch.sigmoid(self.mp_alpha) * mp_out)
+        #
+
+
         return X
 
 
