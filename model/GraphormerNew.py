@@ -456,7 +456,7 @@ class GraphormerBlock(nn.Module):
         #     nn.Dropout(dropout),
         #     nn.Linear(4 * channels, channels),
         # )
-        nn.Sequential(
+        self.ffn = nn.Sequential(
             nn.Linear(channels, channels * 2),
             nn.ReLU(),
             nn.Dropout(0.3),
