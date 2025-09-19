@@ -434,7 +434,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
 # -----------------------------
 
 class GraphormerBlock(nn.Module):
-    def __init__(self, channels: int, num_heads: int, dropout: float = 0.1, rel_count: int = 0):
+    def __init__(self, channels: int, num_heads: int, dropout: float = 0.005, rel_count: int = 0):
         super().__init__()
         assert channels % num_heads == 0, "channels must be divisible by num_heads"
         self.channels = channels
@@ -459,10 +459,10 @@ class GraphormerBlock(nn.Module):
         self.ffn = nn.Sequential(
             nn.Linear(channels, channels * 4),
             nn.ReLU(),
-            nn.Dropout(0.1),
+            nn.Dropout(dropout),
             nn.Linear(channels * 4, channels * 2),
             nn.ReLU(),
-            nn.Dropout(0.1),
+            nn.Dropout(dropout),
             nn.Linear(channels *2, channels)
         )
         self.ln1 = nn.LayerNorm(channels)
@@ -614,7 +614,7 @@ class HeteroGraphormer(nn.Module):
                  num_layers: int = 3,
                  num_heads: int = 8,
                  time_buckets: int = 21,
-                 dropout: float = 0.1):
+                 dropout: float = 0.05):
         super().__init__()
         self.channels = channels
         self.num_layers = num_layers
