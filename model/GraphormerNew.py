@@ -459,10 +459,10 @@ class GraphormerBlock(nn.Module):
         self.ffn = nn.Sequential(
             nn.Linear(channels, channels * 4),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.1),
             nn.Linear(channels * 4, channels * 2),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             nn.Linear(channels *2, channels)
         )
         self.ln1 = nn.LayerNorm(channels)
@@ -620,14 +620,7 @@ class HeteroGraphormer(nn.Module):
         self.num_layers = num_layers
         self.num_heads = num_heads
 
-        # self.bias = HeteroGraphormerStructuralBias(
-        #     node_types=node_types,
-        #     edge_types=edge_types,
-        #     num_heads=num_heads,
-        #     time_buckets=time_buckets,
-        # )
-        # self.layers = nn.ModuleList([GraphormerBlock(channels, num_heads, dropout) for _ in range(num_layers)])
-
+        
         self.bias = HeteroGraphormerStructuralBias(
             node_types=node_types,
             edge_types=edge_types,
