@@ -121,7 +121,7 @@ def train2():
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        num_layers=2,
+        num_layers=4,
         channels=channels,
         out_channels=1,
         norm="batch_norm",
@@ -131,8 +131,8 @@ def train2():
 
     optimizer = torch.optim.Adam(
         model.parameters(),
-        lr=0.001,
-        weight_decay=0.000001
+        lr=0.0001,
+        weight_decay=0
     )
 
 
@@ -144,8 +144,8 @@ def train2():
     )
 
     loader_dict = loader_dict_fn(
-        batch_size=64, 
-        num_neighbours=32, 
+        batch_size=32, 
+        num_neighbours=16, 
         data=data_official, 
         task=task,
         train_table=train_table, 
