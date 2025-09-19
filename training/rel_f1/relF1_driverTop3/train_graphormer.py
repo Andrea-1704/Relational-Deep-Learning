@@ -24,7 +24,6 @@ import sys
 import os
 sys.path.append(os.path.abspath("."))
 
-from pre_training.VGAE.Utils_VGAE import train_vgae
 from model.GraphormerNew import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, test, train
@@ -36,15 +35,11 @@ labels some of the nodes, not all of them.
 So we must manually exclude all the unlabeled nodes: this step is 
 avoided in the dirver position task since all the node in such task
 are labeled and usable for prediction.
-
-Remember to add:
-!pip install -U relbench pooch
 """
 
 def train2():
     dataset = get_dataset("rel-f1", download=True)
-    task = get_task("rel-f1", "driver-dnf", download=True)
-    target = "did_not_finish"
+    task = get_task("rel-f1", "driver-top3", download=True)
 
     train_table = task.get_table("train")
     val_table = task.get_table("val")
@@ -79,7 +74,7 @@ def train2():
     
     train_df_raw = train_table.df
     driver_ids_raw = train_df_raw["driverId"].to_numpy()
-    qualifying_positions = train_df_raw[target].to_numpy() #labels (train)
+    qualifying_positions = train_df_raw["qualifying"].to_numpy() #labels (train)
 
     
     binary_top3_labels_raw = qualifying_positions #do not need to binarize 
@@ -140,11 +135,9 @@ def train2():
         weight_decay=0.000001
     )
 
-    
-
 
     early_stopping = EarlyStopping(
-        patience=100,
+        patience=60,
         delta=0.0,
         verbose=True,
         path="best_basic_model.pt"
@@ -159,23 +152,6 @@ def train2():
         val_table=val_table, 
         test_table=test_table
     )
-
-
-    # for batch in loader_dict["train"]:
-    #     edge_types=batch.edge_types
-    #     break
-
-    # model = train_vgae(
-    #     model=model,
-    #     loader_dict=loader_dict,
-    #     edge_types=edge_types,
-    #     encoder_out_dim=channels,
-    #     entity_table=task.entity_table,
-    #     latent_dim=32,
-    #     hidden_dim=128,
-    #     epochs=50,
-    #     device=device
-    # )
 
 
 
