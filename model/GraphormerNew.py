@@ -457,13 +457,13 @@ class GraphormerBlock(nn.Module):
         #     nn.Linear(4 * channels, channels),
         # )
         self.ffn = nn.Sequential(
-            nn.Linear(channels, channels * 2),
+            nn.Linear(channels, channels * 4),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(channels * 2, channels),
+            nn.Linear(channels * 4, channels * 2),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(channels, channels)
+            nn.Linear(channels *2, channels)
         )
         self.ln1 = nn.LayerNorm(channels)
         self.ln2 = nn.LayerNorm(channels)
