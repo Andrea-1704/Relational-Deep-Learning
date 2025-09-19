@@ -1,5 +1,6 @@
+from linecache import cache
 import math
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict, deque
 
 import torch
@@ -57,9 +58,12 @@ def fuse_x_dict(x_dict: Dict[str, Tensor], type2id: Dict[str, int]) -> Tuple[Ten
     token_type = torch.cat(token_types, dim=0)  # [N]
     return X, token_type, slices
 
+
+
+
 def fuse_edges_to_global(edge_index_dict: Dict[Tuple[str, str, str], Tensor],
                          slices: Dict[str, slice],
-                         rel2id: Dict[Tuple[str, str, str], int]) -> Tuple[List[Tuple[int, int, int]], int]:
+                         rel2id: Dict[Tuple[str, str, str], int]) -> Tuple[Dict[int, Tuple[Tensor, Tensor]], int]:
     """
     Convert a heterogeneous edge_index_dict into a flat list of global edges.
 
@@ -104,16 +108,31 @@ def fuse_edges_to_global(edge_index_dict: Dict[Tuple[str, str, str], Tensor],
             ]
             total_nodes = 5 (because we have 3 drivers + 2 races)
     """
-    edges = []
-    total_nodes = 0
-    for nt, sl in slices.items():
-        total_nodes = max(total_nodes, sl.stop)
-    for et, eidx in edge_index_dict.items():
-        src_nt, _, dst_nt = et
-        sl_s, sl_d = slices[src_nt], slices[dst_nt]
+    if len(edge_index_dict) == 0:
+        total_nodes = max((sl.stop for sl in slices.values()), default=0)
+        return {}, total_nodes
+
+    src_all, dst_all, rel_all = [], [], []
+    for (src_nt, rel, dst_nt), eidx in edge_index_dict.items():
         src, dst = eidx
-        edges.extend([(int(sl_s.start + int(s)), int(sl_d.start + int(d)), rel2id[et]) for s, d in zip(src.tolist(), dst.tolist())])
-    return edges, total_nodes
+        s_off = slices[src_nt].start
+        d_off = slices[dst_nt].start
+        src_all.append(src + s_off)
+        dst_all.append(dst + d_off)
+        rel_id = rel2id[(src_nt, rel, dst_nt)]
+        rel_all.append(torch.full_like(src, rel_id, dtype=torch.long))
+
+    src_all = torch.cat(src_all, dim=0)
+    dst_all = torch.cat(dst_all, dim=0)
+    rel_all = torch.cat(rel_all, dim=0)
+
+    adj_rel_pairs: Dict[int, Tuple[Tensor, Tensor]] = {}
+    for r in rel_all.unique():
+        mask = (rel_all == r)
+        adj_rel_pairs[int(r.item())] = (src_all[mask], dst_all[mask])
+
+    total_nodes = max(sl.stop for sl in slices.values())
+    return adj_rel_pairs, total_nodes
 
 
 # ---------------------------------
@@ -346,9 +365,6 @@ class HeteroGraphormerStructuralBias(nn.Module):
         X_stub, token_type, slices = fuse_x_dict({k: v.detach() for k, v in x_dict.items()}, self.type2id)
         N = X_stub.size(0)
 
-        # fuse edges to global indices
-        edges, _ = fuse_edges_to_global(edge_index_dict, slices, self.rel2id)
-
         # gather per-node timestamps in fused order (TypeTokens will come later)
         time_vec_list = []
         for nt, sl in slices.items():
@@ -377,17 +393,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         seed_indices = torch.arange(et_slice.start, et_slice.start + seed_count, device=device, dtype=torch.long)
 
        
-        #collect adjacency pairs per relation type for scatter-add
-        adj_rel_pairs: Dict[int, Tuple[Tensor, Tensor]] = defaultdict(lambda: (torch.empty(0, dtype=torch.long, device=device),
-                                                                               torch.empty(0, dtype=torch.long, device=device)))
-        tmp_pairs: Dict[int, List[Tuple[int, int]]] = defaultdict(list)
-        for s, d, r in edges:
-            tmp_pairs[r].append((s, d))
-        for r, pairs in tmp_pairs.items():
-            if len(pairs) > 0:
-                src_idx = torch.tensor([p[0] for p in pairs], dtype=torch.long, device=device)
-                dst_idx = torch.tensor([p[1] for p in pairs], dtype=torch.long, device=device)
-                adj_rel_pairs[r] = (src_idx, dst_idx)
+        adj_rel_pairs, _ = fuse_edges_to_global(edge_index_dict, slices, self.rel2id)
 
         # build type-pair indices by broadcast
         # To avoid [N,N,2] materialization, I keep token_type and will gather on the fly
@@ -401,7 +407,6 @@ class HeteroGraphormerStructuralBias(nn.Module):
             "N": N,
             "token_type": token_type,     # [N]
             "slices": slices,
-            "edges": edges,               # list of (s, d, r)
             "adj_rel_pairs": adj_rel_pairs,
             "time_vec": time_vec,         # [N]
             "seed_indices": seed_indices, # [S]
@@ -432,6 +437,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
 # -----------------------------
 # Graphormer block (Pre-LN MHA)
 # -----------------------------
+from torch.nn.functional import scaled_dot_product_attention as sdpa
 
 class GraphormerBlock(nn.Module):
     def __init__(self, channels: int, num_heads: int, dropout: float = 0.005, rel_count: int = 0):
@@ -441,164 +447,213 @@ class GraphormerBlock(nn.Module):
         self.num_heads = num_heads
         self.head_dim = channels // num_heads
 
-        self.rel_mlps = nn.ModuleDict({str(r): nn.Linear(channels, channels, bias=True)
-                                       for r in range(rel_count)})
-        self.mp_alpha = nn.Parameter(torch.tensor(0.0))  
+        self.rel_proj = nn.Linear(channels, channels, bias=True)
+        self.rel_gate = nn.Parameter(torch.ones(rel_count, channels))
+        self.mp_alpha = nn.Parameter(torch.tensor(-2.0))
+
 
         self.q = Linear(channels, channels, bias=True)
         self.k = Linear(channels, channels, bias=True)
         self.v = Linear(channels, channels, bias=True)
         self.out = Linear(channels, channels, bias=True)
 
-        # self.ffn = nn.Sequential(
-        #     nn.Linear(channels, 4 * channels),
-        #     nn.GELU(),
-        #     nn.Dropout(dropout),
-        #     nn.Linear(4 * channels, channels),
-        # )
         self.ffn = nn.Sequential(
-            nn.Linear(channels, channels * 4),
-            nn.ReLU(),
+            nn.Linear(channels, 4 * channels),
+            nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(channels * 4, channels * 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(channels *2, channels)
+            nn.Linear(4 * channels, channels),
         )
+        # self.ffn = nn.Sequential(
+        #     nn.Linear(channels, channels * 4),
+        #     nn.ReLU(),
+        #     nn.Dropout(dropout),
+        #     nn.Linear(channels * 4, channels * 2),
+        #     nn.ReLU(),
+        #     nn.Dropout(dropout),
+        #     nn.Linear(channels *2, channels)
+        # )
         self.ln1 = nn.LayerNorm(channels)
         self.ln2 = nn.LayerNorm(channels)
         self.drop = nn.Dropout(dropout)
 
     def forward(self,
-                X: Tensor,                 # [N_tot, C]
-                token_type: Tensor,        # [N_tot]
-                bias_pack: Dict[str, Any], # from HeteroGraphormerStructuralBias.build_bias_per_head(...)
-                attach_type_tokens_masks: Dict[str, Tensor] = None) -> Tensor:
+                X: Tensor,                 
+                token_type: Tensor,        
+                bias_pack: Dict[str, Any],
+                attach_type_tokens_masks: Dict[str, Tensor] = None,
+                query_idx: Optional[Tensor] = None) -> Tensor:
+
+
         
         H, D = self.num_heads, self.head_dim
         N_tot = X.size(0)
-        
-        Y = self.ln1(X)                    # [N_tot, d_model]
-        N_tot = Y.size(0)
-        H = self.num_heads
-        D = self.head_dim
 
-        # Proiezioni Q, K, V
-        Q = self.q(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
-        K = self.k(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
-        V = self.v(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
+        Y = self.ln1(X)
+        Q_full = self.q(Y).view(N_tot, H, D).transpose(0, 1)  # [H, N_tot, D]
+        K = self.k(Y).view(N_tot, H, D).transpose(0, 1)       # [H, N_tot, D]
+        V = self.v(Y).view(N_tot, H, D).transpose(0, 1)       # [H, N_tot, D]
 
-        # Dot-product attention scores
-        scores = torch.einsum("hnd,hmd->hnm", Q, K) / math.sqrt(D)  # [H, N_tot, N_tot]
-        cache = bias_pack["cache"]       
-        N = cache["N"]                   
+        cache = bias_pack["cache"]
+        N = cache["N"]  # numero di nodi reali (senza TypeToken)
 
-        
+        # Se usiamo query seed, limitiamo le righe a query_idx
+        if query_idx is not None:
+            q_len = int(query_idx.numel())
+            Q = Q_full[:, query_idx, :]                       # [H, q_len, D]
+            qmap = torch.full((N_tot,), -1, dtype=torch.long, device=X.device)
+            qmap[query_idx] = torch.arange(q_len, device=X.device)
+        else:
+            q_len = N_tot
+            Q = Q_full
+
+        # Costruiamo una sola bias map additiva per SDPA
+        attn_bias = torch.zeros((H, q_len, N_tot), device=X.device, dtype=Q.dtype)
+
+        # --- Type-pair bias ---
         adj_rel_bias = bias_pack["adj_rel_bias"]             # [R, H]
         typepair_bias = bias_pack["typepair_bias"]           # [T, T, H]
-        temp_bias_table = bias_pack["temp_bias_table"]       # Embedding
+        temp_bias_table = bias_pack["temp_bias_table"]       # nn.Embedding
         first_edge_bias = bias_pack.get("first_edge_bias")
         type_token_link_bias_q2t = bias_pack.get("type_token_link_bias_q2t")
         type_token_link_bias_t2q = bias_pack.get("type_token_link_bias_t2q")
-        
-        # Type-pair bias (dense via outer gather)
+
         tt = torch.full((N_tot,), -1, dtype=torch.long, device=X.device)
         tt[:N] = cache["token_type"]
-        # If TypeTokens exist, I assign them their own type id equal to their represented type
         if attach_type_tokens_masks is not None and "type_token_type_id" in attach_type_tokens_masks:
-            # type_token_type_id is [T] with type ids
             t_ids = attach_type_tokens_masks["type_token_type_id"]
             tt[N:N + t_ids.numel()] = t_ids
-        typepair = typepair_bias[tt.unsqueeze(1), tt.unsqueeze(0)]  # [N_tot, N_tot, H]
-        scores = scores + typepair.permute(2, 0, 1)
 
-        # Adjacency-by-relation (sparse scatter add)
+        if query_idx is None:
+            # [N_tot, N_tot, H] -> [H, N_tot, N_tot]
+            tp = typepair_bias[tt.unsqueeze(1), tt.unsqueeze(0)].permute(2, 0, 1)
+            attn_bias = attn_bias + tp
+        else:
+            t_q = tt[query_idx]                               # [q_len]
+            # [q_len, N_tot, H] -> [H, q_len, N_tot]
+            tp_rows = typepair_bias[t_q][:, tt, :].permute(2, 0, 1)
+            attn_bias = attn_bias + tp_rows
+
+        # --- Adiacenza per relazione ---
         for r, (s_idx, d_idx) in cache["adj_rel_pairs"].items():
             if s_idx.numel() == 0:
                 continue
-            # I add the bias only on real node pairs; edges do not target TypeTokens in this dataset
-            # adj_rel_bias[r] is [H]; I need to add to scores[:, s, d]
-            scores[:, s_idx, d_idx] += adj_rel_bias[r].view(H, 1)
+            if query_idx is None:
+                attn_bias[:, s_idx, d_idx] += adj_rel_bias[r].view(H, 1)
+            else:
+                sel = qmap[s_idx]
+                mask = sel.ge(0)
+                if mask.any():
+                    rows = sel[mask]
+                    cols = d_idx[mask]
+                    attn_bias[:, rows, cols] += adj_rel_bias[r].view(H, 1)
 
-        # First-edge-on-SP (optional; dense add on nodes area)
+        # --- First-edge-on-SP (opzionale) ---
         if first_edge_bias is not None and cache["first_edge_rel"] is not None:
-            fe = cache["first_edge_rel"]  # [N, N] with -1 if missing
-            fe = fe.clamp(min=-1)
-            # I remap -1 -> no-add by selecting a zeros vector; I just mask
-            mask = fe.ge(0)  # [N, N]
-            if mask.any():
-                r_idx = fe[mask].to(torch.long)  # [K]
-                add = first_edge_bias[r_idx]     # [K, H]
-                # I scatter into scores for each head
-                h_indices = torch.arange(H, device=X.device).view(H, 1)
-                # I map the 2D masked indices back to coordinates
-                rows, cols = torch.where(mask)
-                for h in range(H):
-                    scores[h, rows, cols] += add[:, h]
+            fe = cache["first_edge_rel"].clamp(min=-1)  # [N, N]
+            if query_idx is None:
+                mask = fe.ge(0)
+                if mask.any():
+                    rows, cols = torch.where(mask)
+                    add = first_edge_bias[fe[rows, cols].to(torch.long)]  # [K, H]
+                    for h in range(H):
+                        attn_bias[h, rows, cols] += add[:, h]
+            else:
+                # righe limitate alle query
+                fe_q = fe[query_idx, :]                          # [q_len, N]
+                mask = fe_q.ge(0)
+                if mask.any():
+                    qr, qc = torch.where(mask)                    # indici locali [0..q_len)
+                    add = first_edge_bias[fe_q[qr, qc].to(torch.long)]
+                    for h in range(H):
+                        attn_bias[h, qr, qc] += add[:, h]
 
-        # Seed-wise temporal bias (I add to rows corresponding to seed queries)
-        S_idx = cache["seed_indices"]  # [S] fused indices of seeds (nodes)
+        # --- Bias temporale seed wise (aggiungo solo sulle righe dei seed) ---
+        S_idx = query_idx if query_idx is not None else cache["seed_indices"]
         if S_idx.numel() > 0:
-            t = cache["time_vec"]  # [N], real nodes only
-            # I build Δt for each seed vs all real nodes, then bucketize and gather
+            t = cache["time_vec"]                    # [N]
             dt = (t.unsqueeze(0) - t[S_idx].unsqueeze(1))  # [S, N]
-            dt_idx = HeteroGraphormerStructuralBias._bucketize_dt(dt, temp_bias_table.num_embeddings)  # [S, N]
-            temp_add = temp_bias_table(dt_idx)  # [S, N, H]
-            # I write into scores[:, seed, :N]
-            for h in range(H):
-                scores[h, S_idx, :N] += temp_add[:, :, h]
+            dt_idx = HeteroGraphormerStructuralBias._bucketize_dt(dt, temp_bias_table.num_embeddings)
+            temp_add = temp_bias_table(dt_idx)       # [S, N, H]
+            temp_add = temp_add.permute(2, 0, 1)     # [H, S, N]
+            if query_idx is None:
+                # qui S==|seed| ma righe sono N_tot, sommo solo su quelle S
+                # mappo i seed su posizioni locali
+                s_map = torch.arange(S_idx.numel(), device=X.device)
+                attn_bias[:, S_idx, :N] += temp_add
+            else:
+                attn_bias[:, torch.arange(S_idx.numel(), device=X.device), :N] += temp_add
 
-        # TypeToken link bias (optional)
+        # --- TypeToken link bias opzionale ---
         if attach_type_tokens_masks is not None and "node_to_type_token_col" in attach_type_tokens_masks:
-            # node_to_type_token_col: [N] giving the column index j of the TypeToken for each node i
             j_col = attach_type_tokens_masks["node_to_type_token_col"]  # [N]
-            rows = torch.arange(0, N, device=X.device)
             if type_token_link_bias_q2t is not None:
+                rows = torch.arange(0, N if query_idx is None else q_len, device=X.device)
                 for h in range(H):
-                    scores[h, rows, j_col] += type_token_link_bias_q2t[h]
+                    attn_bias[h, rows, j_col] += type_token_link_bias_q2t[h]
             if type_token_link_bias_t2q is not None and "type_token_to_node_rows" in attach_type_tokens_masks:
-                # For TypeToken -> node, I add bias on rows of the TypeToken, columns of nodes of that type
-                tt_rows = attach_type_tokens_masks["type_token_to_node_rows"]  # [T] row indices for TypeTokens
-                # I need per-type node masks; I precomputed a boolean mask [T, N]
-                tmask = attach_type_tokens_masks["type_to_nodes_mask"]        # [T, N] bool
+                tt_rows = attach_type_tokens_masks["type_token_to_node_rows"]  # [T]
+                tmask = attach_type_tokens_masks["type_to_nodes_mask"]         # [T, N]
                 for h in range(H):
-                    #scores[h, tt_rows, :] += (tmask.float() * type_token_link_bias_t2q[h])
-                    scores[h, tt_rows, :N] += (tmask.float() * type_token_link_bias_t2q[h])
+                    attn_bias[h, tt_rows, :N] += (tmask.float() * type_token_link_bias_t2q[h])
 
-        attn = torch.softmax(scores, dim=-1)  # [H, N_tot, N_tot]
-        attn = self.drop(attn)
-        Z = torch.einsum("hnm,hmd->hnd", attn, V)  # [H, N_tot, D]
-        Z = Z.transpose(0, 1).contiguous().view(N_tot, self.channels)
-        X = X + self.drop(self.out(Z))            # residual
+        # --- SDPA ---
+        attn_out = sdpa(Q, K, V, attn_mask=attn_bias)     # [H, q_len, D]
+        Z = attn_out.transpose(0, 1).contiguous().view(q_len, self.channels)  # [q_len, C]
 
-        # FFN
-        X = X + self.drop(self.ffn(self.ln2(X)))
+        if query_idx is None:
+            X = X + self.drop(self.out(Z))
+            # FFN su tutte le righe
+            X = X + self.drop(self.ffn(self.ln2(X)))
+        else:
+            X_new = X
+            X_new = X_new.clone()
+            X_new[query_idx] = X_new[query_idx] + self.drop(self.out(Z))
+            # FFN solo sulle righe query
+            X_ln2_q = self.ln2(X_new[query_idx])
+            X_new[query_idx] = X_new[query_idx] + self.drop(self.ffn(X_ln2_q))
+            X = X_new
 
-        # ----- Residuo 1-hop stile SAGE 
+        # ----- Residuo 1 hop stile SAGE (con gating e, se serve, limitato alle query) -----
         N = cache["N"]
-        Y_norm = self.ln2(X)  
-        if len(self.rel_mlps) == 0:
-            R = bias_pack["adj_rel_bias"].size(0)
-            for r in range(R):
-                self.rel_mlps[str(r)] = nn.Linear(self.channels, self.channels, bias=True)
+        Y_norm = self.ln2(X)     # layer norm prima del messaggio
 
         msg = torch.zeros(N, self.channels, device=X.device)
         deg = torch.zeros(N, 1, device=X.device)
-        for r, (s_idx, d_idx) in cache["adj_rel_pairs"].items():
-            if s_idx.numel() == 0: continue
-            proj = self.rel_mlps[str(r)](Y_norm[s_idx])        # [E_r, C]
-            msg.index_add_(0, d_idx, proj)                     # somma per destinatario
-            deg.index_add_(0, d_idx, torch.ones_like(d_idx, dtype=torch.float32).unsqueeze(1))
-        deg = deg.clamp_min(1.0)                       # non modifica in-place
+        Yp = self.rel_proj(Y_norm[:N])  # proietto una sola volta
+
+        if query_idx is None:
+            for r, (s_idx, d_idx) in cache["adj_rel_pairs"].items():
+                if s_idx.numel() == 0: 
+                    continue
+                proj = Yp[s_idx] * self.rel_gate[r]            # [E_r, C]
+                msg.index_add_(0, d_idx, proj)
+                deg.index_add_(0, d_idx, torch.ones(d_idx.size(0), 1, device=X.device))
+        else:
+            qmask = torch.zeros(N, dtype=torch.bool, device=X.device)
+            qmask[query_idx] = True
+            for r, (s_idx, d_idx) in cache["adj_rel_pairs"].items():
+                if s_idx.numel() == 0:
+                    continue
+                keep = qmask[d_idx]
+                if keep.any():
+                    s_sel = s_idx[keep]
+                    d_sel = d_idx[keep]
+                    proj = Yp[s_sel] * self.rel_gate[r]
+                    msg.index_add_(0, d_sel, proj)
+                    deg.index_add_(0, d_sel, torch.ones(d_sel.size(0), 1, device=X.device))
+
+        deg = deg.clamp_min(1.0)
         mp_out = msg / deg
 
-        delta = torch.zeros_like(X)                    # [N_tot, C]
-        delta[:N] = self.drop(torch.sigmoid(self.mp_alpha) * mp_out)
+        delta = torch.zeros_like(X)
+        if query_idx is None:
+            delta[:N] = self.drop(torch.sigmoid(self.mp_alpha) * mp_out)
+        else:
+            delta[query_idx] = self.drop(torch.sigmoid(self.mp_alpha) * mp_out[query_idx])
         X = X + delta
-        #
-
 
         return X
+
 
 
 
@@ -660,35 +715,12 @@ class HeteroGraphormer(nn.Module):
         N = X.size(0)
 
         attach_masks = None
-        # if self.use_type_tokens:
-        #     T = len(self.bias.node_types)
-        #     #append T tokens; their "type id" is the actual type they represent
-        #     type_ids = torch.arange(T, device=device, dtype=torch.long)
-        #     TT = self.type_token_emb(type_ids)             # [T, C]
-        #     X = torch.cat([X, TT], dim=0)                  # [N+T, C]
-        #     token_type = torch.cat([token_type, type_ids], dim=0)  # [N+T]
-        #     # I prepare masks for biasing
-        #     # node -> its TypeToken column index
-        #     type_token_col = cache["type_token_indices"]    # [T] = [N..N+T-1]
-        #     node_to_type_token_col = type_token_col[token_type[:N]]  # [N]
-        #     # TypeToken rows
-        #     tt_rows = torch.arange(N, N + T, device=device, dtype=torch.long)
-        #     # Per-type node masks [T, N] (bool)
-        #     type_to_nodes_mask = torch.zeros(T, N, dtype=torch.bool, device=device)
-        #     for nt, sl in slices.items():
-        #         t_id = type2id[nt]
-        #         type_to_nodes_mask[t_id, sl.start:sl.stop] = True
-        #     attach_masks = {
-        #         "node_to_type_token_col": node_to_type_token_col,
-        #         "type_token_to_node_rows": tt_rows,
-        #         "type_to_nodes_mask": type_to_nodes_mask,
-        #         "type_token_type_id": type_ids,
-        #     }
-
         bias_pack = self.bias.build_bias_per_head(cache, num_tokens_total=X.size(0))
 
-        for layer in self.layers:
-            X = layer(X, token_type, bias_pack, attach_type_tokens_masks=attach_masks)
+        for li, layer in enumerate(self.layers):
+            qidx = cache["seed_indices"] if li == (self.num_layers - 1) else None
+            X = layer(X, token_type, bias_pack, attach_type_tokens_masks=attach_masks, query_idx=qidx)
+
 
         out_dict = {}
         for nt, sl in slices.items():
