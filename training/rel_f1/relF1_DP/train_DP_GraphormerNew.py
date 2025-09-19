@@ -109,8 +109,8 @@ model = Model(
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.0005,
-    weight_decay=0
+    lr=0.001,
+    weight_decay=0.000001
 )
 
 scheduler = CosineAnnealingLR(optimizer, T_max=100)
