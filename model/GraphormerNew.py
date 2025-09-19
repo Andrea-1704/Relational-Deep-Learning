@@ -282,8 +282,6 @@ class HeteroGraphormerStructuralBias(nn.Module):
       - Adjacency-by-relation bias (per edge type)
       - Type-pair bias (src_type, dst_type)
       - Seed-wise temporal bias (Δt = t_dst - t_seed; added on seed rows)
-      - (Optional) First-edge-on-SP bias (light meta-path signal)
-      - (Optional) TypeToken link bias (node <-> its TypeToken)
     """
     def __init__(self,
                  node_types: List[str],
@@ -293,7 +291,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         super().__init__()
         self.node_types = node_types
         self.edge_types = edge_types
-        self.T = len(node_types) #num_node types
+        self.T = len(node_types) #num_node types 
         self.R = len(edge_types) #num_edge types
         self.num_heads = num_heads
 
@@ -312,10 +310,9 @@ class HeteroGraphormerStructuralBias(nn.Module):
         nn.init.normal_(self.temp_bias.weight, std=0.02)
         
 
-    # ---- Helper: Δt bucketization around 0 with symmetric log buckets ----
     @staticmethod
     def _bucketize_dt(dt: Tensor, num_buckets: int) -> Tensor:
-        # I create symmetric log buckets: ... -365, -90, -30, -7, -1, 0, +1, +7, +30, +90, +365 ...
+        # create symmetric log buckets: ... -365, -90, -30, -7, -1, 0, +1, +7, +30, +90, +365 ...
         # Implementation detail: I map dt to signed log-space and discretize to 'num_buckets' bins.
         eps = 1e-6
         signed_log = torch.sign(dt) * torch.log1p(torch.abs(dt) + eps)  # R -> R
@@ -325,7 +322,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         idx = torch.floor(norm * (num_buckets - 1)).to(torch.long)
         return idx.clamp(0, num_buckets - 1)
 
-    # ---- Graph preprocessing per forward (I cache indices to reuse in all layers) ----
+
     def preprocess(self,
                    x_dict: Dict[str, Tensor],
                    edge_index_dict: Dict[Tuple[str, str, str], Tensor],
@@ -412,7 +409,7 @@ class HeteroGraphormerStructuralBias(nn.Module):
         }
         return cache
 
-    # ---- Bias assembly (I add scalars per head to attention scores) ----
+
     def build_bias_per_head(self,
                             cache: Dict[str, Any],
                             num_tokens_total: int) -> Dict[str, Any]:
@@ -453,11 +450,20 @@ class GraphormerBlock(nn.Module):
         self.v = Linear(channels, channels, bias=True)
         self.out = Linear(channels, channels, bias=True)
 
-        self.ffn = nn.Sequential(
-            nn.Linear(channels, 4 * channels),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(4 * channels, channels),
+        # self.ffn = nn.Sequential(
+        #     nn.Linear(channels, 4 * channels),
+        #     nn.GELU(),
+        #     nn.Dropout(dropout),
+        #     nn.Linear(4 * channels, channels),
+        # )
+        nn.Sequential(
+            nn.Linear(channels, channels * 2),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(channels * 2, channels),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(channels, channels)
         )
         self.ln1 = nn.LayerNorm(channels)
         self.ln2 = nn.LayerNorm(channels)
