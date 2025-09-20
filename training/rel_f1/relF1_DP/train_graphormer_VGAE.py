@@ -1,6 +1,6 @@
 
 #####
-# Training Heterogeneous Graphormer
+# Training Heterogeneous Graphormer fast
 # to predict the driver position in the F1 dataset.
 # This code is designed to work with the RelBench framework and PyTorch Geometric.
 # It includes data loading, model training, and evaluation.
@@ -51,7 +51,7 @@ from torch.nn import ModuleDict, Linear
 import torch.nn.functional as F
 from torch import nn
 import random
-from model.Graphormer import Model
+from model.GraphormerNew import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
@@ -94,7 +94,7 @@ data, col_stats_dict = make_pkey_fkey_graph(
 
 
 # pre training phase with the VGAE
-channels = 32
+channels = 128
 
 model = Model(
     data=data,
@@ -102,7 +102,6 @@ model = Model(
     num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="max",
     norm="batch_norm",
 ).to(device)
 
@@ -110,11 +109,11 @@ model = Model(
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.0005,
-    weight_decay=0
+    lr=0.001,
+    weight_decay=0.000001
 )
 
-scheduler = CosineAnnealingLR(optimizer, T_max=100)
+#scheduler = CosineAnnealingLR(optimizer, T_max=100)
 
 
 early_stopping = EarlyStopping(
@@ -125,8 +124,8 @@ early_stopping = EarlyStopping(
 )
 
 loader_dict = loader_dict_fn(
-    batch_size=16, 
-    num_neighbours=8, 
+    batch_size=36, 
+    num_neighbours=18, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -135,6 +134,22 @@ loader_dict = loader_dict_fn(
 )
 
 
+for batch in loader_dict["train"]:
+    edge_types=batch.edge_types
+    break
+
+
+model = train_vgae(
+    model=model,
+    loader_dict=loader_dict,
+    edge_types=edge_types,
+    encoder_out_dim=channels,
+    entity_table=task.entity_table,
+    latent_dim=16,
+    hidden_dim=64,
+    epochs=150,
+    device=device
+)
 
 
 # Training loop
@@ -157,7 +172,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-    scheduler.step(val_metrics[tune_metric])
+    #scheduler.step(val_metrics[tune_metric])
 
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
