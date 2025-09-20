@@ -1,7 +1,6 @@
 
 #####
-# Training Heterogeneous GAT
-# to predict the driver position in the F1 dataset.
+# Training Heterogeneous Graph SAGE 
 # This code is designed to work with the RelBench framework and PyTorch Geometric.
 # It includes data loading, model training, and evaluation.
 ####
@@ -56,21 +55,23 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from torch.nn import BCEWithLogitsLoss
 
 
 
-dataset = get_dataset("rel-f1", download=True)
-task = get_task("rel-f1", "driver-position", download=True)
 
-train_table = task.get_table("train") #date  driverId  qualifying
-val_table = task.get_table("val") #date  driverId  qualifying
-test_table = task.get_table("test") # date  driverId
+dataset = get_dataset("rel-trial", download=True)
+task = get_task("rel-trial", "study-outcome", download=True)
+
+train_table = task.get_table("train")
+val_table = task.get_table("val") 
+test_table = task.get_table("test") 
 
 out_channels = 1
-loss_fn = L1Loss()
+# loss_fn = L1Loss()
 # this is the mae loss and is used when have regressions tasks.
-tune_metric = "mae"
-higher_is_better = False
+tune_metric = "roc_auc"
+higher_is_better = True #is referred to the tune metric
 
 seed_everything(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -92,9 +93,34 @@ data, col_stats_dict = make_pkey_fkey_graph(
     cache_dir=None  # disabled
 )
 
+graph_driver_ids = db_nuovo.table_dict["studies"].df["nct_id"].to_numpy()
+id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
+
+train_df_raw = train_table.df
+driver_ids_raw = train_df_raw["nct_id"].to_numpy()
+qualifying_positions = train_df_raw["outcome"].to_numpy() #labels (train)
+binary_top3_labels_raw = qualifying_positions
+
+target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
+for i, driver_id in enumerate(driver_ids_raw):
+    if driver_id in id_to_idx:#if the driver is in the training
+        target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+
+data['studies'].y = target_vector_official.float()
+data['studies'].train_mask = ~torch.isnan(target_vector_official)
+
+
+y_full = data['studies'].y.float()
+train_mask_full = data['studies'].train_mask
+num_pos = (y_full[train_mask_full] == 1).sum()
+num_neg = (y_full[train_mask_full] == 0).sum()
+pos_weight = torch.tensor([num_neg / num_pos], device=device)
+loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
 
 # pre training phase with the VGAE
 channels = 128
+print(f"ora max")
 
 model = Model(
     data=data,
@@ -102,32 +128,19 @@ model = Model(
     num_layers=4,
     channels=channels,
     out_channels=1,
-    aggr="mean",
+    aggr="max",
     norm="batch_norm",
-    predictor_n_layers=2
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=0.01,
-    weight_decay=5e-5
-)
-
-epochs = 150
+optimizer = torch.optim.Adam(model.parameters(), lr=0.00005, weight_decay=0)
 
 
-early_stopping = EarlyStopping(
-    patience=30,
-    delta=0.0,
-    verbose=True,
-    path="best_basic_model.pt"
-)
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
-    num_neighbours=64, 
+    num_neighbours=256, 
     data=data, 
     task=task,
     train_table=train_table, 
@@ -135,11 +148,26 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
+#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+#print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
+##pre training VGAE:
+# for batch in loader_dict["train"]:
+#     edge_types=batch.edge_types
+#     break
 
 
-
-# Training loop
-epochs = 150
+# model = train_vgae(
+#     model=model,
+#     loader_dict=loader_dict,
+#     edge_types=edge_types,
+#     encoder_out_dim=channels,
+#     entity_table=task.entity_table,
+#     latent_dim=32,
+#     hidden_dim=128,
+#     epochs=50,
+#     device=device
+# )
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
@@ -158,6 +186,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
+   # scheduler.step(val_metrics[tune_metric])
 
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
@@ -173,7 +202,7 @@ for epoch in range(1, epochs + 1):
         state_dict_test = copy.deepcopy(model.state_dict())
 
     current_lr = optimizer.param_groups[0]["lr"]
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.4f}, Validation {tune_metric}: {val_metrics[tune_metric]:.4f}, Test {tune_metric}: {test_metrics[tune_metric]:.4f}, LR: {current_lr:.6f}")
 
     # early_stopping(val_metrics[tune_metric], model)
 

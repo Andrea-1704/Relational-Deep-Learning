@@ -1,7 +1,5 @@
-
 #####
-# Training Heterogeneous GAT
-# to predict the driver position in the F1 dataset.
+# Training Heterogeneous Graph SAGE using the VGAE pre-training style.
 # This code is designed to work with the RelBench framework and PyTorch Geometric.
 # It includes data loading, model training, and evaluation.
 ####
@@ -31,6 +29,7 @@ from typing import Any, Dict, List
 from torch import Tensor
 from torch.nn import Embedding, ModuleDict
 from torch_frame.data.stats import StatType
+from torch_frame.config.text_embedder import TextEmbedderConfig
 
 import sys
 import os
@@ -58,9 +57,14 @@ from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
 
 
+from torch_frame.config.text_embedder import TextEmbedderConfig
+import torch
+import numpy as np
 
-dataset = get_dataset("rel-f1", download=True)
-task = get_task("rel-f1", "driver-position", download=True)
+
+
+dataset = get_dataset("rel-trial", download=True)
+task = get_task("rel-trial", "study-adverse", download=True)
 
 train_table = task.get_table("train") #date  driverId  qualifying
 val_table = task.get_table("val") #date  driverId  qualifying
@@ -78,18 +82,15 @@ root_dir = "./data"
 
 db = dataset.get_db() #get all tables
 col_to_stype_dict = get_stype_proposal(db)
-#this is used to get the stype of the columns
-
-#let's use the merge categorical values:
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 
-# Create the graph
+#this is used to get the stype of the columns
+
 data, col_stats_dict = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
-    #text_embedder_cfg=text_embedder_cfg,
-    text_embedder_cfg = None,
-    cache_dir=None  # disabled
+    text_embedder_cfg=None,
+    cache_dir=None,
 )
 
 
@@ -99,47 +100,48 @@ channels = 128
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=4,
+    num_layers=2,
     channels=channels,
     out_channels=1,
-    aggr="mean",
+    aggr="sum",
     norm="batch_norm",
-    predictor_n_layers=2
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=0.01,
-    weight_decay=5e-5
-)
-
-epochs = 150
-
-
-early_stopping = EarlyStopping(
-    patience=30,
-    delta=0.0,
-    verbose=True,
-    path="best_basic_model.pt"
-)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
-    num_neighbours=64, 
+    num_neighbours=128, 
     data=data, 
     task=task,
     train_table=train_table, 
     val_table=val_table, 
     test_table=test_table
 )
+print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
+#pre training VGAE:
+for batch in loader_dict["train"]:
+    edge_types=batch.edge_types
+    break
 
 
+model = train_vgae(
+    model=model,
+    loader_dict=loader_dict,
+    edge_types=edge_types,
+    encoder_out_dim=channels,
+    entity_table=task.entity_table,
+    latent_dim=32,
+    hidden_dim=128,
+    epochs=50,
+    device=device
+)
 
 
 # Training loop
-epochs = 150
+epochs = 50
 
 state_dict = None
 test_table = task.get_table("test", mask_input_cols=False)
@@ -158,7 +160,7 @@ for epoch in range(1, epochs + 1):
     test_pred = test(model, loader_dict["test"], device=device, task=task)
     test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-
+    
     if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
     ):
@@ -175,10 +177,6 @@ for epoch in range(1, epochs + 1):
     current_lr = optimizer.param_groups[0]["lr"]
     print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
 
-    # early_stopping(val_metrics[tune_metric], model)
-
-    # if early_stopping.early_stop:
-    #     print(f"Early stopping triggered at epoch {epoch}")
-    #     break
+    
 print(f"best validation results: {best_val_metric}")
 print(f"best test results: {best_test_metric}")
