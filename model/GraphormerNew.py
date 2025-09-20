@@ -860,3 +860,41 @@ class Model(nn.Module):
             seed_count=seed_time.size(0),
         )
         return self.head(x_dict[dst_table])
+
+
+    def encoder_parameters(self):
+        # Allinea la semantica a SAGE, includo encoder tabellare, temporale, centrality e Graphormer
+        params = []
+        params += list(self.encoder.parameters())
+        params += list(self.temporal_encoder.parameters())
+        params += list(self.centrality.parameters())
+        params += list(self.gnn.parameters())
+        return params
+
+    def encode_node_types(self, batch: HeteroData, node_types: List[str], entity_table) -> Dict[str, Tensor]:
+        # Stessa pipeline del forward, ma restituisco solo i tipi richiesti
+        x_dict = self.encoder(batch.tf_dict)
+
+        seed_time = batch[entity_table].seed_time
+        rel_time_dict = self.temporal_encoder(seed_time, batch.time_dict, batch.batch_dict)
+        for nt, rel_t in rel_time_dict.items():
+            x_dict[nt] = x_dict[nt] + rel_t
+
+        for nt, emb in self.embedding_dict.items():
+            x_dict[nt] = x_dict[nt] + emb(batch[nt].n_id)
+
+        # Centrality prima del Graphormer, come nel forward del modello
+        x_dict = self.centrality(x_dict, batch.edge_index_dict)
+
+        if self.id_awareness_emb is not None:
+            x_dict[entity_table][: seed_time.size(0)] += self.id_awareness_emb.weight
+
+        # Passo nel Graphormer completo, poi filtro l’output ai soli tipi richiesti
+        x_dict = self.gnn(
+            x_dict=x_dict,
+            edge_index_dict=batch.edge_index_dict,
+            time_dict=batch.time_dict,
+            entity_table=entity_table,
+            seed_count=seed_time.size(0),
+        )
+        return {nt: x_dict[nt] for nt in node_types if nt in x_dict}
