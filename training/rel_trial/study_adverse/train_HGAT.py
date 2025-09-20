@@ -120,24 +120,24 @@ loader_dict = loader_dict_fn(
     val_table=val_table, 
     test_table=test_table
 )
-print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
-#pre training VGAE:
-for batch in loader_dict["train"]:
-    edge_types=batch.edge_types
-    break
+# print(f"Begin now pretraining the Heterogeneous GraphSAGE model...")
+# #pre training VGAE:
+# for batch in loader_dict["train"]:
+#     edge_types=batch.edge_types
+#     break
 
 
-model = train_vgae(
-    model=model,
-    loader_dict=loader_dict,
-    edge_types=edge_types,
-    encoder_out_dim=channels,
-    entity_table=task.entity_table,
-    latent_dim=32,
-    hidden_dim=128,
-    epochs=50,
-    device=device
-)
+# model = train_vgae(
+#     model=model,
+#     loader_dict=loader_dict,
+#     edge_types=edge_types,
+#     encoder_out_dim=channels,
+#     entity_table=task.entity_table,
+#     latent_dim=32,
+#     hidden_dim=128,
+#     epochs=50,
+#     device=device
+# )
 
 
 # Training loop
