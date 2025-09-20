@@ -75,6 +75,39 @@ class HeteroGAT(torch.nn.Module):
             for nm in md.values():
                 if hasattr(nm, "reset_parameters"):
                     nm.reset_parameters()
+    
+
+        def encoder_parameters(self):
+        # allinea la semantica a HGraphSAGE.Model
+            params = list(self.encoder.parameters()) \
+                + list(self.temporal_encoder.parameters()) \
+                + list(self.gnn.parameters())
+            return params
+
+    def encode_node_types(self, batch, node_types, entity_table):
+        # come in HGraphSAGE.Model, calcola solo i tipi richiesti
+        seed_time = batch[entity_table].seed_time
+        x_dict = self.encoder(batch.tf_dict)
+
+        rel_time_dict = self.temporal_encoder(
+            seed_time, batch.time_dict, batch.batch_dict
+        )
+
+        for nt in node_types:
+            if nt in rel_time_dict:
+                x_dict[nt] = x_dict[nt] + rel_time_dict[nt]
+            if nt in self.embedding_dict:
+                x_dict[nt] = x_dict[nt] + self.embedding_dict[nt](batch[nt].n_id)
+
+        # HeteroGAT.forward accetta argomenti extra e li ignora in sicurezza
+        x_dict = self.gnn(
+            x_dict,
+            batch.edge_index_dict,
+            batch.num_sampled_nodes_dict,
+            batch.num_sampled_edges_dict,
+        )
+        return {nt: x_dict[nt] for nt in node_types if nt in x_dict}
+
 
 
 
