@@ -100,7 +100,7 @@ channels = 128
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
     aggr="sum",
@@ -109,7 +109,7 @@ model = Model(
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0)
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
