@@ -125,7 +125,7 @@ print(f"ora max")
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=3,
     channels=channels,
     out_channels=1,
     aggr="max",
