@@ -101,13 +101,13 @@ model = Model(
     num_layers=4,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="max",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.00001, weight_decay=0.0001)
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.0001)
 
 
 
