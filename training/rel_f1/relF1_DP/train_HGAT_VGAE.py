@@ -147,8 +147,8 @@ model = train_vgae(
     edge_types=edge_types,
     encoder_out_dim=channels,
     entity_table=task.entity_table,
-    latent_dim=32,
-    hidden_dim=128,
+    latent_dim=16,
+    hidden_dim=64,
     epochs=50,
     device=device
 )
