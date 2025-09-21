@@ -168,7 +168,7 @@ def train2():
         entity_table=task.entity_table,
         latent_dim=16,
         hidden_dim=64,
-        epochs=150,
+        epochs=50,
         device=device
     )
 
