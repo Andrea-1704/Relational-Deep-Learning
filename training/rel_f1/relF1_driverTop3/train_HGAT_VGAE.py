@@ -137,7 +137,7 @@ def train2():
     #     weight_decay=0
     # )
 
-    lr = 1e-4
+    lr = 1e-3
     wd = 0
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
