@@ -25,7 +25,7 @@ import os
 sys.path.append(os.path.abspath("."))
 
 from pre_training.VGAE.Utils_VGAE import train_vgae
-from model.GraphormerNew import Model
+from model.HeteroGAT import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, test, train
 from utils.EarlyStopping import EarlyStopping
@@ -126,21 +126,25 @@ def train2():
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        num_layers=2,
+        num_layers=4,
         channels=channels,
         out_channels=1,
+        aggr="sum",
         norm="batch_norm",
     ).to(device)
 
 
 
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=0.001,
-        weight_decay=0.000001
-    )
+    # optimizer = torch.optim.Adam(
+    #     model.parameters(),
+    #     lr=0.0005,
+    #     weight_decay=0
+    # )
 
-    
+    lr = 5e-3
+    wd = 0
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
 
     early_stopping = EarlyStopping(
@@ -151,8 +155,8 @@ def train2():
     )
 
     loader_dict = loader_dict_fn(
-        batch_size=64, 
-        num_neighbours=32, 
+        batch_size=512, 
+        num_neighbours=256, 
         data=data_official, 
         task=task,
         train_table=train_table, 

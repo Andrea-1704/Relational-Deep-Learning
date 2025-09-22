@@ -102,17 +102,17 @@ model = Model(
     num_layers=4,
     channels=channels,
     out_channels=1,
-    aggr="mean",
+    aggr="max",
     norm="batch_norm",
-    predictor_n_layers=2
+    predictor_n_layers=3
 ).to(device)
 
 
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.01,
-    weight_decay=5e-5
+    lr=0.05,
+    weight_decay=0
 )
 
 epochs = 150
@@ -148,7 +148,7 @@ model = train_vgae(
     encoder_out_dim=channels,
     entity_table=task.entity_table,
     latent_dim=32,
-    hidden_dim=64,
+    hidden_dim=128,
     epochs=50,
     device=device
 )
