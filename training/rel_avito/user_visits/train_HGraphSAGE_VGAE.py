@@ -98,10 +98,10 @@ channels = 128
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="max",
     norm="batch_norm",
 ).to(device)
 
