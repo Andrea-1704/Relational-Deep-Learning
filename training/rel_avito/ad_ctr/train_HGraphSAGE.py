@@ -99,7 +99,7 @@ channels = 128
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=3,
     channels=channels,
     out_channels=1,
     aggr="max",
@@ -110,7 +110,7 @@ model = Model(
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.0005,
+    lr=0.001,
     weight_decay=0
 )
 
@@ -125,8 +125,8 @@ early_stopping = EarlyStopping(
 )
 
 loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=256, 
+    batch_size=128, 
+    num_neighbours=64, 
     data=data, 
     task=task,
     train_table=train_table, 
