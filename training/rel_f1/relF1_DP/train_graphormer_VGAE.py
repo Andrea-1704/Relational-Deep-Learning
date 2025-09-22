@@ -99,7 +99,7 @@ channels = 128
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
     norm="batch_norm",
@@ -109,7 +109,7 @@ model = Model(
 
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.001,
+    lr=0.05,
     weight_decay=0.000001
 )
 
@@ -146,7 +146,7 @@ model = train_vgae(
     encoder_out_dim=channels,
     entity_table=task.entity_table,
     latent_dim=32,
-    hidden_dim=64,
+    hidden_dim=128,
     epochs=50,
     device=device
 )
