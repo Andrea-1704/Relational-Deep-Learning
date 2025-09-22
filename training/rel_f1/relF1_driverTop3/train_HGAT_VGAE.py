@@ -27,7 +27,6 @@ sys.path.append(os.path.abspath("."))
 from model.HeteroGAT import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, test, train
-from pre_training.VGAE.Utils_VGAE import train_vgae
 from utils.EarlyStopping import EarlyStopping
 
 """
@@ -122,10 +121,10 @@ def train2():
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        num_layers=3,
+        num_layers=4,
         channels=channels,
         out_channels=1,
-        aggr="sum",
+        aggr="max",
         norm="batch_norm",
     ).to(device)
 
@@ -161,23 +160,8 @@ def train2():
     )
 
 
-    for batch in loader_dict["train"]:
-        edge_types=batch.edge_types
-        break
 
-
-    model = train_vgae(
-        model=model,
-        loader_dict=loader_dict,
-        edge_types=edge_types,
-        encoder_out_dim=channels,
-        entity_table=task.entity_table,
-        latent_dim=32,
-        hidden_dim=128,
-        epochs=50,
-        device=device
-    )
-        
+    
     best_val_metric = -math.inf 
     test_table = task.get_table("test", mask_input_cols=False)
     best_test_metric = -math.inf 
