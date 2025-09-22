@@ -103,13 +103,13 @@ model = Model(
     num_layers=4,
     channels=channels,
     out_channels=1,
-    aggr="sum",
+    aggr="max",
     norm="batch_norm",
 ).to(device)
 
 
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.003, weight_decay=0.0)
 
 loader_dict = loader_dict_fn(
     batch_size=512, 
