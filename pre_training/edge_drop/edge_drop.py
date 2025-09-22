@@ -56,7 +56,7 @@ def train(model, optimizer, loader_dict, device, task, loss_fn) -> float:
     for batch in tqdm(loader_dict["train"]):
         batch = batch.to(device)
 
-        batch = edge_dropout(batch, drop_prob=0.2)  #da provare altri prob
+        batch = edge_dropout(batch, drop_prob=0.1)  #da provare altri prob
 
         optimizer.zero_grad()
         pred = model(
