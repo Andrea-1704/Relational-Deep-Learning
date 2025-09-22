@@ -126,7 +126,7 @@ def train2():
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_dict_official,
-        num_layers=2,
+        num_layers=4,
         channels=channels,
         out_channels=1,
         norm="batch_norm",
@@ -172,7 +172,7 @@ def train2():
         encoder_out_dim=channels,
         entity_table=task.entity_table,
         latent_dim=32,
-        hidden_dim=64,
+        hidden_dim=128,
         epochs=50,
         device=device
     )
@@ -183,7 +183,7 @@ def train2():
     best_val_metric = -math.inf 
     test_table = task.get_table("test", mask_input_cols=False)
     best_test_metric = -math.inf 
-    epochs = 500
+    epochs = 50
     for epoch in range(0, epochs):
       train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
