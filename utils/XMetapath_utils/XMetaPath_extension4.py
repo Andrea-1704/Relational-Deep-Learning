@@ -502,7 +502,7 @@ def warmup_rl_agent(
     num_episodes=5,
     L_max=2,
     epochs=5,
-    lr: float = 0.005,
+    lr: float = 0.0001,
     wd: float = 0,
     epsilon: float = 0.35,
     num_improvements_L: int = 3
