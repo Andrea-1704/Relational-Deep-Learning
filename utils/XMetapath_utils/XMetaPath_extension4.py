@@ -18,6 +18,27 @@ from utils.utils import evaluate_performance, test, train
 from model.XMetaPath2 import XMetaPath2
 
 
+# NEW: build CSR-like adjacency once
+def build_src_to_dst_index(data):
+    """
+    Precompute adjacency lists for each edge_type:
+    maps[edge_type][src] -> list of dst
+    """
+    maps = {}
+    for etype, edge_index in data.edge_index_dict.items():
+        src, dst = edge_index
+        n_src = int(src.max().item()) + 1
+        buckets = [[] for _ in range(n_src)]
+        # vectorize to Python lists once to avoid repeated boolean masks
+        src_list = src.tolist()
+        dst_list = dst.tolist()
+        for s, d in zip(src_list, dst_list):
+            buckets[s].append(d)
+        maps[etype] = buckets
+    return maps
+
+
+
 # utility functions:
 def flip_rel(rel_name: str) -> str:
     return rel_name[4:] if rel_name.startswith("rev_") else f"rev_{rel_name}"
@@ -126,37 +147,70 @@ def get_legal_relations_for_state(data, node_type, current_path):
     ]
 
 
+# def construct_bags(
+#     data,
+#     previous_bags: List[List[int]],
+#     previous_labels: List[float],
+#     rel: Tuple[str, str, str],
+#     previous_seed_ids: List[int],             # NEW
+    
+# ) -> Tuple[List[List[int]], List[float], List[int]]:   # NEW: + seed_ids
+#     edge_index = data.edge_index_dict.get(rel)
+#     if edge_index is None:
+#         print("this should not have happened, but the relation was not found.")
+#         return [], [], []
+
+#     edge_src, edge_dst = edge_index
+#     bags, labels, seed_ids = [], [], []
+
+#     for bag_v, label, seed_id in zip(previous_bags, previous_labels, previous_seed_ids):
+#         bag_u = []
+#         for v in bag_v:
+#             neighbors_u = edge_dst[edge_src == v]
+#             if neighbors_u.numel() == 0:
+#                 continue
+#             bag_u += neighbors_u.tolist()
+
+#         if len(bag_u) > 0:
+#             # dedup per bag per stabilità (opzionale):
+#             bag_u = list(dict.fromkeys(bag_u))
+#             bags.append(bag_u)
+#             labels.append(label)
+#             seed_ids.append(seed_id)          # mantiene tracciamento del driver
+
+#     return bags, labels, seed_ids
+
+
+
 def construct_bags(
     data,
     previous_bags: List[List[int]],
     previous_labels: List[float],
     rel: Tuple[str, str, str],
-    previous_seed_ids: List[int],             # NEW
-) -> Tuple[List[List[int]], List[float], List[int]]:   # NEW: + seed_ids
-    edge_index = data.edge_index_dict.get(rel)
-    if edge_index is None:
-        print("this should not have happened, but the relation was not found.")
+    previous_seed_ids: List[int],
+    adj_maps=None,                    # NEW
+) -> Tuple[List[List[int]], List[float], List[int]]:
+    if adj_maps is None:
+        # fallback, but you should pass precomputed maps from caller
+        adj_maps = build_src_to_dst_index(data)
+    buckets = adj_maps.get(rel)
+    if buckets is None:
+        print("Adjacency for relation not found (unexpected).")
         return [], [], []
-
-    edge_src, edge_dst = edge_index
     bags, labels, seed_ids = [], [], []
-
     for bag_v, label, seed_id in zip(previous_bags, previous_labels, previous_seed_ids):
         bag_u = []
         for v in bag_v:
-            neighbors_u = edge_dst[edge_src == v]
-            if neighbors_u.numel() == 0:
-                continue
-            bag_u += neighbors_u.tolist()
-
-        if len(bag_u) > 0:
-            # dedup per bag per stabilità (opzionale):
+            if v < len(buckets):
+                bag_u.extend(buckets[v])
+        if bag_u:
+            # optional dedup for stability
             bag_u = list(dict.fromkeys(bag_u))
             bags.append(bag_u)
             labels.append(label)
-            seed_ids.append(seed_id)          # mantiene tracciamento del driver
-
+            seed_ids.append(seed_id)
     return bags, labels, seed_ids
+
 
 
 
@@ -212,7 +266,7 @@ def greedy_metapath_search_rl(
     num_improvements_L=3,#number of times we keep running if adding rel did not improve but did not harm the results to stop the learning
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    adj_maps = build_src_to_dst_index(data)   # NEW: one-shot
     # ids = db.table_dict[node_type].df[node_id].to_numpy()
     # current_bags = [[int(i)] for i in ids if train_mask[i]]
     # current_labels = [int(data[node_type].y[i]) for i in range(len(train_mask)) if train_mask[i]]
@@ -258,14 +312,22 @@ def greedy_metapath_search_rl(
         print(f"The RL agent has chosen the relation {chosen_rel}")
 
         #bags expansion for chosen relation
+        # bags, labels, seed_ids = construct_bags(
+        #     data=data,
+        #     previous_bags=current_bags,
+        #     previous_labels=current_labels,
+        #     rel=chosen_rel,
+        #     previous_seed_ids=current_seed_ids,
+        # )
+
         bags, labels, seed_ids = construct_bags(
             data=data,
             previous_bags=current_bags,
             previous_labels=current_labels,
             rel=chosen_rel,
             previous_seed_ids=current_seed_ids,
+            adj_maps=adj_maps,              # NEW
         )
-
         #see if there are embpy bags:
         # printf"Lunghezza bags: {len(bags)}")
         
