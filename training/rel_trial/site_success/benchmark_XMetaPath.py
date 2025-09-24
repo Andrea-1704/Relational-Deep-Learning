@@ -103,8 +103,8 @@ loss_fn = L1Loss()
 hidden_channels = 128
 out_channels = 128
 loader_dict = loader_dict_fn(
-    batch_size=512,
-    num_neighbours=256,
+    batch_size=128,
+    num_neighbours=64,
     data=data_official,
     task=task,
     train_table=train_table,
@@ -128,9 +128,9 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    num_episodes=10,   
-    L_max=6,          
-    epochs=10       
+    num_episodes=3,   
+    L_max=10,          
+    epochs=3       
 )
 K = 3
 global_best_map = agent.best_score_by_path_global
@@ -147,8 +147,8 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    L_max=6,                 
-    epochs=20,
+    L_max=10,                 
+    epochs=5,
     number_of_metapaths=K    
 )
 canonical = []
@@ -172,7 +172,7 @@ model = XMetaPath2(
     out_channels=out_channels,
     final_out_channels=1,
 ).to(device)
-lr=1e-02
+lr=3e-02
 wd = 0
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 # optimizer = torch.optim.AdamW(

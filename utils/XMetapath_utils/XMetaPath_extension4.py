@@ -272,7 +272,6 @@ def greedy_metapath_search_rl(
 
 
         if len(bags) < 5:
-            
             legal_next = get_legal_relations_for_state(data, node_type, current_path)
             agent.update_q(
                 state=current_path,
@@ -300,7 +299,7 @@ def greedy_metapath_search_rl(
         mp_for_model = [(dst, flip_rel(rel), src) for (src, rel, dst) in mp_candidate[::-1]]
         ###### NOW THIS IS ADDED!
 
-        print(f"The RL agent chosen r* {chosen_rel} to be added to metapath {current_path}, now we pass to the XMEtapath Model to test it")
+        print(f"The RL agent chosen r* {chosen_rel} to be added to metapath {current_path}, now we pass to the XMEtapath Model to test it after training for {epochs} epochs.")
         model = XMetaPath2(
             data=data,
             col_stats_dict=col_stats_dict,
@@ -322,6 +321,7 @@ def greedy_metapath_search_rl(
                 best_val = max(best_val, val_score)
             else:
                 best_val = min(best_val, val_score)
+            print(f"Intermediate val {tune_metric}: {val_score:.6f} (best: {best_val:.6f})")
         
         #statistics
         mp_candidate = current_path + [chosen_rel]
@@ -440,7 +440,7 @@ def warmup_rl_agent(
     num_episodes=5,
     L_max=2,
     epochs=5,
-    lr: float = 0.0001,
+    lr: float = 0.005,
     wd: float = 0,
     epsilon: float = 0.35,
     num_improvements_L: int = 3
@@ -541,7 +541,7 @@ def final_metapath_search_with_rl(
     lambda_diversity=0.5,         #trade off: score vs diversity
     require_full_length=True,     #if True we only require metapths of length L_max
     reset_registry=True,           #remove candidates from the warm up
-    lr: float = 0.0001,
+    lr: float = 0.005,
     wd: float = 0,
     epsilon: float = 0.35,
     num_improvements_L: int = 3
