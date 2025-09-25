@@ -2,7 +2,8 @@
 This function is used for benchmarking the model against the others and improve
 the model performance considering the same metapath.
 
-I did not tune hyper parameter for this task->but maybe I should!
+In this executor, we are first going to learn meaningful metapaths using reinforcement learning, and 
+then using them for driver position task.
 """
 
 import torch
@@ -19,16 +20,17 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 import torch
 import math
 import torch.nn as nn
+from torch.nn import L1Loss
 
 import sys
 import os
 sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
+from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
-
 
 # utility functions:
 #############################################
@@ -45,21 +47,23 @@ def to_canonical(mp_outward):
 
 #Configuration for the task:
 #############################################
-task_name = "study-outcome"
-db_name = "rel-trial"
-node_id = "nct_id"
-target = "outcome"
-node_type = "studies"
+task_name = "ad-ctr"
+db_name = "rel-avito"
+node_id = "AdID"
+target = "success_rate"
+node_type = "AdsInfo"
 dataset = get_dataset(db_name, download=True)
 task = get_task(db_name, task_name, download=True)
 task_type = task.task_type
 out_channels = 1
-tune_metric = "roc_auc"
-higher_is_better = True
+tune_metric = "mae"
+higher_is_better = False
+loss_fn = L1Loss()
 #############################################
 
 
 train_table = task.get_table("train")
+print(f"train table: {train_table}")
 val_table = task.get_table("val")
 test_table = task.get_table("test")
 seed = 42
@@ -68,59 +72,46 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 root_dir = "./data"
 
 
-#Configuration for a binary task: Node (Binary) Classification:
+#Configuration for a node regression task:
 #############################################
-db = dataset.get_db()
+db = dataset.get_db() #get all tables
 col_to_stype_dict = get_stype_proposal(db)
 db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
 data_official, col_stats_dict_official = make_pkey_fkey_graph(
     db_nuovo,
     col_to_stype_dict=col_to_stype_dict_nuovo,
     text_embedder_cfg = None,
-    cache_dir=None
+    cache_dir=None  # disabled
 )
-df = db_nuovo.table_dict[node_type].df
-print(df.columns.tolist())
 graph_driver_ids = db_nuovo.table_dict[node_type].df[node_id].to_numpy()
 id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
-train_df_raw = train_table.df
-driver_ids_raw = train_df_raw[node_id].to_numpy()
-print(f"this is train_df_raw  {train_df_raw}")
-binary_top3_labels_raw = train_df_raw[target].to_numpy() 
-target_vector_official = torch.full((len(graph_driver_ids),), float("nan")) #inizialize a vector with all "nan" elements
-for i, driver_id in enumerate(driver_ids_raw):
-    if driver_id in id_to_idx:#if the driver is in the training
-        target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
-data_official[node_type].y = target_vector_official.float()
-data_official[node_type].train_mask = ~torch.isnan(target_vector_official)
+train_df = train_table.df
+driver_labels = train_df[target].to_numpy()
+driver_ids = train_df[node_id].to_numpy()
+target_vector = torch.full((len(graph_driver_ids),), float("nan"))
+for i, driver_id in enumerate(driver_ids):
+    if driver_id in id_to_idx:
+        target_vector[id_to_idx[driver_id]] = driver_labels[i]
+data_official[node_type].y = target_vector
+data_official[node_type].train_mask = ~torch.isnan(target_vector)
 y_full = data_official[node_type].y.float()
 train_mask_full = data_official[node_type].train_mask
-num_pos = (y_full[train_mask_full] == 1).sum()
-num_neg = (y_full[train_mask_full] == 0).sum()
-ratio = (num_neg / num_pos) if num_pos > 0 else 1.0
-pos_weight = torch.tensor([ratio], device=device)
-data_official[node_type].y = target_vector_official
-val_df_raw = val_table.df
-val_driver_ids = val_df_raw[node_id].to_numpy()
-val_mask = torch.tensor([driver_id in val_driver_ids for driver_id in graph_driver_ids])
-data_official[node_type].val_mask = val_mask
+y_bin_full = y_full
 #############################################
 
 
-
-loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+loss_fn = L1Loss()
 hidden_channels = 128
 out_channels = 128
 loader_dict = loader_dict_fn(
-    batch_size=512,
-    num_neighbours=256,
+    batch_size=128,
+    num_neighbours=64,
     data=data_official,
     task=task,
     train_table=train_table,
     val_table=val_table,
     test_table=test_table
 )
-
 
 
 #Learn the most useful metapaths:
@@ -138,10 +129,9 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    num_episodes=10,   
-    L_max=4,          
-    epochs=10,
-    lr=0.00001        
+    num_episodes=3,   
+    L_max=10,          
+    epochs=3       
 )
 K = 3
 global_best_map = agent.best_score_by_path_global
@@ -158,10 +148,9 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    L_max=4,                 
-    epochs=15,
-    lr=0.00001,
-    number_of_metapaths=3    
+    L_max=10,                 
+    epochs=5,
+    number_of_metapaths=K    
 )
 canonical = []
 for mp in metapaths:
@@ -174,7 +163,6 @@ for mp in metapaths:
 print(f"Canonical metapaths are: {canonical}")
 #############################################
 
-
 #Train the final model with the metapaths found:
 #############################################
 model = XMetaPath2(
@@ -185,13 +173,14 @@ model = XMetaPath2(
     out_channels=out_channels,
     final_out_channels=1,
 ).to(device)
-lr=0.0005
+lr=3e-02
 wd = 0
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=lr,
-    weight_decay=wd
-)
+optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+# optimizer = torch.optim.AdamW(
+#     model.parameters(),
+#     lr=lr,
+#     weight_decay=wd
+# )
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
