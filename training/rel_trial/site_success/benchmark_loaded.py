@@ -162,6 +162,8 @@ for mp in metapaths:
         f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
     canonical.append(mp_key)
 print(f"Canonical metapaths are: {canonical}")
+#canonical= [[('outcomes', 'f2p_nct_id', 'studies')], [('conditions_studies', 'f2p_nct_id', 'studies'), ('studies', 'rev_f2p_nct_id', 'designs'), ('designs', 'f2p_nct_id', 'studies')]]
+
 #############################################
 
 #Train the final model with the metapaths found:
@@ -173,10 +175,13 @@ model = XMetaPath2(
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
+    num_heads = 4,
+    dropout_p= 0,
+    num_layers=16,
 ).to(device)
-lr=0.005
+lr=0.000001
 wd = 0
-optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 # optimizer = torch.optim.AdamW(
 #     model.parameters(),
 #     lr=lr,
@@ -200,7 +205,7 @@ for epoch in range(0, epochs):
     if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
         best_test_metric = test_metrics[tune_metric]
         state_dict_test = copy.deepcopy(model.state_dict())
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}")
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.4f}, Validation {tune_metric}: {val_metrics[tune_metric]:.4f}, Test {tune_metric}: {test_metrics[tune_metric]:.4f}")
 #############################################
 
 #Final results:
