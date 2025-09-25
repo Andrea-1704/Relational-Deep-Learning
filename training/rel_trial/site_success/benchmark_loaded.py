@@ -103,8 +103,8 @@ loss_fn = L1Loss()
 hidden_channels = 128
 out_channels = 128
 loader_dict = loader_dict_fn(
-    batch_size=128,
-    num_neighbours=64,
+    batch_size=512,
+    num_neighbours=128,
     data=data_official,
     task=task,
     train_table=train_table,
@@ -174,7 +174,7 @@ model = XMetaPath2(
     out_channels=out_channels,
     final_out_channels=1,
 ).to(device)
-lr=3e-02
+lr=0.005
 wd = 0
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
 # optimizer = torch.optim.AdamW(

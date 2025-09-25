@@ -27,6 +27,7 @@ sys.path.append(os.path.abspath("."))
 
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from model.XMetaPath2 import XMetaPath2
+#from model.XMetaPath_GraphX import XMetaPath2
 from utils.utils import evaluate_performance, test, train
 from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
@@ -171,6 +172,7 @@ loader_dict = loader_dict_fn(
 #         f"Il meta-path canonico deve terminare su '{node_type}', invece termina su '{mp_key[-1][2]}'"
 #     canonical.append(mp_key)
 canonical= [[('conditions_studies', 'f2p_nct_id', 'studies')], [('outcomes', 'f2p_nct_id', 'studies')], [('conditions_studies', 'f2p_nct_id', 'studies'), ('studies', 'rev_f2p_nct_id', 'designs'), ('designs', 'f2p_nct_id', 'studies')]]
+#canonical= [[('conditions_studies', 'f2p_nct_id', 'studies')]]
 
 
 
@@ -187,8 +189,11 @@ model = XMetaPath2(
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
+    num_heads = 4,
+    dropout_p= 0,
+    num_layers=8,
 ).to(device)
-lr=0.0001
+lr=0.00001
 wd = 0
 optimizer = torch.optim.AdamW(
     model.parameters(),
@@ -198,7 +203,7 @@ optimizer = torch.optim.AdamW(
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 
-epochs = 150
+epochs = 100
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
     train_pred = test(model, loader_dict["train"], device=device, task=task)
@@ -213,7 +218,7 @@ for epoch in range(0, epochs):
     if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
         best_test_metric = test_metrics[tune_metric]
         state_dict_test = copy.deepcopy(model.state_dict())
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}")
+    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.4f}, Validation {tune_metric}: {val_metrics[tune_metric]:.4f}, Test {tune_metric}: {test_metrics[tune_metric]:.4f}")
 #############################################
 
 #Final results:
