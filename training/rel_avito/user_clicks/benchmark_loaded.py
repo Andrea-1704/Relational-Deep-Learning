@@ -166,7 +166,7 @@ loader_dict = loader_dict_fn(
 #     epochs=10,
 #     number_of_metapaths=K    
 # )
-metapaths = [('UserInfo', 'rev_f2p_UserID', 'SearchInfo')]
+metapaths = [[('UserInfo', 'rev_f2p_UserID', 'SearchInfo')]]
 canonical = []
 for mp in metapaths:
     #change to canonical:
