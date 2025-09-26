@@ -139,7 +139,7 @@ out_channels = 128
 
 loader_dict = loader_dict_fn(
     batch_size=512,
-    num_neighbours=256,
+    num_neighbours=128,
     data=data_official,
     task=task,
     train_table=train_table,
@@ -167,7 +167,7 @@ wd=0
 #     mp_key   = to_canonical(mp)         
     
 #     canonical.append(mp_key)
-canonical=[[('studies', 'rev_f2p_nct_id', 'designs'), ('designs', 'f2p_nct_id', 'studies')], [('conditions', 'rev_f2p_condition_id', 'conditions_studies'), ('conditions_studies', 'f2p_nct_id', 'studies')], [('studies', 'rev_f2p_nct_id', 'facilities_studies'), ('facilities_studies', 'f2p_nct_id', 'studies')]]
+canonical=[[('designs', 'f2p_nct_id', 'studies')], [('conditions', 'rev_f2p_condition_id', 'conditions_studies'), ('conditions_studies', 'f2p_nct_id', 'studies')], [('studies', 'rev_f2p_nct_id', 'facilities_studies'), ('facilities_studies', 'f2p_nct_id', 'studies')]]
 
 hidden_channels = 128
 out_channels = 128
@@ -180,12 +180,12 @@ model = XMetaPath2(
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
-    num_layers = 8,
+    num_layers = 4,
 ).to(device)
 
 
 
-lr=1e-04
+lr=5e-03
 wd = 0
 
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
