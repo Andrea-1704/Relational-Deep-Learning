@@ -152,21 +152,22 @@ wd=0
 
 
 #Learning metapaths:
-metapaths = [[('studies', 'rev_f2p_nct_id', 'reported_event_totals')]]
+# metapaths = [[('studies', 'rev_f2p_nct_id', 'reported_event_totals')]]
 
 
-print(f"The final metapath are {metapaths}")
+# print(f"The final metapath are {metapaths}")
 
 
 
 
-canonical = []
-for mp in metapaths:
-    #change to canonical:
-    mp = mp.copy()
-    mp_key   = to_canonical(mp)         
+# canonical = []
+# for mp in metapaths:
+#     #change to canonical:
+#     mp = mp.copy()
+#     mp_key   = to_canonical(mp)         
     
-    canonical.append(mp_key)
+#     canonical.append(mp_key)
+canonical=[[('studies', 'rev_f2p_nct_id', 'designs'), ('designs', 'f2p_nct_id', 'studies')], [('conditions', 'rev_f2p_condition_id', 'conditions_studies'), ('conditions_studies', 'f2p_nct_id', 'studies')], [('studies', 'rev_f2p_nct_id', 'facilities_studies'), ('facilities_studies', 'f2p_nct_id', 'studies')]]
 
 hidden_channels = 128
 out_channels = 128
@@ -179,11 +180,12 @@ model = XMetaPath2(
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
+    num_layers = 8,
 ).to(device)
 
 
 
-lr=1e-02
+lr=1e-04
 wd = 0
 
 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
@@ -198,9 +200,9 @@ early_stopping = EarlyStopping(
     path="best_basic_model.pt"
 )
 
-best_val_metric = -math.inf 
+best_val_metric = math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
-best_test_metric = -math.inf 
+best_test_metric = math.inf 
 epochs = 500
 for epoch in range(0, epochs):
     train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
@@ -237,8 +239,3 @@ for epoch in range(0, epochs):
 
 print(f"best validation results: {best_val_metric}")
 print(f"best test results: {best_test_metric}")
-
-
-
-
-
