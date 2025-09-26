@@ -147,69 +147,69 @@ def get_legal_relations_for_state(data, node_type, current_path):
     ]
 
 
-def construct_bags(
-    data,
-    previous_bags: List[List[int]],
-    previous_labels: List[float],
-    rel: Tuple[str, str, str],
-    previous_seed_ids: List[int],             # NEW
-    
-) -> Tuple[List[List[int]], List[float], List[int]]:   # NEW: + seed_ids
-    edge_index = data.edge_index_dict.get(rel)
-    if edge_index is None:
-        print("this should not have happened, but the relation was not found.")
-        return [], [], []
-
-    edge_src, edge_dst = edge_index
-    bags, labels, seed_ids = [], [], []
-
-    for bag_v, label, seed_id in zip(previous_bags, previous_labels, previous_seed_ids):
-        bag_u = []
-        for v in bag_v:
-            neighbors_u = edge_dst[edge_src == v]
-            if neighbors_u.numel() == 0:
-                continue
-            bag_u += neighbors_u.tolist()
-
-        if len(bag_u) > 0:
-            # dedup per bag per stabilità (opzionale):
-            bag_u = list(dict.fromkeys(bag_u))
-            bags.append(bag_u)
-            labels.append(label)
-            seed_ids.append(seed_id)          # mantiene tracciamento del driver
-
-    return bags, labels, seed_ids
-
-
-
 # def construct_bags(
 #     data,
 #     previous_bags: List[List[int]],
 #     previous_labels: List[float],
 #     rel: Tuple[str, str, str],
-#     previous_seed_ids: List[int],
-#     adj_maps=None,                    # NEW
-# ) -> Tuple[List[List[int]], List[float], List[int]]:
-#     if adj_maps is None:
-#         # fallback, but you should pass precomputed maps from caller
-#         adj_maps = build_src_to_dst_index(data)
-#     buckets = adj_maps.get(rel)
-#     if buckets is None:
-#         print("Adjacency for relation not found (unexpected).")
+#     previous_seed_ids: List[int],             # NEW
+    
+# ) -> Tuple[List[List[int]], List[float], List[int]]:   # NEW: + seed_ids
+#     edge_index = data.edge_index_dict.get(rel)
+#     if edge_index is None:
+#         print("this should not have happened, but the relation was not found.")
 #         return [], [], []
+
+#     edge_src, edge_dst = edge_index
 #     bags, labels, seed_ids = [], [], []
+
 #     for bag_v, label, seed_id in zip(previous_bags, previous_labels, previous_seed_ids):
 #         bag_u = []
 #         for v in bag_v:
-#             if v < len(buckets):
-#                 bag_u.extend(buckets[v])
-#         if bag_u:
-#             # optional dedup for stability
+#             neighbors_u = edge_dst[edge_src == v]
+#             if neighbors_u.numel() == 0:
+#                 continue
+#             bag_u += neighbors_u.tolist()
+
+#         if len(bag_u) > 0:
+#             # dedup per bag per stabilità (opzionale):
 #             bag_u = list(dict.fromkeys(bag_u))
 #             bags.append(bag_u)
 #             labels.append(label)
-#             seed_ids.append(seed_id)
+#             seed_ids.append(seed_id)          # mantiene tracciamento del driver
+
 #     return bags, labels, seed_ids
+
+
+
+def construct_bags(
+    data,
+    previous_bags: List[List[int]],
+    previous_labels: List[float],
+    rel: Tuple[str, str, str],
+    previous_seed_ids: List[int],
+    adj_maps=None,                    # NEW
+) -> Tuple[List[List[int]], List[float], List[int]]:
+    if adj_maps is None:
+        # fallback, but you should pass precomputed maps from caller
+        adj_maps = build_src_to_dst_index(data)
+    buckets = adj_maps.get(rel)
+    if buckets is None:
+        print("Adjacency for relation not found (unexpected).")
+        return [], [], []
+    bags, labels, seed_ids = [], [], []
+    for bag_v, label, seed_id in zip(previous_bags, previous_labels, previous_seed_ids):
+        bag_u = []
+        for v in bag_v:
+            if v < len(buckets):
+                bag_u.extend(buckets[v])
+        if bag_u:
+            # optional dedup for stability
+            bag_u = list(dict.fromkeys(bag_u))
+            bags.append(bag_u)
+            labels.append(label)
+            seed_ids.append(seed_id)
+    return bags, labels, seed_ids
 
 
 
@@ -267,7 +267,7 @@ def greedy_metapath_search_rl(
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("before adj")
-    #adj_maps = build_src_to_dst_index(data)   # NEW: one-shot
+    adj_maps = build_src_to_dst_index(data)   # NEW: one-shot
     print("after adj")
     # ids = db.table_dict[node_type].df[node_id].to_numpy()
     # current_bags = [[int(i)] for i in ids if train_mask[i]]
@@ -314,22 +314,22 @@ def greedy_metapath_search_rl(
         print(f"The RL agent has chosen the relation {chosen_rel}")
 
         #bags expansion for chosen relation
-        bags, labels, seed_ids = construct_bags(
-            data=data,
-            previous_bags=current_bags,
-            previous_labels=current_labels,
-            rel=chosen_rel,
-            previous_seed_ids=current_seed_ids,
-        )
-
         # bags, labels, seed_ids = construct_bags(
         #     data=data,
         #     previous_bags=current_bags,
         #     previous_labels=current_labels,
         #     rel=chosen_rel,
         #     previous_seed_ids=current_seed_ids,
-        #     adj_maps=adj_maps,              # NEW
         # )
+
+        bags, labels, seed_ids = construct_bags(
+            data=data,
+            previous_bags=current_bags,
+            previous_labels=current_labels,
+            rel=chosen_rel,
+            previous_seed_ids=current_seed_ids,
+            adj_maps=adj_maps,              # NEW
+        )
         #see if there are embpy bags:
         # printf"Lunghezza bags: {len(bags)}")
         
