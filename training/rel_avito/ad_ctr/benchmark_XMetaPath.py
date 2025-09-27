@@ -30,7 +30,7 @@ from data_management.data import loader_dict_fn, merge_text_columns_to_categoric
 from utils.EarlyStopping import EarlyStopping
 from model.XMetaPath2 import XMetaPath2
 from utils.utils import evaluate_performance, test, train
-from utils.XMetapath_utils.XMetaPath_extension4 import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
+from utils.XMetapath_utils.solving_problems_AVITO import RLAgent, warmup_rl_agent, final_metapath_search_with_rl
 
 # utility functions:
 #############################################
