@@ -267,7 +267,7 @@ def greedy_metapath_search_rl(
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("before adj")
-    adj_maps = build_src_to_dst_index(data)   # NEW: one-shot
+    #adj_maps = build_src_to_dst_index(data)   # NEW: one-shot
     print("after adj")
     # ids = db.table_dict[node_type].df[node_id].to_numpy()
     # current_bags = [[int(i)] for i in ids if train_mask[i]]
