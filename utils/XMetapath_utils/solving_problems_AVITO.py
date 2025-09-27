@@ -298,7 +298,7 @@ def greedy_metapath_search_rl(
     #Building metapath using reinforcement leanring
     for level in range(L_max):
         print(f"Step {level+1} - metapath so far: {current_path}")
-        #last_ntype = node_type if not current_path else current_path[-1][2]
+        last_ntype = node_type if not current_path else current_path[-1][2]
         print(f"Now we are starting from node type {last_ntype}")
 
         
@@ -314,6 +314,7 @@ def greedy_metapath_search_rl(
         print(f"The RL agent has chosen the relation {chosen_rel}")
 
         #bags expansion for chosen relation
+
         bags, labels, seed_ids = construct_bags(
             data=data,
             previous_bags=current_bags,
