@@ -50,7 +50,7 @@ def to_canonical(mp_outward):
 task_name = "ad-ctr"
 db_name = "rel-avito"
 node_id = "AdID"
-target = "success_rate"
+target = "num_click"
 node_type = "AdsInfo"
 dataset = get_dataset(db_name, download=True)
 task = get_task(db_name, task_name, download=True)
