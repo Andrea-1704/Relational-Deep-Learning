@@ -1,3 +1,10 @@
+"""
+This is our implementation of Hetero Temporal Graphormer (HTG): a 
+modified version of the Graphormer architecture adapted to heterogeneous
+and temporal graphs.
+"""
+
+
 from linecache import cache
 import math
 from typing import Any, Dict, List, Optional, Tuple
