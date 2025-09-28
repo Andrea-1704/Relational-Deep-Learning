@@ -189,7 +189,6 @@ model = XMetaPath2(
     out_channels=out_channels,
     final_out_channels=1,
     num_layers=6,
-    dropout=0
 ).to(device)
 lr=0.0005
 wd = 0
