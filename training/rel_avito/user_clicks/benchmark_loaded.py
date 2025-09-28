@@ -166,7 +166,7 @@ loader_dict = loader_dict_fn(
 #     epochs=10,
 #     number_of_metapaths=K    
 # )
-metapaths = [[('UserInfo', 'rev_f2p_UserID', 'SearchInfo')]]
+metapaths = [[('UserInfo', 'rev_f2p_UserID', 'PhoneRequestsStream'), ('PhoneRequestsStream', 'f2p_AdID', 'AdsInfo')], [('UserInfo', 'rev_f2p_UserID', 'PhoneRequestsStream'), ('PhoneRequestsStream', 'f2p_AdID', 'AdsInfo'), ('AdsInfo', 'rev_f2p_AdID', 'SearchStream')]]
 canonical = []
 for mp in metapaths:
     #change to canonical:
@@ -188,6 +188,8 @@ model = XMetaPath2(
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
+    num_layers=6,
+    dropout=0
 ).to(device)
 lr=0.0005
 wd = 0
