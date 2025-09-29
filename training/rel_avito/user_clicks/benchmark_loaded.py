@@ -188,9 +188,9 @@ model = XMetaPath2(
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     final_out_channels=1,
-    num_layers=6,
+    num_layers=8,
 ).to(device)
-lr=0.0005
+lr=0.00001
 wd = 0
 optimizer = torch.optim.AdamW(
     model.parameters(),
