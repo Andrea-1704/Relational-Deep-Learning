@@ -103,7 +103,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 150):
     higher_is_better = False
 
     model = build_model(data, col_stats, device, channels=128)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005, weight_decay=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0)
 
     # Opzionale: early stopping su validation (disabilitato per coerenza con il tuo script)
     # early_stopping = EarlyStopping(patience=30, delta=0.0, verbose=False, path=f"best_driverpos_seed{seed}.pt")
