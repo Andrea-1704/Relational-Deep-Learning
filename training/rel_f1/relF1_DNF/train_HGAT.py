@@ -113,10 +113,10 @@ def build_model(data_official, col_stats_official, device, channels=128):
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_official,
-        num_layers=4,
+        num_layers=8,
         channels=channels,
         out_channels=1,
-        aggr="sum",
+        aggr="max",
         norm="batch_norm",
     ).to(device)
     return model
