@@ -131,6 +131,7 @@ metapaths = greedy_metapath_search(
     db=db_nuovo,
     loader_dict=loader_dict,
     node_id=node_id,
+    node_type=node_type,
     tune_metric=tune_metric,
     higher_is_better=higher_is_better,
     task=task,
