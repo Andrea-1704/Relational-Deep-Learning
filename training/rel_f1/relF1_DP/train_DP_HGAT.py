@@ -74,10 +74,10 @@ def build_model(data, col_stats, device, channels=128):
     model = Model(
         data=data,
         col_stats_dict=col_stats,
-        num_layers=4,
+        num_layers=6,
         channels=channels,
         out_channels=1,
-        aggr="mean",
+        aggr="max",
         norm="batch_norm",
         predictor_n_layers=2
     ).to(device)
@@ -103,7 +103,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 150):
     higher_is_better = False
 
     model = build_model(data, col_stats, device, channels=128)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005, weight_decay=0)
 
     # Opzionale: early stopping su validation (disabilitato per coerenza con il tuo script)
     # early_stopping = EarlyStopping(patience=30, delta=0.0, verbose=False, path=f"best_driverpos_seed{seed}.pt")
@@ -181,7 +181,7 @@ def main():
     results = []
     for s in seeds:
         print(f"\n=== Running seed {s} ===")
-        out = run_once(seed=s, device=device, max_epochs=150)
+        out = run_once(seed=s, device=device, max_epochs=50)
         print(f"[seed {s}] val_best_mae={out['val_best_mae']:.4f} | test_at_val_best_mae={out['test_at_val_best_mae']:.4f}")
         results.append(out)
 
