@@ -1,184 +1,210 @@
-
-#####
-# Training Heterogeneous GAT
-# to predict the driver position in the F1 dataset.
-# This code is designed to work with the RelBench framework and PyTorch Geometric.
-# It includes data loading, model training, and evaluation.
-####
-
-
 import os
-import torch
-import relbench
+import sys
+import math
+import copy
+import random
+from typing import Dict, Any
+
 import numpy as np
-from torch.nn import BCEWithLogitsLoss, L1Loss
+import torch
+import torch.nn as nn
+from torch_geometric.seed import seed_everything
+
+import relbench
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
-import math
-from tqdm import tqdm
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
 from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-from io import StringIO
-from torch_frame.config.text_embedder import TextEmbedderConfig
 from relbench.modeling.graph import make_pkey_fkey_graph
-from torch.nn import BCEWithLogitsLoss
-import copy
-from typing import Any, Dict, List
-from torch import Tensor
-from torch.nn import Embedding, ModuleDict
-from torch_frame.data.stats import StatType
 
-import sys
-import os
+# Project imports
 sys.path.append(os.path.abspath("."))
 
-
-from torch_geometric.data import HeteroData
-from torch_geometric.nn import MLP
-from torch_geometric.typing import NodeType
-from relbench.modeling.nn import HeteroEncoder, HeteroGraphSAGE, HeteroTemporalEncoder
-from relbench.modeling.graph import get_node_train_table_input, make_pkey_fkey_graph
-from torch_geometric.loader import NeighborLoader
-import pyg_lib
-import matplotlib.pyplot as plt
-from sklearn.metrics import mean_squared_error
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.nn import ModuleDict, Linear
-import torch.nn.functional as F
-from torch import nn
-import random
 from model.HeteroGAT import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from pre_training.VGAE.Utils_VGAE import train_vgae
-from utils.EarlyStopping import EarlyStopping
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+# from utils.EarlyStopping import EarlyStopping  # opzionale
+
+# ---------------------------
+# Utilities
+# ---------------------------
+
+def set_global_seed(seed: int, deterministic: bool = True):
+    """Set all random seeds for reproducibility."""
+    seed_everything(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 
+def build_graph_and_task(device: torch.device) -> Dict[str, Any]:
+    """Load rel-f1 driver-position, build graph, return bundle."""
+    dataset = get_dataset("rel-f1", download=True)
+    task = get_task("rel-f1", "driver-position", download=True)
 
-dataset = get_dataset("rel-f1", download=True)
-task = get_task("rel-f1", "driver-position", download=True)
+    train_table = task.get_table("train")
+    val_table = task.get_table("val")
+    test_table = task.get_table("test")
 
-train_table = task.get_table("train") #date  driverId  qualifying
-val_table = task.get_table("val") #date  driverId  qualifying
-test_table = task.get_table("test") # date  driverId
+    db = dataset.get_db()
+    col_to_stype = get_stype_proposal(db)
+    db2, col_to_stype2 = merge_text_columns_to_categorical(db, col_to_stype)
 
-out_channels = 1
-loss_fn = L1Loss()
-# this is the mae loss and is used when have regressions tasks.
-tune_metric = "mae"
-higher_is_better = False
+    data, col_stats = make_pkey_fkey_graph(
+        db2,
+        col_to_stype_dict=col_to_stype2,
+        text_embedder_cfg=None,
+        cache_dir=None
+    )
 
-seed_everything(42)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-root_dir = "./data"
-
-db = dataset.get_db() #get all tables
-col_to_stype_dict = get_stype_proposal(db)
-#this is used to get the stype of the columns
-
-#let's use the merge categorical values:
-db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
-
-# Create the graph
-data, col_stats_dict = make_pkey_fkey_graph(
-    db_nuovo,
-    col_to_stype_dict=col_to_stype_dict_nuovo,
-    #text_embedder_cfg=text_embedder_cfg,
-    text_embedder_cfg = None,
-    cache_dir=None  # disabled
-)
+    return dict(
+        task=task,
+        train_table=train_table,
+        val_table=val_table,
+        test_table=test_table,
+        data=data,
+        col_stats=col_stats
+    )
 
 
-# pre training phase with the VGAE
-channels = 128
+def build_model(data, col_stats, device, channels=128):
+    model = Model(
+        data=data,
+        col_stats_dict=col_stats,
+        num_layers=4,
+        channels=channels,
+        out_channels=1,
+        aggr="mean",
+        norm="batch_norm",
+        predictor_n_layers=2
+    ).to(device)
+    return model
 
-model = Model(
-    data=data,
-    col_stats_dict=col_stats_dict,
-    num_layers=4,
-    channels=channels,
-    out_channels=1,
-    aggr="mean",
-    norm="batch_norm",
-    predictor_n_layers=2
-).to(device)
+# ---------------------------
+# Single run (one seed)
+# ---------------------------
+
+def run_once(seed: int, device: torch.device, max_epochs: int = 150):
+    set_global_seed(seed)
+
+    bundle = build_graph_and_task(device)
+    task = bundle["task"]
+    train_table = bundle["train_table"]
+    val_table = bundle["val_table"]
+    test_table = task.get_table("test", mask_input_cols=False)  # non mascherare le feature in test
+    data = bundle["data"]
+    col_stats = bundle["col_stats"]
+
+    loss_fn = nn.L1Loss()  # MAE
+    tune_metric = "mae"
+    higher_is_better = False
+
+    model = build_model(data, col_stats, device, channels=128)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-5)
+
+    # Opzionale: early stopping su validation (disabilitato per coerenza con il tuo script)
+    # early_stopping = EarlyStopping(patience=30, delta=0.0, verbose=False, path=f"best_driverpos_seed{seed}.pt")
+
+    loader_dict = loader_dict_fn(
+        batch_size=512,
+        num_neighbours=64,
+        data=data,
+        task=task,
+        train_table=train_table,
+        val_table=val_table,
+        test_table=test_table
+    )
+
+    best_val = math.inf if not higher_is_better else -math.inf
+    best_state_val = None
+
+    for epoch in range(1, max_epochs + 1):
+        _ = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+
+        # Predizioni
+        train_pred = test(model, loader_dict["train"], device=device, task=task)
+        val_pred = test(model, loader_dict["val"], device=device, task=task)
+        test_pred = test(model, loader_dict["test"], device=device, task=task)
+
+        # Metriche aggregate su split ufficiali
+        train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+        val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+
+        # MAE "preciso" sul train intero (come nel tuo script)
+        train_mae_full = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
+
+        # Track best su validation (per MAE, più basso è meglio)
+        val_score = val_metrics[tune_metric]
+        improved = (val_score < best_val) if not higher_is_better else (val_score > best_val)
+        if improved:
+            best_val = val_score
+            best_state_val = copy.deepcopy(model.state_dict())
+
+        # Stampa
+        current_lr = optimizer.param_groups[0]["lr"]
+        print(f"Epoch: {epoch:03d} | Train MAE(full): {train_mae_full:.4f} | "
+              f"Val MAE: {val_metrics['mae']:.4f} | Test MAE: {test_metrics['mae']:.4f} | LR: {current_lr:.6f}")
+
+        # Opzionale: early stopping
+        # early_stopping(val_score, model)
+        # if early_stopping.early_stop:
+        #     print(f"[seed {seed}] Early stopping at epoch {epoch}")
+        #     break
+
+    # Valuta test al best di validation
+    assert best_state_val is not None, "No best validation state found"
+    model.load_state_dict(best_state_val)
+
+    val_pred_best = test(model, loader_dict["val"], device=device, task=task)
+    test_pred_at_valbest = test(model, loader_dict["test"], device=device, task=task)
+    val_metrics_best = evaluate_performance(val_pred_best, val_table, task.metrics, task=task)
+    test_metrics_at_valbest = evaluate_performance(test_pred_at_valbest, test_table, task.metrics, task=task)
+
+    return {
+        "seed": seed,
+        "val_best_mae": float(val_metrics_best["mae"]),
+        "test_at_val_best_mae": float(test_metrics_at_valbest["mae"]),
+    }
+
+# ---------------------------
+# Main: 5 seeds summary
+# ---------------------------
+
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seeds = [13, 37, 42, 2024, 2025]
+
+    results = []
+    for s in seeds:
+        print(f"\n=== Running seed {s} ===")
+        out = run_once(seed=s, device=device, max_epochs=150)
+        print(f"[seed {s}] val_best_mae={out['val_best_mae']:.4f} | test_at_val_best_mae={out['test_at_val_best_mae']:.4f}")
+        results.append(out)
+
+    val_arr = np.array([r["val_best_mae"] for r in results], dtype=np.float64)
+    test_arr = np.array([r["test_at_val_best_mae"] for r in results], dtype=np.float64)
+
+    def mean_std(x):
+        mean = float(np.mean(x))
+        std = float(np.std(x, ddof=1) if len(x) > 1 else 0.0)
+        return mean, std
+
+    val_mean, val_std = mean_std(val_arr)
+    test_mean, test_std = mean_std(test_arr)
+
+    print("\n=== Summary over 5 seeds (HeteroGAT - driver-position, MAE lower is better) ===")
+    for r in results:
+        print(f"seed {r['seed']:>5}  |  val_best_mae {r['val_best_mae']:.4f}  |  test_at_val_best_mae {r['test_at_val_best_mae']:.4f}")
+
+    print(f"\nVAL   MAE mean ± std:  {val_mean:.4f} ± {val_std:.4f}")
+    print(f"TEST  MAE mean ± std:  {test_mean:.4f} ± {test_std:.4f}")
+
+    return 0
 
 
-
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=0.01,
-    weight_decay=5e-5
-)
-
-epochs = 150
-
-
-early_stopping = EarlyStopping(
-    patience=30,
-    delta=0.0,
-    verbose=True,
-    path="best_basic_model.pt"
-)
-
-loader_dict = loader_dict_fn(
-    batch_size=512, 
-    num_neighbours=64, 
-    data=data, 
-    task=task,
-    train_table=train_table, 
-    val_table=val_table, 
-    test_table=test_table
-)
-
-
-
-
-# Training loop
-epochs = 150
-
-state_dict = None
-test_table = task.get_table("test", mask_input_cols=False)
-best_val_metric = -math.inf if higher_is_better else math.inf
-best_test_metric = -math.inf if higher_is_better else math.inf
-for epoch in range(1, epochs + 1):
-    train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
-
-    train_pred = test(model, loader_dict["train"], device=device, task=task)
-    train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-    train_mae_preciso = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
-
-    val_pred = test(model, loader_dict["val"], device=device, task=task)
-    val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-
-    test_pred = test(model, loader_dict["test"], device=device, task=task)
-    test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
-
-
-    if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
-            not higher_is_better and val_metrics[tune_metric] < best_val_metric
-    ):
-        best_val_metric = val_metrics[tune_metric]
-        state_dict = copy.deepcopy(model.state_dict())
-
-    #test:
-    if (higher_is_better and test_metrics[tune_metric] > best_test_metric) or (
-            not higher_is_better and test_metrics[tune_metric] < best_test_metric
-    ):
-        best_test_metric = test_metrics[tune_metric]
-        state_dict_test = copy.deepcopy(model.state_dict())
-
-    current_lr = optimizer.param_groups[0]["lr"]
-    print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_mae_preciso:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
-
-    # early_stopping(val_metrics[tune_metric], model)
-
-    # if early_stopping.early_stop:
-    #     print(f"Early stopping triggered at epoch {epoch}")
-    #     break
-print(f"best validation results: {best_val_metric}")
-print(f"best test results: {best_test_metric}")
+if __name__ == "__main__":
+    raise SystemExit(main())
