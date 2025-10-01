@@ -1,43 +1,48 @@
-import torch
-import torch.nn.functional as F
-import torch.nn as nn
 import os
-import relbench
+import sys
+import math
+import copy
+import random
+from collections import defaultdict
+
 import numpy as np
+import torch
+import torch.nn as nn
+
+from torch_geometric.seed import seed_everything
+
+import relbench
 from relbench.datasets import get_dataset
 from relbench.tasks import get_task
-import math
-from tqdm import tqdm
-import torch_geometric
-import torch_frame
-from torch_geometric.seed import seed_everything
 from relbench.modeling.utils import get_stype_proposal
-from collections import defaultdict
-import requests
-from io import StringIO
-from torch_frame.config.text_embedder import TextEmbedderConfig
 from relbench.modeling.graph import make_pkey_fkey_graph
-import copy
-from torch.optim.lr_scheduler import CosineAnnealingLR
 
-import sys
-import os
+# project-specific imports
 sys.path.append(os.path.abspath("."))
-
 from model.GraphormerNew import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, test, train
 from utils.EarlyStopping import EarlyStopping
 
-"""
-In order to understand driver top 3 you should consider that it only 
-labels some of the nodes, not all of them. 
-So we must manually exclude all the unlabeled nodes: this step is 
-avoided in the dirver position task since all the node in such task
-are labeled and usable for prediction.
-"""
 
-def train2():
+# ---------------------------
+# Utilities
+# ---------------------------
+
+def set_global_seed(seed: int, deterministic: bool = True):
+    """Set all seeds in a reliable way."""
+    seed_everything(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
+def build_data_and_targets(device):
+    """Load dataset, build graph, attach labels and masks for driver-top3."""
     dataset = get_dataset("rel-f1", download=True)
     task = get_task("rel-f1", "driver-top3", download=True)
 
@@ -45,154 +50,202 @@ def train2():
     val_table = task.get_table("val")
     test_table = task.get_table("test")
 
-    out_channels = 1
-    
-    #loss_fn = nn.BCEWithLogitsLoss()
-    tune_metric = "roc_auc"
-    higher_is_better = True #is referred to the tune metric
-
-    seed_everything(42) #We should remember to try results 5 times with
-    #different seed values to provide a confidence interval over results.
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    root_dir = "./data"
-
     db = dataset.get_db()
-    col_to_stype_dict = get_stype_proposal(db)
-    db_nuovo, col_to_stype_dict_nuovo = merge_text_columns_to_categorical(db, col_to_stype_dict)
+    col_to_stype = get_stype_proposal(db)
+    db2, col_to_stype2 = merge_text_columns_to_categorical(db, col_to_stype)
 
-    data_official, col_stats_dict_official = make_pkey_fkey_graph(
-        db_nuovo,
-        col_to_stype_dict=col_to_stype_dict_nuovo,
-        text_embedder_cfg = None,
+    # graph for loaders and model construction
+    data_official, col_stats_official = make_pkey_fkey_graph(
+        db2,
+        col_to_stype_dict=col_to_stype2,
+        text_embedder_cfg=None,
         cache_dir=None
     )
-    #do not use the textual information: this db is mostly not textual
 
-    graph_driver_ids = db_nuovo.table_dict["drivers"].df["driverId"].to_numpy()
+    # build driver label vector
+    graph_driver_ids = db2.table_dict["drivers"].df["driverId"].to_numpy()
     id_to_idx = {driver_id: idx for idx, driver_id in enumerate(graph_driver_ids)}
 
-    
     train_df_raw = train_table.df
     driver_ids_raw = train_df_raw["driverId"].to_numpy()
-    qualifying_positions = train_df_raw["qualifying"].to_numpy() #labels (train)
+    # task already binary (0/1)
+    binary_top3_labels_raw = train_df_raw["qualifying"].to_numpy()
 
-    
-    binary_top3_labels_raw = qualifying_positions #do not need to binarize 
-    #since the task is already a binary classification task
-
-
-    target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
+    target_vector = torch.full((len(graph_driver_ids),), float("nan"))
     for i, driver_id in enumerate(driver_ids_raw):
-        if driver_id in id_to_idx:#if the driver is in the training
-            target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+        if driver_id in id_to_idx:
+            target_vector[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
 
+    data_official['drivers'].y = target_vector.float()
+    data_official['drivers'].train_mask = ~torch.isnan(target_vector)
 
-    data_official['drivers'].y = target_vector_official.float()
-    data_official['drivers'].train_mask = ~torch.isnan(target_vector_official)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-    data_full, col_stats_dict_full = make_pkey_fkey_graph(
-        db_nuovo,
-        col_to_stype_dict=col_to_stype_dict_nuovo,
+    # full graph on device (utile per conteggio pos_weight)
+    data_full, col_stats_full = make_pkey_fkey_graph(
+        db2,
+        col_to_stype_dict=col_to_stype2,
         text_embedder_cfg=None,
         cache_dir=None
     )
     data_full = data_full.to(device)
+    data_full['drivers'].y = target_vector.float()
+    data_full['drivers'].train_mask = ~torch.isnan(target_vector)
+
+    return {
+        "task": task,
+        "train_table": train_table,
+        "val_table": val_table,
+        "test_table": test_table,
+        "data_official": data_official,
+        "col_stats_official": col_stats_official,
+        "data_full": data_full,
+    }
 
 
-    data_full['drivers'].y = target_vector_official.float()
-    data_full['drivers'].train_mask = ~torch.isnan(target_vector_official)
-
-
-    y_full = data_full['drivers'].y.float()
-    train_mask_full = data_full['drivers'].train_mask
-    num_pos = (y_full[train_mask_full] == 1).sum()
-    num_neg = (y_full[train_mask_full] == 0).sum()
-    pos_weight = torch.tensor([num_neg / num_pos], device=device)
-
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-
-        
-    # pre training phase with the VGAE
-    channels = 128
-
+def build_model(data_official, col_stats_official, device, channels=128):
+    # Mantiene le tue scelte (norm="batch_norm")
     model = Model(
         data=data_official,
-        col_stats_dict=col_stats_dict_official,
+        col_stats_dict=col_stats_official,
         num_layers=4,
         channels=channels,
         out_channels=1,
         norm="batch_norm",
     ).to(device)
+    return model
 
 
+def bce_pos_weight_from_masked_targets(data, device):
+    y_full = data['drivers'].y.float()
+    train_mask = data['drivers'].train_mask
+    num_pos = (y_full[train_mask] == 1).sum()
+    num_neg = (y_full[train_mask] == 0).sum()
+    if num_pos.item() == 0:
+        pos_weight = torch.tensor([1.0], device=device)
+    else:
+        pos_weight = torch.tensor([num_neg / num_pos], device=device)
+    return pos_weight
 
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=0.0001,
-        weight_decay=0
-    )
 
+# ---------------------------
+# Single run
+# ---------------------------
+
+def run_once(seed: int, device: torch.device, max_epochs: int = 500):
+    set_global_seed(seed)
+
+    bundle = build_data_and_targets(device)
+    task = bundle["task"]
+    train_table = bundle["train_table"]
+    val_table = bundle["val_table"]
+    test_table = task.get_table("test", mask_input_cols=False)  # test non mascherato
+    data_official = bundle["data_official"]
+    col_stats_official = bundle["col_stats_official"]
+    data_full = bundle["data_full"]
+
+    pos_weight = bce_pos_weight_from_masked_targets(data_full, device)
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    model = build_model(data_official, col_stats_official, device, channels=128)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=0.0)
 
     early_stopping = EarlyStopping(
         patience=60,
         delta=0.0,
-        verbose=True,
-        path="best_basic_model.pt"
+        verbose=False,
+        path=f"best_graphormer_seed{seed}.pt"
     )
 
+    # Mantengo i tuoi hyper per Graphormer (batch_size=32, num_neighbours=16)
     loader_dict = loader_dict_fn(
-        batch_size=32, 
-        num_neighbours=16, 
-        data=data_official, 
+        batch_size=32,
+        num_neighbours=16,
+        data=data_official,
         task=task,
-        train_table=train_table, 
-        val_table=val_table, 
+        train_table=train_table,
+        val_table=val_table,
         test_table=test_table
     )
 
+    tune_metric = "roc_auc"
+    higher_is_better = True
+
+    best_val = -math.inf
+    best_state_val = None
+
+    for epoch in range(max_epochs):
+        _ = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+
+        # predictions
+        train_pred = test(model, loader_dict["train"], device=device, task=task)
+        val_pred = test(model, loader_dict["val"], device=device, task=task)
+        test_pred = test(model, loader_dict["test"], device=device, task=task)
+
+        # metrics
+        train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
+        val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
+        test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+
+        val_score = val_metrics[tune_metric]
+
+        if higher_is_better and val_score > best_val:
+            best_val = val_score
+            best_state_val = copy.deepcopy(model.state_dict())
+
+        # early stopping
+        early_stopping(val_score, model)
+        if early_stopping.early_stop:
+            # print(f"[seed {seed}] Early stopping at epoch {epoch}")
+            break
+
+    # Eval test al best di validation
+    assert best_state_val is not None, "No best validation state found"
+    model.load_state_dict(best_state_val)
+
+    val_pred_best = test(model, loader_dict["val"], device=device, task=task)
+    test_pred_at_valbest = test(model, loader_dict["test"], device=device, task=task)
+    val_metrics_best = evaluate_performance(val_pred_best, val_table, task.metrics, task=task)
+    test_metrics_at_valbest = evaluate_performance(test_pred_at_valbest, test_table, task.metrics, task=task)
+
+    return {
+        "seed": seed,
+        "val_best": float(val_metrics_best[tune_metric]),
+        "test_at_val_best": float(test_metrics_at_valbest[tune_metric]),
+    }
 
 
-    
-    best_val_metric = -math.inf 
-    test_table = task.get_table("test", mask_input_cols=False)
-    best_test_metric = -math.inf 
-    epochs = 500
-    for epoch in range(0, epochs):
-      train_loss = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
+# ---------------------------
+# Main: 5 seeds summary
+# ---------------------------
 
-      train_pred = test(model, loader_dict["train"], device=device, task=task)
-      val_pred = test(model, loader_dict["val"], device=device, task=task)
-      test_pred = test(model, loader_dict["test"], device=device, task=task)
-      
-      train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
-      val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
-      test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seeds = [13, 37, 42, 2024, 2025]
 
-      #scheduler.step(val_metrics[tune_metric])
+    results = []
+    for s in seeds:
+        print(f"\n=== Running seed {s} ===")
+        out = run_once(seed=s, device=device, max_epochs=500)
+        print(f"[seed {s}] val_best={out['val_best']:.4f} | test_at_val_best={out['test_at_val_best']:.4f}")
+        results.append(out)
 
-      if (higher_is_better and val_metrics[tune_metric] > best_val_metric):
-        best_val_metric = val_metrics[tune_metric]
-        state_dict = copy.deepcopy(model.state_dict())
+    val_arr = np.array([r["val_best"] for r in results], dtype=np.float64)
+    test_arr = np.array([r["test_at_val_best"] for r in results], dtype=np.float64)
 
-      if (higher_is_better and test_metrics[tune_metric] > best_test_metric):
-          best_test_metric = test_metrics[tune_metric]
-          state_dict_test = copy.deepcopy(model.state_dict())
+    def mean_std(x):
+        return float(np.mean(x)), float(np.std(x, ddof=1) if len(x) > 1 else 0.0)
 
-      current_lr = optimizer.param_groups[0]["lr"]
-      
-      print(f"Epoch: {epoch:02d}, Train {tune_metric}: {train_metrics[tune_metric]:.2f}, Validation {tune_metric}: {val_metrics[tune_metric]:.2f}, Test {tune_metric}: {test_metrics[tune_metric]:.2f}, LR: {current_lr:.6f}")
+    val_mean, val_std = mean_std(val_arr)
+    test_mean, test_std = mean_std(test_arr)
 
-      early_stopping(val_metrics[tune_metric], model)
+    print("\n=== Summary over 5 seeds (GraphormerNew) ===")
+    for r in results:
+        print(f"seed {r['seed']:>5}  |  val_best {r['val_best']:.4f}  |  test_at_val_best {r['test_at_val_best']:.4f}")
 
-      if early_stopping.early_stop:
-          print(f"Early stopping triggered at epoch {epoch}")
-          break
-    print(f"best validation results: {best_val_metric}")
-    print(f"best test results: {best_test_metric}")
+    print(f"\nVAL   mean ± std: {val_mean:.4f} ± {val_std:.4f}")
+    print(f"TEST  mean ± std (at best VAL): {test_mean:.4f} ± {test_std:.4f}")
+
+    return 0
 
 
-if __name__ == '__main__':
-    train2()
+if __name__ == "__main__":
+    raise SystemExit(main())
