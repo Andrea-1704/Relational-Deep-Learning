@@ -22,14 +22,12 @@ sys.path.append(os.path.abspath("."))
 from model.HeteroGAT import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
 from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
-# from utils.EarlyStopping import EarlyStopping  # opzionale
 
 # ---------------------------
 # Utilities
 # ---------------------------
 
 def set_global_seed(seed: int, deterministic: bool = True):
-    """Set all random seeds for reproducibility."""
     seed_everything(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -41,13 +39,14 @@ def set_global_seed(seed: int, deterministic: bool = True):
 
 
 def build_graph_and_task(device: torch.device) -> Dict[str, Any]:
-    """Load rel-f1 driver-position, build graph, return bundle."""
     dataset = get_dataset("rel-f1", download=True)
     task = get_task("rel-f1", "driver-position", download=True)
 
     train_table = task.get_table("train")
     val_table = task.get_table("val")
-    test_table = task.get_table("test")
+    # important: we will also fetch an unmasked version for evaluation later
+    test_table_masked = task.get_table("test")
+    test_table = task.get_table("test", mask_input_cols=False)
 
     db = dataset.get_db()
     col_to_stype = get_stype_proposal(db)
@@ -94,7 +93,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     task = bundle["task"]
     train_table = bundle["train_table"]
     val_table = bundle["val_table"]
-    test_table = task.get_table("test", mask_input_cols=False)  # non mascherare le feature in test
+    test_table = bundle["test_table"]  # unmasked for metrics
     data = bundle["data"]
     col_stats = bundle["col_stats"]
 
@@ -103,10 +102,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     higher_is_better = False
 
     model = build_model(data, col_stats, device, channels=128)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0)
-
-    # Opzionale: early stopping su validation (disabilitato per coerenza con il tuo script)
-    # early_stopping = EarlyStopping(patience=30, delta=0.0, verbose=False, path=f"best_driverpos_seed{seed}.pt")
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0)
 
     loader_dict = loader_dict_fn(
         batch_size=512,
@@ -118,56 +114,69 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
         test_table=test_table
     )
 
+    # Best on validation (standard) and best on test (what you requested)
     best_val = math.inf if not higher_is_better else -math.inf
     best_state_val = None
+
+    best_test = math.inf  # because lower is better for MAE
+    best_state_test = None
 
     for epoch in range(1, max_epochs + 1):
         _ = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 
-        # Predizioni
+        # Predictions
         train_pred = test(model, loader_dict["train"], device=device, task=task)
         val_pred = test(model, loader_dict["val"], device=device, task=task)
         test_pred = test(model, loader_dict["test"], device=device, task=task)
 
-        # Metriche aggregate su split ufficiali
+        # Metrics
         train_metrics = evaluate_performance(train_pred, train_table, task.metrics, task=task)
         val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
         test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-        # MAE "preciso" sul train intero (come nel tuo script)
+        # Optional: full-train MAE (as in your original code)
         train_mae_full = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
 
-        # Track best su validation (per MAE, più basso è meglio)
+        # Track best on validation (standard protocol)
         val_score = val_metrics[tune_metric]
-        improved = (val_score < best_val) if not higher_is_better else (val_score > best_val)
-        if improved:
+        if (not higher_is_better and val_score < best_val) or (higher_is_better and val_score > best_val):
             best_val = val_score
             best_state_val = copy.deepcopy(model.state_dict())
 
-        # Stampa
+        # Track best on test (your request)
+        test_score = test_metrics[tune_metric]
+        if test_score < best_test:  # lower is better for MAE
+            best_test = test_score
+            best_state_test = copy.deepcopy(model.state_dict())
+
+        # Log
         current_lr = optimizer.param_groups[0]["lr"]
         print(f"Epoch: {epoch:03d} | Train MAE(full): {train_mae_full:.4f} | "
               f"Val MAE: {val_metrics['mae']:.4f} | Test MAE: {test_metrics['mae']:.4f} | LR: {current_lr:.6f}")
 
-        # Opzionale: early stopping
-        # early_stopping(val_score, model)
-        # if early_stopping.early_stop:
-        #     print(f"[seed {seed}] Early stopping at epoch {epoch}")
-        #     break
-
-    # Valuta test al best di validation
+    # ---- Final evaluations ----
+    # (A) Test evaluated at the best validation checkpoint
     assert best_state_val is not None, "No best validation state found"
     model.load_state_dict(best_state_val)
-
     val_pred_best = test(model, loader_dict["val"], device=device, task=task)
     test_pred_at_valbest = test(model, loader_dict["test"], device=device, task=task)
     val_metrics_best = evaluate_performance(val_pred_best, val_table, task.metrics, task=task)
     test_metrics_at_valbest = evaluate_performance(test_pred_at_valbest, test_table, task.metrics, task=task)
+    test_at_val_best_mae = float(test_metrics_at_valbest["mae"])
+
+    # (B) Best test across epochs (direct)
+    assert best_state_test is not None, "No best test state found"
+    # opzionale: ricaricare e confermare misura
+    model.load_state_dict(best_state_test)
+    test_pred_besttest = test(model, loader_dict["test"], device=device, task=task)
+    test_metrics_besttest = evaluate_performance(test_pred_besttest, test_table, task.metrics, task=task)
+    test_best_mae = float(test_metrics_besttest["mae"])
 
     return {
         "seed": seed,
         "val_best_mae": float(val_metrics_best["mae"]),
-        "test_at_val_best_mae": float(test_metrics_at_valbest["mae"]),
+        "test_at_val_best_mae": test_at_val_best_mae,
+        "test_best_mae": test_best_mae
     }
 
 # ---------------------------
@@ -182,11 +191,14 @@ def main():
     for s in seeds:
         print(f"\n=== Running seed {s} ===")
         out = run_once(seed=s, device=device, max_epochs=50)
-        print(f"[seed {s}] val_best_mae={out['val_best_mae']:.4f} | test_at_val_best_mae={out['test_at_val_best_mae']:.4f}")
+        print(f"[seed {s}] val_best_mae={out['val_best_mae']:.4f} | "
+              f"test_at_val_best_mae={out['test_at_val_best_mae']:.4f} | "
+              f"test_best_mae={out['test_best_mae']:.4f}")
         results.append(out)
 
     val_arr = np.array([r["val_best_mae"] for r in results], dtype=np.float64)
-    test_arr = np.array([r["test_at_val_best_mae"] for r in results], dtype=np.float64)
+    test_valbest_arr = np.array([r["test_at_val_best_mae"] for r in results], dtype=np.float64)
+    test_best_arr = np.array([r["test_best_mae"] for r in results], dtype=np.float64)
 
     def mean_std(x):
         mean = float(np.mean(x))
@@ -194,14 +206,18 @@ def main():
         return mean, std
 
     val_mean, val_std = mean_std(val_arr)
-    test_mean, test_std = mean_std(test_arr)
+    test_valbest_mean, test_valbest_std = mean_std(test_valbest_arr)
+    test_best_mean, test_best_std = mean_std(test_best_arr)
 
     print("\n=== Summary over 5 seeds (HeteroGAT - driver-position, MAE lower is better) ===")
     for r in results:
-        print(f"seed {r['seed']:>5}  |  val_best_mae {r['val_best_mae']:.4f}  |  test_at_val_best_mae {r['test_at_val_best_mae']:.4f}")
+        print(f"seed {r['seed']:>5} | val_best_mae {r['val_best_mae']:.4f} | "
+              f"test_at_val_best_mae {r['test_at_val_best_mae']:.4f} | "
+              f"test_best_mae {r['test_best_mae']:.4f}")
 
-    print(f"\nVAL   MAE mean ± std:  {val_mean:.4f} ± {val_std:.4f}")
-    print(f"TEST  MAE mean ± std:  {test_mean:.4f} ± {test_std:.4f}")
+    print(f"\nVAL   MAE mean ± std:            {val_mean:.4f} ± {val_std:.4f}")
+    print(f"TEST  MAE mean ± std @val-best:  {test_valbest_mean:.4f} ± {test_valbest_std:.4f}")
+    print(f"TEST  MAE mean ± std BEST-EVER:  {test_best_mean:.4f} ± {test_best_std:.4f}")
 
     return 0
 
