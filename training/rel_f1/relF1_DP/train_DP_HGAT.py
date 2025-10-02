@@ -73,7 +73,7 @@ def build_model(data, col_stats, device, channels=128):
     model = Model(
         data=data,
         col_stats_dict=col_stats,
-        num_layers=2,
+        num_layers=4,
         channels=channels,
         out_channels=1,
         aggr="max",
@@ -102,7 +102,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     higher_is_better = False
 
     model = build_model(data, col_stats, device, channels=128)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.05, weight_decay=0.0)
 
     loader_dict = loader_dict_fn(
         batch_size=512,
