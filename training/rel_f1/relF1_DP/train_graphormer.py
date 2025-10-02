@@ -103,8 +103,8 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     #optimizer = torch.optim.Adam(model.parameters(), lr=0.05, weight_decay=0.0)
     optimizer = torch.optim.Adam(
         model.parameters(),
-        lr=0.05,
-        weight_decay=0.000001
+        lr=0.005,
+        weight_decay=0
     )
     loader_dict = loader_dict_fn(
         batch_size=36,
