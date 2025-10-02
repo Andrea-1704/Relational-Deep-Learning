@@ -99,20 +99,18 @@ channels = 128
 model = Model(
     data=data,
     col_stats_dict=col_stats_dict,
-    num_layers=2,
+    num_layers=4,
     channels=channels,
     out_channels=1,
     norm="batch_norm",
 ).to(device)
 
 
-
 optimizer = torch.optim.Adam(
     model.parameters(),
-    lr=0.001,
+    lr=0.05,
     weight_decay=0.000001
 )
-
 #scheduler = CosineAnnealingLR(optimizer, T_max=100)
 
 
