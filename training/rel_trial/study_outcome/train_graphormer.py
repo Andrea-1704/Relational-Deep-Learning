@@ -92,10 +92,15 @@ driver_ids_raw = train_df_raw["nct_id"].to_numpy()
 qualifying_positions = train_df_raw["outcome"].to_numpy().astype(np.float32)
 binary_top3_labels_raw = qualifying_positions
 
-target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
+# target_vector_official = torch.full((len(graph_driver_ids),), float("nan"))
+# for i, driver_id in enumerate(driver_ids_raw):
+#     if driver_id in id_to_idx:
+#         target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+target_vector_official = torch.full((len(graph_driver_ids),), float("nan"), dtype=torch.float32)
 for i, driver_id in enumerate(driver_ids_raw):
     if driver_id in id_to_idx:
-        target_vector_official[id_to_idx[driver_id]] = binary_top3_labels_raw[i]
+        target_vector_official[id_to_idx[driver_id]] = float(binary_top3_labels_raw[i])  # <— cast a float()
+
 
 data['studies'].y = target_vector_official.float()
 data['studies'].train_mask = ~torch.isnan(target_vector_official)
