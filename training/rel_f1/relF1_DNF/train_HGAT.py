@@ -113,7 +113,7 @@ def build_model(data_official, col_stats_official, device, channels=128):
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_official,
-        num_layers=6,
+        num_layers=4,
         channels=channels,
         out_channels=1,
         aggr="max",
@@ -138,7 +138,7 @@ def bce_pos_weight_from_masked_targets(data, device):
 # Single run
 # ---------------------------
 
-def run_once(seed: int, device: torch.device, max_epochs: int = 500, use_vgae: bool = False):
+def run_once(seed: int, device: torch.device, max_epochs: int = 50, use_vgae: bool = False):
     set_global_seed(seed)
 
     bundle = build_data_and_targets(device, target_col="did_not_finish")
@@ -254,7 +254,7 @@ def main():
     results = []
     for s in seeds:
         print(f"\n=== Running seed {s} ===")
-        out = run_once(seed=s, device=device, max_epochs=500, use_vgae=False)
+        out = run_once(seed=s, device=device, max_epochs=50, use_vgae=False)
         print(f"[seed {s}] val_best={out['val_best']:.4f} | test_at_val_best={out['test_at_val_best']:.4f}")
         results.append(out)
 

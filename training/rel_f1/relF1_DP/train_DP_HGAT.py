@@ -87,7 +87,7 @@ def build_model(data, col_stats, device, channels=128):
 # Single run (one seed)
 # ---------------------------
 
-def run_once(seed: int, device: torch.device, max_epochs: int = 150):
+def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     set_global_seed(seed)
 
     bundle = build_graph_and_task(device)
