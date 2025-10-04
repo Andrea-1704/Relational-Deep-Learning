@@ -137,12 +137,13 @@ metapaths = greedy_metapath_search(
     task=task,
     loss_fn=loss_fn,
     train_mask=train_mask_full,
-    L_max=3,               #maximum length of the metapath
+    L_max=6,               #maximum length of the metapath
     number_of_metapaths=5,         #maximum number of metapaths to be found
     hidden_channels=hidden_channels,
     out_channels=out_channels,
     lr=0.0005,
     wd=0,
+    epochs=7,
 )
 
 
