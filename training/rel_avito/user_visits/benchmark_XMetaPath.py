@@ -112,8 +112,8 @@ loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 hidden_channels = 128
 out_channels = 128
 loader_dict = loader_dict_fn(
-    batch_size=512,
-    num_neighbours=256,
+    batch_size=64,
+    num_neighbours=32,
     data=data_official,
     task=task,
     train_table=train_table,
@@ -138,8 +138,8 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    num_episodes=15,   
-    L_max=7,          
+    num_episodes=10,   
+    L_max=5,          
     epochs=3        
 )
 K = 3
