@@ -140,7 +140,7 @@ warmup_rl_agent(
     col_stats_dict=col_stats_dict_official,
     num_episodes=15,   
     L_max=7,          
-    epochs=8        
+    epochs=3        
 )
 K = 3
 global_best_map = agent.best_score_by_path_global
