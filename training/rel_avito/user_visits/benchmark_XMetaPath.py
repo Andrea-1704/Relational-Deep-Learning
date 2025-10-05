@@ -112,8 +112,8 @@ loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 hidden_channels = 128
 out_channels = 128
 loader_dict = loader_dict_fn(
-    batch_size=64,
-    num_neighbours=32,
+    batch_size=512,
+    num_neighbours=128,
     data=data_official,
     task=task,
     train_table=train_table,
@@ -138,11 +138,11 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    num_episodes=10,   
-    L_max=2,          
-    epochs=3        
+    num_episodes=5,   
+    L_max=5,          
+    epochs=5        
 )
-K = 3
+X = 4
 global_best_map = agent.best_score_by_path_global
 agent.tau = 0.3   
 agent.alpha = 0.2 
@@ -157,9 +157,9 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    L_max=4,                 
-    epochs=5,
-    number_of_metapaths=K    
+    L_max=5,                 
+    epochs=20,
+    number_of_metapaths=X
 )
 canonical = []
 for mp in metapaths:
