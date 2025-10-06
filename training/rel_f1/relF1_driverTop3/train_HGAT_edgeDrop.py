@@ -21,7 +21,8 @@ from relbench.modeling.graph import make_pkey_fkey_graph
 sys.path.append(os.path.abspath("."))
 from model.HeteroGAT import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.utils import evaluate_performance, test, train
+from utils.utils import evaluate_performance, test
+from pre_training.edge_drop.edge_drop import train
 from utils.EarlyStopping import EarlyStopping
 
 
