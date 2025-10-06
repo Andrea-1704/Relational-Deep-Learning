@@ -143,7 +143,7 @@ warmup_rl_agent(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    num_episodes=5,   
+    num_episodes=3,   
     L_max=2,          
     epochs=5                
 )
@@ -163,7 +163,7 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
     L_max=2,                 
-    epochs=12,
+    epochs=8,
     number_of_metapaths=X 
 )
 canonical = []
