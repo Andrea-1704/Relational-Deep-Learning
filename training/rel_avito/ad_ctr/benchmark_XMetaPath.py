@@ -130,7 +130,7 @@ warmup_rl_agent(
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
     num_episodes=3,   
-    L_max=10,          
+    L_max=2,          
     epochs=3       
 )
 K = 3
@@ -148,7 +148,7 @@ metapaths, metapath_count = final_metapath_search_with_rl(
     train_mask=train_mask_full,
     node_type=node_type,
     col_stats_dict=col_stats_dict_official,
-    L_max=10,                 
+    L_max=2,                 
     epochs=5,
     number_of_metapaths=K    
 )
