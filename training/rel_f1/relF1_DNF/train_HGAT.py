@@ -239,7 +239,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50, use_vgae: bo
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    seeds = [13, 37, 42, 2024, 2025]
+    seeds = [13, 37, 2024]
 
     results = []
     for s in seeds:

@@ -150,6 +150,23 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     best_test = -math.inf
     best_state_test = None
 
+    for batch in loader_dict["train"]:
+        edge_types=batch.edge_types
+        break
+#superare 4.05 al primo run obiettivo
+    from pre_training.VGAE.Utils_VGAE import train_vgae
+    model = train_vgae(
+        model=model,
+        loader_dict=loader_dict,
+        edge_types=edge_types,
+        encoder_out_dim=128,
+        entity_table=task.entity_table,
+        latent_dim=64,
+        hidden_dim=256,
+        epochs=50,
+        device=device
+    )
+
     for epoch in range(1, max_epochs + 1):
         _ = train(model, optimizer, loader_dict=loader_dict, device=device, task=task, loss_fn=loss_fn)
 

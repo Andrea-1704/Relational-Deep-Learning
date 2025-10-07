@@ -22,7 +22,8 @@ sys.path.append(os.path.abspath("."))
 
 from model.HeteroGAT import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
-from utils.utils import evaluate_performance, evaluate_on_full_train, test, train
+from utils.utils import evaluate_performance, evaluate_on_full_train, test
+from pre_training.edge_drop.edge_drop import train
 
 # ---------------------------
 # Utilities
