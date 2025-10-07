@@ -93,7 +93,7 @@ loader_dict = loader_dict_fn(
 # Multi-seed loop
 # ---------------------------
 
-seeds = [13, 37, 42]
+seeds = [37, 42, 2024, 2025, 69]
 best_tests_per_seed = []
 
 for seed in seeds:
@@ -110,7 +110,7 @@ for seed in seeds:
     model = Model(
         data=data,
         col_stats_dict=col_stats_dict,
-        num_layers=3,
+        num_layers=4,
         channels=channels,
         out_channels=1,
         norm="batch_norm",
