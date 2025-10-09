@@ -166,20 +166,17 @@ print(f"Canonical metapaths are: {canonical}")
 #Train the final model with the metapaths found:
 #############################################
 model = XMetaPath2(
-    data=data_official,
-    col_stats_dict=col_stats_dict_official,
-    metapaths=canonical,               
-    hidden_channels=hidden_channels,
-    out_channels=out_channels,
-    final_out_channels=1,
+        data=data_official,
+        col_stats_dict=col_stats_dict_official,
+        metapaths=canonical,
+        hidden_channels=hidden_channels,
+        out_channels=out_channels,
+        final_out_channels=1,
+        num_layers=10,
 ).to(device)
-lr=0.0005
-wd = 0
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=lr,
-    weight_decay=wd
-)
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+
 best_val_metric = -math.inf 
 test_table = task.get_table("test", mask_input_cols=False)
 best_test_metric = -math.inf 

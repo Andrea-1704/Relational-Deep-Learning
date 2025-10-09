@@ -59,7 +59,7 @@ def build_data(device: torch.device):
         cache_dir=None
     )
 
-    # attach labels to 'studies' (come nel tuo codice)
+
     graph_ids = db2.table_dict["studies"].df["nct_id"].to_numpy()
     id_to_idx = {gid: i for i, gid in enumerate(graph_ids)}
 
@@ -89,7 +89,7 @@ def build_data(device: torch.device):
         "task": task,
         "train_table": train_table,
         "val_table": val_table,
-        "test_table": test_table_unmasked,  # usiamo l'unmasked per le metriche
+        "test_table": test_table_unmasked,  
         "data": data,
         "col_stats": col_stats,
         "pos_weight": pos_weight
@@ -109,9 +109,6 @@ def build_model(data, col_stats, device, channels=128):
     return model
 
 
-# ---------------------------
-# Single run: track BEST test
-# ---------------------------
 
 def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     set_global_seed(seed)
@@ -146,7 +143,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     best_val = -math.inf
     best_state_val = None
 
-    # >>> Tracciamo anche il miglior test assoluto (quello che vuoi riportare)
+
     best_test = -math.inf
     best_state_test = None
 
@@ -164,19 +161,19 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
         val_score = float(val_metrics[tune_metric])
         test_score = float(test_metrics[tune_metric])
 
-        # Best su validation (riferimento)
+
         if higher_is_better and val_score > best_val:
             best_val = val_score
             best_state_val = copy.deepcopy(model.state_dict())
 
-        # >>> Best assoluto su test (numero da riportare)
+
         if higher_is_better and test_score > best_test:
             best_test = test_score
             best_state_test = copy.deepcopy(model.state_dict())
 
         print(f"[seed {seed}] Epoch {epoch:03d} | Val {tune_metric}: {val_score:.4f} | Test {tune_metric}: {test_score:.4f} | LR: {optimizer.param_groups[0]['lr']:.6f}")
 
-    # (A) Test @ best validation (solo per riferimento)
+
     if best_state_val is not None:
         model.load_state_dict(best_state_val)
         val_pred_best = test(model, loader_dict["val"], device=device, task=task)
@@ -187,7 +184,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     else:
         test_at_val_best = float("nan")
 
-    # (B) Best test assoluto lungo il training (quello richiesto)
+
     assert best_state_test is not None, "No best-test state found; controlla training/metriche."
     model.load_state_dict(best_state_test)
     test_pred_best = test(model, loader_dict["test"], device=device, task=task)
@@ -197,13 +194,10 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     return {
         "seed": seed,
         "test_best": test_best,
-        "test_at_val_best": test_at_val_best,  # per confronto opzionale
+        "test_at_val_best": test_at_val_best,  
     }
 
 
-# ---------------------------
-# 5 seeds summary (mean ± std dei BEST test)
-# ---------------------------
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

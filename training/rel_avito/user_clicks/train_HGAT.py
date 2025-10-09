@@ -36,15 +36,10 @@ node_id   = "UserID"
 target    = "num_click"
 node_type = "UserInfo"
 
-# metrica come nel tuo script originale
 tune_metric = "roc_auc"
-higher_is_better = True  # riferito alla metrica
+higher_is_better = True  
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# ---------------------------
-# Caricamento dati e grafo (una volta sola)
-# ---------------------------
 
 dataset = get_dataset(db_name, download=True)
 task    = get_task(db_name, task_name, download=True)
@@ -64,10 +59,6 @@ data, col_stats_dict = make_pkey_fkey_graph(
     cache_dir=None
 )
 
-# ---------------------------
-# Costruzione y e train_mask per il node_type/target
-# (con fix di tipo per evitare TypeError: numpy.float32 -> float)
-# ---------------------------
 
 graph_node_ids = db_nuovo.table_dict[node_type].df[node_id].to_numpy()
 id_to_idx = {nid: i for i, nid in enumerate(graph_node_ids)}
@@ -84,17 +75,12 @@ for i, nid in enumerate(ids_raw):
 data[node_type].y = target_vector
 data[node_type].train_mask = ~torch.isnan(target_vector)
 
-# Se vuoi usare BCEWithLogitsLoss con pos_weight (come nel tuo script originale):
 y_full = data[node_type].y.float()
 train_mask = data[node_type].train_mask
 num_pos = (y_full[train_mask] == 1).sum()
 num_neg = (y_full[train_mask] == 0).sum()
 pos_weight = torch.tensor([ (num_neg / num_pos).item() if num_pos.item() > 0 else 1.0 ], device=device)
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-
-# ---------------------------
-# Loader (riutilizzabile tra seed)
-# ---------------------------
 
 loader_dict = loader_dict_fn(
     batch_size=512,
@@ -106,16 +92,11 @@ loader_dict = loader_dict_fn(
     test_table=test_table
 )
 
-# ---------------------------
-# Multi-seed loop
-# ---------------------------
-
 channels = 128
 seeds = [13, 37, 42]
 best_tests_per_seed = []
 
 for seed in seeds:
-    # Fissa i seed senza cambiare struttura delle funzioni chiamate
     seed_everything(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -124,7 +105,7 @@ for seed in seeds:
 
     print(f"\n=== SEED {seed} ===")
 
-    # Modello/ottimizzatore come nel tuo script
+
     model = Model(
         data=data,
         col_stats_dict=col_stats_dict,
@@ -156,14 +137,14 @@ for seed in seeds:
         test_pred = test(model, loader_dict["test"], device=device, task=task)
         test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-        # Best su validation (riferimento)
+
         if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
         ):
             best_val_metric = val_metrics[tune_metric]
             state_dict_val  = copy.deepcopy(model.state_dict())
 
-        # >>> Best test assoluto (numero che useremo per media/std)
+
         if (higher_is_better and test_metrics[tune_metric] > best_test_metric) or (
             not higher_is_better and test_metrics[tune_metric] < best_test_metric
         ):
@@ -173,7 +154,7 @@ for seed in seeds:
         print(f"Epoch: {epoch:02d} | Val {tune_metric}: {val_metrics[tune_metric]:.4f} | "
               f"Test {tune_metric}: {test_metrics[tune_metric]:.4f} | LR: {optimizer.param_groups[0]['lr']:.6f}")
 
-    # Fine seed: ricarico checkpoint best-test e riconfermo
+
     assert state_dict_test is not None, "Checkpoint best-test non trovato."
     model.load_state_dict(state_dict_test)
     test_pred_best = test(model, loader_dict["test"], device=device, task=task)

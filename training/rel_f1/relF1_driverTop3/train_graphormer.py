@@ -102,7 +102,6 @@ def build_data_and_targets(device):
 
 
 def build_model(data_official, col_stats_official, device, channels=128):
-    # Mantiene le tue scelte (norm="batch_norm")
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_official,
@@ -155,7 +154,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 500):
         path=f"best_graphormer_seed{seed}.pt"
     )
 
-    # Mantengo i tuoi hyper per Graphormer (batch_size=32, num_neighbours=16)
+
     loader_dict = loader_dict_fn(
         batch_size=32,
         num_neighbours=16,

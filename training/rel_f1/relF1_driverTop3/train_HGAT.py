@@ -79,7 +79,7 @@ def build_data_and_targets(device):
     data_official['drivers'].y = target_vector.float()
     data_official['drivers'].train_mask = ~torch.isnan(target_vector)
 
-    # a full graph on device, reused only if needed
+
     data_full, col_stats_full = make_pkey_fkey_graph(
         db2,
         col_to_stype_dict=col_to_stype2,
@@ -127,9 +127,6 @@ def bce_pos_weight_from_masked_targets(data, device):
     return pos_weight
 
 
-# ---------------------------
-# Single run
-# ---------------------------
 
 def run_once(seed: int, device: torch.device, max_epochs: int = 500):
     set_global_seed(seed)
@@ -196,8 +193,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 500):
         if early_stopping.early_stop:
             # print(f"[seed {seed}] Early stopping at epoch {epoch}")
             break
-
-    # Evaluate test at the best validation checkpoint
+        
     assert best_state_val is not None, "No best validation state found"
     model.load_state_dict(best_state_val)
 
@@ -212,10 +208,6 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 500):
         "test_at_val_best": float(test_metrics_at_valbest[tune_metric]),
     }
 
-
-# ---------------------------
-# Main: 5 seeds summary
-# ---------------------------
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -244,7 +236,6 @@ def main():
     print(f"\nVAL   mean ± std: {val_mean:.4f} ± {val_std:.4f}")
     print(f"TEST  mean ± std (at best VAL): {test_mean:.4f} ± {test_std:.4f}")
 
-    # Optional: return code 0
     return 0
 
 

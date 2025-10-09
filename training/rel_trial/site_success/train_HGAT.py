@@ -56,7 +56,7 @@ data, col_stats_dict = make_pkey_fkey_graph(
 
 channels = 128
 
-# Loader (invariato; si può riutilizzare tra i seed)
+
 loader_dict = loader_dict_fn(
     batch_size=512,
     num_neighbours=128,
@@ -75,7 +75,7 @@ seeds = [13, 37, 42, 2024, 2025]
 best_tests_per_seed = []
 
 for seed in seeds:
-    # fissiamo i random seed senza cambiare le funzioni usate
+    
     seed_everything(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -84,7 +84,7 @@ for seed in seeds:
 
     print(f"\n=== SEED {seed} ===")
 
-    # Modello/ottimizzatore (come nel tuo codice)
+
     model = Model(
         data=data,
         col_stats_dict=col_stats_dict,
@@ -117,14 +117,14 @@ for seed in seeds:
         test_pred = test(model, loader_dict["test"], device=device, task=task)
         test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-        # best validation (riferimento)
+
         if (higher_is_better and val_metrics[tune_metric] > best_val_metric) or (
             not higher_is_better and val_metrics[tune_metric] < best_val_metric
         ):
             best_val_metric = val_metrics[tune_metric]
             state_dict_val  = copy.deepcopy(model.state_dict())
 
-        # >>> best test assoluto (quello che useremo per media/std)
+
         if (higher_is_better and test_metrics[tune_metric] > best_test_metric) or (
             not higher_is_better and test_metrics[tune_metric] < best_test_metric
         ):
@@ -136,7 +136,7 @@ for seed in seeds:
               f"Validation {tune_metric}: {val_metrics[tune_metric]:.4f}, "
               f"Test {tune_metric}: {test_metrics[tune_metric]:.4f}, LR: {current_lr:.6f}")
 
-    # fine seed: ricarico il checkpoint del best test e riconfermo il numero
+
     assert state_dict_test is not None, "Checkpoint best-test non trovato."
     model.load_state_dict(state_dict_test)
     test_pred_best = test(model, loader_dict["test"], device=device, task=task)

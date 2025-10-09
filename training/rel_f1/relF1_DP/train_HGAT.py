@@ -114,30 +114,14 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
         test_table=test_table
     )
 
-    # Best on validation (standard) and best on test (what you requested)
+
     best_val = math.inf if not higher_is_better else -math.inf
     best_state_val = None
 
     best_test = math.inf  # because lower is better for MAE
     best_state_test = None
 
-    # for batch in loader_dict["train"]:
-    #     edge_types=batch.edge_types
-    #     break
-
-    # from pre_training.VGAE.Utils_VGAE import train_vgae
-    # model = train_vgae(
-    #     model=model,
-    #     loader_dict=loader_dict,
-    #     edge_types=edge_types,
-    #     encoder_out_dim=128,
-    #     entity_table=task.entity_table,
-    #     latent_dim=16,
-    #     hidden_dim=64,
-    #     epochs=50,
-    #     device=device
-    # )
-
+    
 
 
     for epoch in range(1, max_epochs + 1):
@@ -153,16 +137,16 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
         val_metrics = evaluate_performance(val_pred, val_table, task.metrics, task=task)
         test_metrics = evaluate_performance(test_pred, test_table, task.metrics, task=task)
 
-        # Optional: full-train MAE (as in your original code)
+
         train_mae_full = evaluate_on_full_train(model, loader_dict["train"], device=device, task=task)
 
-        # Track best on validation (standard protocol)
+
         val_score = val_metrics[tune_metric]
         if (not higher_is_better and val_score < best_val) or (higher_is_better and val_score > best_val):
             best_val = val_score
             best_state_val = copy.deepcopy(model.state_dict())
 
-        # Track best on test (your request)
+
         test_score = test_metrics[tune_metric]
         if test_score < best_test:  # lower is better for MAE
             best_test = test_score
@@ -173,8 +157,6 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
         print(f"Epoch: {epoch:03d} | Train MAE(full): {train_mae_full:.4f} | "
               f"Val MAE: {val_metrics['mae']:.4f} | Test MAE: {test_metrics['mae']:.4f} | LR: {current_lr:.6f}")
 
-    # ---- Final evaluations ----
-    # (A) Test evaluated at the best validation checkpoint
     assert best_state_val is not None, "No best validation state found"
     model.load_state_dict(best_state_val)
     val_pred_best = test(model, loader_dict["val"], device=device, task=task)
@@ -183,9 +165,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
     test_metrics_at_valbest = evaluate_performance(test_pred_at_valbest, test_table, task.metrics, task=task)
     test_at_val_best_mae = float(test_metrics_at_valbest["mae"])
 
-    # (B) Best test across epochs (direct)
     assert best_state_test is not None, "No best test state found"
-    # opzionale: ricaricare e confermare misura
     model.load_state_dict(best_state_test)
     test_pred_besttest = test(model, loader_dict["test"], device=device, task=task)
     test_metrics_besttest = evaluate_performance(test_pred_besttest, test_table, task.metrics, task=task)
@@ -198,9 +178,6 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50):
         "test_best_mae": test_best_mae
     }
 
-# ---------------------------
-# Main: 5 seeds summary
-# ---------------------------
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

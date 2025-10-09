@@ -19,8 +19,6 @@ from relbench.modeling.graph import make_pkey_fkey_graph
 # project-specific imports
 sys.path.append(os.path.abspath("."))
 
-# Opzionale: VGAE pretraining (commentato di default)
-# from pre_training.VGAE.Utils_VGAE import train_vgae
 
 from model.HeteroGAT import Model
 from data_management.data import loader_dict_fn, merge_text_columns_to_categorical
@@ -106,7 +104,6 @@ def build_data_and_targets(device, target_col="did_not_finish"):
 
 
 def build_model(data_official, col_stats_official, device, channels=128):
-    # Mantiene la tua architettura (num_layers=4, aggr="max", norm="batch_norm")
     model = Model(
         data=data_official,
         col_stats_dict=col_stats_official,
@@ -177,7 +174,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50, use_vgae: bo
     best_val = -math.inf
     best_state_val = None
 
-    # >>> aggiunta: tracciamo anche il miglior test assoluto <<<
+
     best_test = -math.inf
     best_state_test = None
 
@@ -200,7 +197,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50, use_vgae: bo
             best_val = val_score
             best_state_val = copy.deepcopy(model.state_dict())
 
-        # >>> best assoluto su test (richiesta) <<<
+
         if higher_is_better and test_score > best_test:
             best_test = test_score
             best_state_test = copy.deepcopy(model.state_dict())
@@ -210,8 +207,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50, use_vgae: bo
         if early_stopping.early_stop:
             break
 
-    # ---- valutazioni finali ----
-    # Test @ best validation (per riferimento)
+
     assert best_state_val is not None, "No best validation state found"
     model.load_state_dict(best_state_val)
     val_pred_best = test(model, loader_dict["val"], device=device, task=task)
@@ -219,7 +215,7 @@ def run_once(seed: int, device: torch.device, max_epochs: int = 50, use_vgae: bo
     val_metrics_best = evaluate_performance(val_pred_best, val_table, task.metrics, task=task)
     test_metrics_at_valbest = evaluate_performance(test_pred_at_valbest, test_table, task.metrics, task=task)
 
-    # Test BEST-EVER (quello che vuoi riportare)
+
     assert best_state_test is not None, "No best test state found"
     model.load_state_dict(best_state_test)
     test_pred_best = test(model, loader_dict["test"], device=device, task=task)
@@ -250,7 +246,7 @@ def main():
               f"test_best={out['test_best']:.4f}")
         results.append(out)
 
-    # Calcolo media/std sui BEST test (quello che vuoi)
+
     test_best_arr = np.array([r["test_best"] for r in results], dtype=np.float64)
 
     def mean_std(x):
@@ -263,7 +259,6 @@ def main():
         print(f"seed {r['seed']:>5}  |  TEST_BEST {r['test_best']:.4f}  |  TEST@VALBEST {r['test_at_val_best']:.4f}  |  VAL_BEST {r['val_best']:.4f}")
 
     print(f"\nTEST  BEST-EVER mean ± std: {test_best_mean:.4f} ± {test_best_std:.4f}")
-    # opzionale: puoi ancora stampare le altre due se vuoi
     # val_arr = np.array([r["val_best"] for r in results], dtype=np.float64)
     # test_valbest_arr = np.array([r["test_at_val_best"] for r in results], dtype=np.float64)
     # val_mean, val_std = mean_std(val_arr)
